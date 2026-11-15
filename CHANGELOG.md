@@ -10,6 +10,13 @@ the middle number for big milestones.
   their limits. A camera both maps hold shows once. Only while Waze is switched on in Settings;
   Waze's map is read in small pieces along your route and kept on the phone for a week.
 
+Fixes from a full check of both apps:
+
+- **Android: Kite no longer freezes for a few seconds when it opens.** Getting the voice ready
+  asked the phone's speech app for its whole list of voices while the screen waited. With Google's
+  speech app that took up to seven seconds, long enough for Android to call Kite "not responding"
+  and sometimes close it. The voice now gets ready in the background.
+
 ## 0.7.13 (iPhone and Android)
 
 A new, lighter look for the map and the driving screen, picked by Matteo from three mockups

@@ -48,13 +48,23 @@ object Voice {
         tts = TextToSpeech(KiteApp.app) { status ->
             if (status != TextToSpeech.SUCCESS) { noVoice(); return@TextToSpeech }
             val t = tts ?: return@TextToSpeech
+            // Off the main thread: this callback comes on it, and asking the speech app for its voices
+            // can take several seconds (Google's sends back a long list). Done here it froze Kite at launch
+            // long enough for Android to report it as not responding.
+            Thread { setUp(t) }.start()
+        }
+    }
+
+    /** Language, best voice, speed and listener, on a background thread; then queued words are spoken. */
+    private fun setUp(t: TextToSpeech) {
+        runCatching {
             t.setAudioAttributes(attrs)
             val lang = Locale.getDefault().takeIf { it.language == "en" } ?: if (Fmt.yards) Locale.UK else Locale.US
             val ok = runCatching {
                 t.setLanguage(lang) >= TextToSpeech.LANG_AVAILABLE || t.setLanguage(Locale.UK) >= TextToSpeech.LANG_AVAILABLE ||
                     t.setLanguage(Locale.US) >= TextToSpeech.LANG_AVAILABLE
             }.getOrDefault(false)
-            if (!ok) { noVoice(); return@TextToSpeech }
+            if (!ok) { noVoice(); return }
             main.post { missing = false }
             // The best-sounding voice installed for that language that works offline.
             runCatching {
@@ -68,11 +78,13 @@ object Voice {
                 @Deprecated("old API") override fun onError(id: String?) = finished()
                 override fun onStop(id: String?, interrupted: Boolean) = finished()
             })
-            main.post {
-                ready = true
-                pending.forEach { say(it) }
-                pending.clear()
-            }
+        }.onFailure { noVoice(); return }
+        main.post {
+            // Kite may have given up on this one meanwhile (no voice found): only the current one counts.
+            if (tts !== t) return@post
+            ready = true
+            pending.forEach { say(it) }
+            pending.clear()
         }
     }
 
