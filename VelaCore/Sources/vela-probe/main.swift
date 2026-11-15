@@ -43,6 +43,30 @@ if args.count > 1, args[1] == "wazert" {
     print("with a street name: \(streets.filter { $0.street != nil }.count) of \(streets.count), e.g. \(streets.compactMap(\.street).prefix(5))")
     print("data used: \(WazeLive.bytes / 1024) KB")
     wazeCensusReport()
+    // Does Waze send its fixed cameras (report type 11, or 103 "permanent hazard") when the map is
+    // zoomed in close on one? Small boxes round cameras known to be real, at several zooms.
+    let cams: [(String, LatLng)] = [("Northam Bridge", LatLng(50.9156326, -1.3851174)), ("M27 J5", LatLng(50.9494996, -1.3803431)),
+                                     ("M27 J7", LatLng(50.9352479, -1.3411425)), ("Thomas Lewis Way", LatLng(50.9300, -1.3855)),
+                                     ("M3 J9", LatLng(51.0727903, -1.2919975))]
+    for scale in [67186, 20000, 5000, 1500, 400] {
+        WazeLive.mapScale = scale
+        for meters in [1500.0, 400.0] {
+            WazeLive.census = WazeCensus()
+            var asked = 0
+            for (_, p) in cams {
+                if await WazeLive.shared.alerts(boxes: [WazeLive.box(around: p, meters: meters)], near: p) != nil { asked += 1 }
+            }
+            let c = WazeLive.census ?? WazeCensus()
+            let types = c.alertTypes.sorted { $0.key < $1.key }.map { "\($0.key)x\($0.value)" }.joined(separator: " ")
+            let other = c.places.map { "\($0.key)x\($0.value.count)" }.joined(separator: " ")
+            print("zoom \(scale), boxes of \(Int(meters)) m, \(asked) of \(cams.count) answered · elements \(c.elements.sorted { $0.key < $1.key }.map { "\($0.key)x\($0.value)" }.joined(separator: " ")) · report types: \(types.isEmpty ? "none" : types) · other places: \(other.isEmpty ? "none" : other)")
+            for key in c.alertTypes.keys where key.hasPrefix("11/") || key.hasPrefix("103/") || key.hasSuffix("/5001") {
+                print("   CAMERA TYPE \(key): " + (c.alertPlaces[key] ?? []).prefix(20).map { String(format: "%.5f,%.5f", $0.lat, $0.lng) }.joined(separator: " "))
+            }
+        }
+    }
+    WazeLive.mapScale = 67186
+    WazeLive.census = nil
     // What happens when Waze can't be reached: a quick failure, then a pause before asking again.
     WazeLive.hostOverride = "127.0.0.1:9"
     let t = Date()
