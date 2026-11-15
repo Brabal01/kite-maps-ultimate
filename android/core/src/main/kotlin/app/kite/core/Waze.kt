@@ -1,6 +1,9 @@
 package app.kite.core
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
@@ -543,6 +546,44 @@ class WazeLive {
         lastStatus = Waze.Status(System.currentTimeMillis(), 200, list.size, types = types)
         failures = 0
         list
+    }
+
+    /**
+     * Pieces of Waze's own map by number (see [WazeCameras]), a few at a time, with this session.
+     * Null when Waze couldn't be asked at all; a piece that didn't come is just left out.
+     */
+    suspend fun mapTiles(ids: List<Int>, near: LatLng): Map<Int, ByteArray>? {
+        if (ids.isEmpty()) return emptyMap()
+        if (System.currentTimeMillis() < backoffUntil) return null
+        if (session == null || System.currentTimeMillis() - lastAsk > 95_000) {
+            // Logs in the usual way, with one small look at the map round here.
+            alerts(listOf(box(near, 1500.0)), near) ?: return null
+        }
+        val s = session ?: return null
+        val client = http
+        val host = when (region(near)) {
+            "na" -> "ctilesgcs-am.waze.com"
+            "il" -> "ctilesgcs-il.waze.com"
+            else -> "ctilesgcs-row.waze.com"
+        }
+        val front = "https://$host/TileServer/multi-get?reqtype=tileBatch&protocol=2&sessionid=${s.id}&cookie=${s.secret}&num=1&variation=PARTIAL_SIMPLIFICATION&t0="
+        val headers = mapOf("User-Agent" to appVersion, "if-modified-since" to "Thu, 01 Jan 1970 00:00:00 GMT")
+        val out = LinkedHashMap<Int, ByteArray>()
+        for (chunk in ids.chunked(6)) {
+            val got = coroutineScope {
+                chunk.map { id -> async { id to Http.getOrNull("$front$id&v0=0&p0=42", headers, client)?.takeIf { it.code == 200 }?.body } }.awaitAll()
+            }
+            var any = false
+            for ((id, body) in got) {
+                if (body == null) continue
+                out[id] = body
+                bytes += body.size
+                any = true
+            }
+            // Waze has stopped answering: no point asking for the rest now.
+            if (!any) break
+        }
+        return out.ifEmpty { null }
     }
 
     /** Reports along a route: the line in pieces of about 10 km, one box each, plus a small box around [here]. */

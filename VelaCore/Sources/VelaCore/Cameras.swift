@@ -132,6 +132,8 @@ public enum Overpass {
         var zones: [AverageSpeedZone] = []
         var signals: [LatLng] = []
         var answered = false
+        // Waze's map is asked at the same time: it holds cameras OpenStreetMap doesn't.
+        async let wazeFound: [RoadCamera]? = speed ? await WazeCameras.along(line) : nil
         for piece in pieces(line, meters: 40_000) {
             guard let data = await alongQuery(piece, speed: speed, plate: plate, limits: limits) else { continue }
             answered = true
@@ -144,8 +146,9 @@ public enum Overpass {
             // This stretch's answer is the whole truth about its cameras: one the map has dropped goes.
             RoadCache.shared.forgetCameras(along: piece, except: Set(found.map(\.id)), speed: speed, plate: plate)
         }
+        let waze = await wazeFound ?? []
         guard answered else { return nil }
-        return (Array(cams.values), ways, CameraAlerts.merge(zones, []), signalsOnRoute(signals, line: line))
+        return (WazeCameras.merge(Array(cams.values), waze: waze), ways, CameraAlerts.merge(zones, []), signalsOnRoute(signals, line: line))
     }
 
     /** [line] cut into runs of about [meters], each sharing its first point with the last run's end. */

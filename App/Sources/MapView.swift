@@ -59,6 +59,7 @@ struct VelaMapView: UIViewRepresentable {
         }
         c.render(map)
         c.loadCameras(map)
+        c.loadWazeCameras(map)
         c.loadSurveillance(map)
         c.loadWaze(map)
         c.loadLiveCams(map)
@@ -119,6 +120,7 @@ struct VelaMapView: UIViewRepresentable {
         private var cameras: [Int64: RoadCamera] = [:]
         private var cameraCells: Set<String> = []
         private var cameraFetch: Task<Void, Never>?
+        private var wazeCameraFetch: Task<Void, Never>?
         private var surveillanceFetch: Task<Void, Never>?
         private var surveillanceCells: Set<String> = []
         private var surveillance: [Int64: SurveillanceCamera] = [:]
@@ -564,10 +566,13 @@ struct VelaMapView: UIViewRepresentable {
         private func renderCameras(_ style: MLNStyle) {
             let s = model.settings
             let line = model.nav?.route.polyline ?? model.directions?.route?.polyline ?? []
-            let key = "\(s.speedCameras)\(s.plateCameras)\(s.surveillanceCameras)\(surveillance.count)\(cameras.count)\(line.count)\(line.first?.lat ?? 0)"
+            let waze = s.speedCameras && s.wazeOn
+            let key = "\(s.speedCameras)\(s.plateCameras)\(s.surveillanceCameras)\(surveillance.count)\(cameras.count)\(line.count)\(line.first?.lat ?? 0)\(waze)\(WazeCameras.shared.version)"
             guard key != lastCameraKey else { return }
             lastCameraKey = key
-            let shown = cameras.values.filter { $0.kind == .speed ? s.speedCameras : s.plateCameras }
+            var shown = cameras.values.filter { $0.kind == .speed ? s.speedCameras : s.plateCameras }
+            // Waze's speed cameras join OpenStreetMap's; one both maps hold shows once.
+            if waze { shown = WazeCameras.merge(shown, waze: WazeCameras.shared.known()) }
             let cum = line.count >= 2 ? Geo.cumulative(line) : []
             var features: [MLNPointFeature] = shown.map { c in
                 let f = MLNPointFeature()
@@ -833,6 +838,20 @@ struct VelaMapView: UIViewRepresentable {
                 self.render(map)
                 // The map may have moved on while this one was loading.
                 self.loadCameras(map)
+            }
+        }
+
+        /** Waze's speed cameras for what's on screen, once zoomed in to a town; each piece of its map once a week. */
+        func loadWazeCameras(_ map: MLNMapView) {
+            let s = model.settings
+            WazeCameras.enabled = s.wazeOn
+            guard s.speedCameras, s.wazeOn, map.zoomLevel >= 13, wazeCameraFetch == nil else { return }
+            let b = map.visibleCoordinateBounds
+            wazeCameraFetch = Task { [weak self, weak map] in
+                let fresh = await WazeCameras.load(south: b.sw.latitude, west: b.sw.longitude, north: b.ne.latitude, east: b.ne.longitude)
+                guard let self else { return }
+                self.wazeCameraFetch = nil
+                if fresh, let map { self.render(map) }
             }
         }
 
@@ -1103,6 +1122,7 @@ struct VelaMapView: UIViewRepresentable {
         nonisolated func mapView(_ mapView: MLNMapView, regionDidChangeAnimated animated: Bool) {
             MainActor.assumeIsolated {
                 loadCameras(mapView)
+                loadWazeCameras(mapView)
                 loadSurveillance(mapView)
                 loadWaze(mapView)
                 loadLiveCams(mapView)

@@ -110,7 +110,9 @@ public final class RoadCache: @unchecked Sendable {
         lock.lock()
         let s = loaded()
         lock.unlock()
-        guard !s.ways.isEmpty || !s.cameras.isEmpty || !s.signals.isEmpty else { return ([], [], []) }
+        // Waze's cameras are remembered on their own (see [WazeCameras]) and join in here.
+        let waze = WazeCameras.enabled ? WazeCameras.shared.known(along: line) : []
+        guard !s.ways.isEmpty || !s.cameras.isEmpty || !s.signals.isEmpty else { return (waze, [], []) }
         // A quick box test first, then near the line itself, in cells of about 500 m.
         let cell = 0.005
         var cells = Set<Int64>()
@@ -124,6 +126,6 @@ public final class RoadCache: @unchecked Sendable {
         let ways = s.ways.values.filter { $0.line.contains(where: near) }
         let cams = s.cameras.values.filter { near($0.location) }
         let signals = s.signals.values.filter(near)
-        return (Array(cams), Array(ways), Overpass.signalsOnRoute(Array(signals), line: line))
+        return (WazeCameras.merge(Array(cams), waze: waze), Array(ways), Overpass.signalsOnRoute(Array(signals), line: line))
     }
 }
