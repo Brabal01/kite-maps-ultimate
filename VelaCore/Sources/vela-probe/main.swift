@@ -60,6 +60,16 @@ if args.count > 1, args[1] == "wazert" {
             let types = c.alertTypes.sorted { $0.key < $1.key }.map { "\($0.key)x\($0.value)" }.joined(separator: " ")
             let other = c.places.map { "\($0.key)x\($0.value.count)" }.joined(separator: " ")
             print("zoom \(scale), boxes of \(Int(meters)) m, \(asked) of \(cams.count) answered · elements \(c.elements.sorted { $0.key < $1.key }.map { "\($0.key)x\($0.value)" }.joined(separator: " ")) · report types: \(types.isEmpty ? "none" : types) · other places: \(other.isEmpty ? "none" : other)")
+            for (path, pts) in c.places {
+                let near: [String] = pts.prefix(12).map { p in
+                    let best = cams.map { ($0.0, $0.1.distance(to: p)) }.min { $0.1 < $1.1 }
+                    return String(format: "%.5f,%.5f (%.0f m from %@)", p.lat, p.lng, best?.1 ?? -1, best?.0 ?? "?")
+                }
+                print("   \(path): " + near.joined(separator: " · "))
+            }
+            for (n, list) in c.shapes.sorted(by: { $0.key < $1.key }) where ![2150, 2203, 2305, 2569, 2667].contains(n) {
+                for text in list { print("   element \(n): \(text)") }
+            }
             for key in c.alertTypes.keys where key.hasPrefix("11/") || key.hasPrefix("103/") || key.hasSuffix("/5001") {
                 print("   CAMERA TYPE \(key): " + (c.alertPlaces[key] ?? []).prefix(20).map { String(format: "%.5f,%.5f", $0.lat, $0.lng) }.joined(separator: " "))
             }

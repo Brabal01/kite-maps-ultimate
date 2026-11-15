@@ -594,6 +594,22 @@ public struct WazeCensus: Sendable {
     /** A few readable words found beside those places, to tell what they are. */
     public var words: [String: [String]] = [:]
 
+    /** The first few of each unread element written out (field numbers, numbers and words), to tell what it is. */
+    public var shapes: [Int: [String]] = [:]
+
+    /** A message as text: "3{101=-1385117 102=50915632} 5='word' 7=12". */
+    static func shape(_ data: Data, depth: Int) -> String {
+        guard let fields = ProtoReader.fields(data) else { return "?" }
+        return fields.map { f -> String in
+            guard let inner = f.bytes else { return "\(f.number)=\(Int64(bitPattern: f.value))" }
+            if let text = f.string, !text.isEmpty, text.unicodeScalars.allSatisfy({ $0.value >= 32 && $0.value < 127 }) {
+                return "\(f.number)='\(text.prefix(40))'"
+            }
+            if depth < 5, inner.count >= 2, ProtoReader.fields(inner) != nil { return "\(f.number){\(shape(inner, depth: depth + 1))}" }
+            return "\(f.number)=<\(inner.count) bytes>"
+        }.joined(separator: " ")
+    }
+
     public init() {}
 
     public mutating func add(_ data: Data) {
@@ -616,6 +632,7 @@ public struct WazeCensus: Sendable {
                         alertPlaces[key, default: []].append(p)
                     }
                 } else if let inner = f.bytes {
+                    if (shapes[f.number]?.count ?? 0) < 3 { shapes[f.number, default: []].append(String(Self.shape(inner, depth: 0).prefix(700))) }
                     scan(inner, path: "\(f.number)", depth: 0)
                 }
             }
