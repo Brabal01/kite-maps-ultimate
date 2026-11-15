@@ -77,30 +77,30 @@ if args.count > 1, args[1] == "wazert" {
     }
     WazeLive.mapScale = 67186
     WazeLive.census = nil
-    // Waze's own map pieces (the ones SABRE reads) hold fixed cameras in table 25. List every one
-    // along Thomas Lewis Way and round the other known cameras.
-    var seen = Set<Int>()
-    var spots: [(String, LatLng)] = []
-    for i in 0...24 { spots.append(("Thomas Lewis Way", LatLng(50.91894 + (50.94056 - 50.91894) * Double(i) / 24, -1.39534 + (-1.37789 + 1.39534) * Double(i) / 24))) }
-    spots += cams + [("M27 J7 b", LatLng(50.935568, -1.3387029)), ("M27 J8", LatLng(50.9101758, -1.3184896)), ("Bitterne Rd", LatLng(50.9156984, -1.3614169))]
-    var tiles = 0, total = 0
-    for (name, p) in spots {
-        for (dLat, dLng) in name == "Thomas Lewis Way" ? [(0.0, 0.0), (0.0, 0.01), (0.0, -0.01)] : [(0.0, 0.0)] {
-            let q = LatLng(p.lat + dLat, p.lng + dLng)
-            guard let t = await WazeLive.shared.mapTile(q), seen.insert(t.id).inserted else { continue }
-            tiles += 1
-            let found = wazeTileCameras(t.data)
-            total += found.count
-            print("TILECAMS \(name) tile \(t.id) (HTTP \(t.code), \(t.data.count) bytes): \(found.count)")
-            for c in found {
-                let line = (0...24).map { LatLng(50.91894 + (50.94056 - 50.91894) * Double($0) / 24, -1.39534 + (-1.37789 + 1.39534) * Double($0) / 24) }
-                let road = line.map { $0.distance(to: c.at) }.min() ?? -1
-                let cam = cams.map { $0.1.distance(to: c.at) }.min() ?? -1
-                print(String(format: "   %.5f,%.5f · facing %d° · kind %d · %d km/h (%d mph) · %.0f m from Thomas Lewis Way · %.0f m from a camera the free map has", c.at.lat, c.at.lng, c.heading, c.kind, c.speed, Int((Double(c.speed) / 1.609).rounded()), road, cam))
-            }
+    // Waze's own map holds fixed speed cameras (WazeCameras): the real code, on roads with known cameras.
+    WazeCameras.enabled = true
+    let drives: [(String, [LatLng])] = [
+        ("Thomas Lewis Way", [LatLng(50.94056, -1.37789), LatLng(50.9300, -1.3850), LatLng(50.9202, -1.3910), LatLng(50.91894, -1.39534)]),
+        ("M27 J5 to J8", [LatLng(50.9494, -1.3880), LatLng(50.9494996, -1.3803431), LatLng(50.9352479, -1.3411425), LatLng(50.9101758, -1.3184896)]),
+        ("Bitterne Rd", [LatLng(50.9113, -1.3690), LatLng(50.9157, -1.3615), LatLng(50.9157, -1.3580)]),
+    ]
+    for (name, line) in drives {
+        let before = WazeLive.bytes, t0 = Date()
+        let found = await WazeCameras.along(line)
+        let again = Date()
+        _ = await WazeCameras.along(line)
+        print(String(format: "WAZECAMS %@: %@ · %d map pieces · %d KB · %.1f s, then %.2f s from the phone's own copy", name,
+                     found.map { "\($0.count) cameras" } ?? "FAILED", WazeCameras.tileIds(along: line).count,
+                     (WazeLive.bytes - before) / 1024, again.timeIntervalSince(t0), Date().timeIntervalSince(again)))
+        for c in found ?? [] {
+            let mapped = cams.map { $0.1.distance(to: c.location) }.min() ?? -1
+            print(String(format: "   %.5f,%.5f · %@ · %.0f m from a camera the free map has", c.location.lat, c.location.lng,
+                         c.maxspeedKmh.map { "\(Int(($0 / 1.609344).rounded())) mph" } ?? "no limit given", mapped))
         }
     }
-    print("TILECAMS total: \(total) in \(tiles) pieces, data used so far \(WazeLive.bytes / 1024) KB")
+    let boxOK = await WazeCameras.load(south: 50.905, west: -1.345, north: 50.925, east: -1.31)
+    print("WAZECAMS a map view near M27 J8: \(boxOK ? "loaded" : "not loaded"), \(WazeCameras.shared.known().count) Waze cameras on the phone now")
+    WazeCameras.enabled = false
     // What happens when Waze can't be reached: a quick failure, then a pause before asking again.
     WazeLive.hostOverride = "127.0.0.1:9"
     let t = Date()
@@ -425,96 +425,6 @@ exit(exitCode)
  * cameras in there? Each set of places is measured against cameras known to be real (from
  * OpenStreetMap, checked 2026-11-14), so a set that sits on them is the camera list.
  */
-/** Everything in one piece of Waze's map: its tables, their sizes, and any places written out in full. */
-func wazeTileReport(_ name: String, _ cam: LatLng, _ raw: Data, _ code: Int, _ id: Int) {
-    let d = [UInt8](raw)
-    func u32(_ b: [UInt8], _ o: Int) -> Int { o + 4 <= b.count ? Int(b[o]) | Int(b[o + 1]) << 8 | Int(b[o + 2]) << 16 | Int(b[o + 3]) << 24 : 0 }
-    func i32(_ b: [UInt8], _ o: Int) -> Int { Int(Int32(truncatingIfNeeded: u32(b, o))) }
-    func hex(_ b: ArraySlice<UInt8>) -> String { b.map { String(format: "%02x", $0) }.joined() }
-    print("TILE \(name) id \(id): HTTP \(code), \(d.count) bytes, starts \(hex(d.prefix(24)))")
-    let magic: [UInt8] = [87, 90, 68, 70]
-    var at = 0, blobs = 0
-    while at + 20 <= d.count {
-        guard Array(d[at..<at + 4]) == magic else { at += 1; continue }
-        let comp = u32(d, at + 12), full = u32(d, at + 16)
-        print("  WZDF at \(at): header \(hex(d[at..<at + 20])), packed \(comp), unpacked \(full)")
-        blobs += 1
-        guard comp > 6, at + 20 + comp <= d.count else { at += 4; continue }
-        let body = Data(d[(at + 22)..<(at + 20 + comp - 4)])
-        at += 20 + comp
-        guard let out = try? (body as NSData).decompressed(using: .zlib) as Data else { print("  could not unpack"); continue }
-        let s = [UInt8](out)
-        let n = u32(s, 0), bits = u32(s, 4)
-        guard n > 0, n < 200, 8 + n * 4 <= s.count else { print("  odd table count \(n)"); continue }
-        let base = 8 + n * 4, mask = (1 << bits) - 1
-        var prev = 0, sizes: [String] = []
-        var parts: [(Int, [UInt8])] = []
-        for i in 0..<n {
-            let start = (prev + mask) & ~mask, end = u32(s, 8 + i * 4)
-            prev = end
-            guard end > start, base + end <= s.count else { continue }
-            parts.append((i, Array(s[(base + start)..<(base + end)])))
-            sizes.append("\(i):\(end - start)")
-        }
-        print("  \(n) tables, sizes \(sizes.joined(separator: " "))")
-        let lonLo = Int((cam.lng - 0.02) * 1e6), lonHi = Int((cam.lng + 0.02) * 1e6)
-        let latLo = Int((cam.lat - 0.02) * 1e6), latHi = Int((cam.lat + 0.02) * 1e6)
-        for (i, b) in parts {
-            // Places written out in full (millionths of a degree), either way round.
-            var pts: [(Int, LatLng)] = []
-            var o = 0
-            while o + 8 <= b.count {
-                let a = i32(b, o), c = i32(b, o + 4)
-                if a >= lonLo, a <= lonHi, c >= latLo, c <= latHi { pts.append((o, LatLng(Double(c) / 1e6, Double(a) / 1e6))) }
-                else if c >= lonLo, c <= lonHi, a >= latLo, a <= latHi { pts.append((o, LatLng(Double(a) / 1e6, Double(c) / 1e6))) }
-                o += 1
-            }
-            if !pts.isEmpty {
-                let list = pts.prefix(10).map { String(format: "@%d %.5f,%.5f (%.0f m)", $0.0, $0.1.lat, $0.1.lng, $0.1.distance(to: cam)) }
-                print("  table \(i): \(pts.count) full places: " + list.joined(separator: " · "))
-            }
-            let text = String(decoding: b.map { $0 >= 32 && $0 < 127 ? $0 : 124 }, as: UTF8.self)
-            let words: [String] = text.split(separator: "|").map { String($0) }.filter { $0.count >= 3 }
-            if words.count >= 3 && words.map(\.count).reduce(0, +) * 2 > b.count {
-                let hits = words.filter { let w = $0.lowercased(); return w.contains("cam") || w.contains("speed") || w.contains("radar") || w.contains("alert") }
-                print("  table \(i) text (\(words.count) words): \(words.prefix(12).joined(separator: "; "))" + (hits.isEmpty ? "" : " · CAMERA WORDS: \(hits.prefix(10).joined(separator: "; "))"))
-            } else if ![8, 9, 13].contains(i), b.count <= 160 {
-                print("  table \(i) raw: \(hex(b[...]))")
-            } else if ![8, 9, 13].contains(i) {
-                print("  table \(i) starts: \(hex(b.prefix(48)))")
-            }
-        }
-    }
-    if blobs == 0 { print("  no WZDF map data in the answer: \(String(decoding: d.prefix(200).map { $0 >= 32 && $0 < 127 ? $0 : 46 }, as: UTF8.self))") }
-}
-
-/** The fixed cameras in one piece of Waze's map: table 25, 16 bytes each (place, facing, kind, speed, id). */
-func wazeTileCameras(_ raw: Data) -> [(at: LatLng, heading: Int, kind: Int, speed: Int)] {
-    let d = [UInt8](raw)
-    func u32(_ b: [UInt8], _ o: Int) -> Int { o + 4 <= b.count ? Int(b[o]) | Int(b[o + 1]) << 8 | Int(b[o + 2]) << 16 | Int(b[o + 3]) << 24 : 0 }
-    func i32(_ b: [UInt8], _ o: Int) -> Int { Int(Int32(truncatingIfNeeded: u32(b, o))) }
-    var at = 0
-    while at + 20 <= d.count, !(d[at] == 87 && d[at + 1] == 90 && d[at + 2] == 68 && d[at + 3] == 70) { at += 1 }
-    guard at + 20 <= d.count else { return [] }
-    let comp = u32(d, at + 12)
-    guard comp > 6, at + 20 + comp <= d.count else { return [] }
-    guard let out = try? (Data(d[(at + 22)..<(at + 20 + comp - 4)]) as NSData).decompressed(using: .zlib) as Data else { return [] }
-    let s = [UInt8](out)
-    let n = u32(s, 0), bits = u32(s, 4)
-    guard n > 25, n < 200, 8 + n * 4 <= s.count, bits < 16 else { return [] }
-    let base = 8 + n * 4, mask = (1 << bits) - 1
-    let start = (u32(s, 8 + 24 * 4) + mask) & ~mask, end = u32(s, 8 + 25 * 4)
-    guard end > start, base + end <= s.count else { return [] }
-    let b = Array(s[(base + start)..<(base + end)])
-    var list: [(at: LatLng, heading: Int, kind: Int, speed: Int)] = []
-    var o = 0
-    while o + 16 <= b.count {
-        list.append((LatLng(Double(i32(b, o + 4)) / 1e6, Double(i32(b, o)) / 1e6), Int(b[o + 8]) | Int(b[o + 9]) << 8, Int(b[o + 10]), Int(b[o + 11])))
-        o += 16
-    }
-    return list
-}
-
 func wazeCensusReport() {
     guard let c = WazeLive.census else { return }
     WazeLive.census = nil

@@ -88,7 +88,15 @@ object Overpass {
      * Cameras, posted speed limits and traffic lights along a route in one query. [limits] false leaves
      * the roads' limits out: the question is then far lighter. Null when every mirror failed.
      */
-    suspend fun alongRoute(line: List<LatLng>, speed: Boolean, plate: Boolean, limits: Boolean = true): AlongRoute? {
+    suspend fun alongRoute(line: List<LatLng>, speed: Boolean, plate: Boolean, limits: Boolean = true): AlongRoute? = coroutineScope {
+        // Waze's map is asked at the same time: it holds cameras OpenStreetMap doesn't.
+        val waze = async { if (speed) WazeCameras.along(line) else null }
+        val mapped = alongRouteMapped(line, speed, plate, limits)
+        val extra = waze.await() ?: emptyList()
+        mapped?.copy(cameras = WazeCameras.merge(mapped.cameras, extra))
+    }
+
+    private suspend fun alongRouteMapped(line: List<LatLng>, speed: Boolean, plate: Boolean, limits: Boolean): AlongRoute? {
         if (line.size < 2) return AlongRoute(emptyList(), emptyList(), emptyList(), emptyList())
         val cams = LinkedHashMap<Long, RoadCamera>()
         val ways = mutableListOf<LimitWay>()

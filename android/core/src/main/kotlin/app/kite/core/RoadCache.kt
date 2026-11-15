@@ -149,7 +149,9 @@ class RoadCache(private val file: File? = defaultFile) {
         if (line.size < 2) return Known(emptyList(), emptyList(), emptyList())
         val s = synchronized(lock) { loaded() }
         val (ways0, cams0, sig0) = synchronized(lock) { Triple(s.ways.values.toList(), s.cameras.values.toList(), s.signals.values.toList()) }
-        if (ways0.isEmpty() && cams0.isEmpty() && sig0.isEmpty()) return Known(emptyList(), emptyList(), emptyList())
+        // Waze's cameras are remembered on their own (see [WazeCameras]) and join in here.
+        val waze = if (WazeCameras.enabled) WazeCameras.shared.known(line) else emptyList()
+        if (ways0.isEmpty() && cams0.isEmpty() && sig0.isEmpty()) return Known(waze, emptyList(), emptyList())
         val cell = 0.005
         val cells = HashSet<Long>()
         fun key(lat: Double, lng: Double): Long = (floor(lat / cell).toLong() shl 32) or (floor(lng / cell).toLong() and 0xFFFF_FFFFL)
@@ -159,7 +161,7 @@ class RoadCache(private val file: File? = defaultFile) {
         while (m <= cum.last()) { samples.add(Geo.point(line, m, cum)); m += 200 }
         for (p in samples) for (dy in listOf(-cell, 0.0, cell)) for (dx in listOf(-cell, 0.0, cell)) cells.add(key(p.lat + dy, p.lng + dx))
         fun near(p: LatLng) = key(p.lat, p.lng) in cells
-        return Known(cams0.filter { near(it.location) }, ways0.filter { w -> w.line.any { near(it) } },
+        return Known(WazeCameras.merge(cams0.filter { near(it.location) }, waze), ways0.filter { w -> w.line.any { near(it) } },
             Overpass.signalsOnRoute(sig0.filter { near(it) }, line))
     }
 }

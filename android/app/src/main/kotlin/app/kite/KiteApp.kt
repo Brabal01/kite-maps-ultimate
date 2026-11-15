@@ -3,6 +3,7 @@ package app.kite
 import android.app.Application
 import app.kite.core.KeyValue
 import app.kite.core.RoadCache
+import app.kite.core.WazeCameraStore
 import java.io.File
 
 /** Starts once per launch: hands the engine its storage before any screen asks for it. */
@@ -12,6 +13,7 @@ class KiteApp : Application() {
         app = this
         KeyValue.store = PrefsStore(getSharedPreferences("kite", MODE_PRIVATE))
         RoadCache.defaultFile = File(cacheDir, "roads.json")
+        WazeCameraStore.defaultFile = File(cacheDir, "waze-cameras.json")
         org.maplibre.android.MapLibre.getInstance(this)
     }
 

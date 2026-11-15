@@ -444,6 +444,8 @@ final class Navigator: ObservableObject {
         guard route.mode == .drive else { return }
         let line = route.polyline, id = route.id
         let speed = s.speedCameras, plate = s.plateCameras
+        // Waze's speed cameras too, while Waze is switched on.
+        WazeCameras.enabled = s.wazeOn
         fullRoadData = false
         matchedLimits = false
         matchedWays = []
@@ -509,7 +511,11 @@ final class Navigator: ObservableObject {
                 try? await Task.sleep(nanoseconds: 20_000_000_000)
                 result = await Overpass.alongRoute(line, speed: speed, plate: plate, limits: limits)
             }
-            guard let found = result, self.route.id == id else { return }
+            guard let found = result, self.route.id == id else {
+                // OpenStreetMap never answered: Waze's cameras, read in the meantime, still show.
+                if result == nil, self.route.id == id { await useKnown() }
+                return
+            }
             self.fullRoadData = true
             self.routeCameras = self.onOurSide(CameraAlerts.project(found.cameras, on: line))
             if !self.matchedLimits { self.route.speedLimits = Overpass.speedLimits(found.ways, on: line) }

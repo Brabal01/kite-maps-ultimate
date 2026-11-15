@@ -415,6 +415,8 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
         if (route.mode != TravelMode.DRIVE) return
         val line = route.polyline; val id = route.id
         val speed = s.speedCameras; val plate = s.plateCameras
+        // Waze's speed cameras too, while Waze is switched on.
+        WazeCameras.enabled = s.wazeOn
         fullRoadData = false
         matchedLimits = false
         matchedWays = emptyList()
@@ -475,7 +477,8 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
                     result = Overpass.alongRoute(line, speed, plate, limits)
                 }
             }
-            val found = result ?: return@launch
+            // OpenStreetMap never answered: Waze's cameras, read in the meantime, still show.
+            val found = result ?: run { if (route.id == id) useKnown(); return@launch }
             if (route.id != id) return@launch
             fullRoadData = true
             routeCameras = onOurSide(CameraAlerts.project(found.cameras, line))

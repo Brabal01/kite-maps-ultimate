@@ -227,20 +227,53 @@ public actor WazeLive {
         throw Failure.rejected("login: no session in the answer")
     }
 
-    /** Probe only: one piece of Waze's own map (the tile SABRE reads to snap reports to a road), raw. */
-    public func mapTile(_ p: LatLng) async -> (data: Data, code: Int, id: Int)? {
-        if session == nil { _ = await alerts(boxes: [Self.box(around: p, meters: 1_000)], near: p) }
+    /**
+     * Pieces of Waze's own map by number (see [WazeCameras]), a few at a time, with this session.
+     * Nil when Waze couldn't be asked at all; a piece that didn't come is just left out.
+     */
+    public func mapTiles(_ ids: [Int], near: LatLng) async -> [Int: Data]? {
+        guard !ids.isEmpty else { return [:] }
+        guard Date() >= backoffUntil else { return nil }
+        if session == nil || Date().timeIntervalSince(lastAsk) > 95 {
+            // Logs in the usual way, with one small look at the map round here.
+            guard await alerts(boxes: [Self.box(around: near, meters: 1_500)], near: near) != nil else { return nil }
+        }
         guard let session else { return nil }
-        let r = Self.region(p)
+        let r = Self.region(near)
         let host = r == "na" ? "ctilesgcs-am.waze.com" : r == "il" ? "ctilesgcs-il.waze.com" : "ctilesgcs-row.waze.com"
-        let id = ((Int(p.lng * 1_000_000) + 180_000_000) / 10_000) * 18_000 + (Int(p.lat * 1_000_000) + 90_000_000) / 10_000
-        guard let url = URL(string: "https://\(host)/TileServer/multi-get?reqtype=tileBatch&protocol=2&sessionid=\(session.id)&cookie=\(session.secret)&num=1&variation=PARTIAL_SIMPLIFICATION&t0=\(id)&v0=0&p0=42") else { return nil }
+        let front = "https://\(host)/TileServer/multi-get?reqtype=tileBatch&protocol=2&sessionid=\(session.id)&cookie=\(session.secret)&num=1&variation=PARTIAL_SIMPLIFICATION&t0="
+        let http = self.http
+        var out: [Int: Data] = [:]
+        var i = 0
+        while i < ids.count {
+            let chunk = Array(ids[i..<min(i + 6, ids.count)])
+            i += 6
+            let got = await withTaskGroup(of: (Int, Data?).self) { group -> [(Int, Data?)] in
+                for id in chunk { group.addTask { (id, await Self.tile(front + "\(id)&v0=0&p0=42", http)) } }
+                var list: [(Int, Data?)] = []
+                for await one in group { list.append(one) }
+                return list
+            }
+            var any = false
+            for (id, data) in got {
+                guard let data else { continue }
+                out[id] = data
+                Self.bytes += data.count
+                any = true
+            }
+            // Waze has stopped answering: no point asking for the rest now.
+            if !any { break }
+        }
+        return out.isEmpty ? nil : out
+    }
+
+    private static func tile(_ address: String, _ http: URLSession) async -> Data? {
+        guard let url = URL(string: address) else { return nil }
         var req = URLRequest(url: url)
-        req.setValue(Self.appVersion, forHTTPHeaderField: "User-Agent")
+        req.setValue(appVersion, forHTTPHeaderField: "User-Agent")
         req.setValue("Thu, 01 Jan 1970 00:00:00 GMT", forHTTPHeaderField: "if-modified-since")
-        guard let (data, resp) = try? await http.data(for: req) else { return nil }
-        Self.bytes += data.count
-        return (data, (resp as? HTTPURLResponse)?.statusCode ?? 0, id)
+        guard let (data, resp) = try? await http.data(for: req), (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return data
     }
 
     private func command(_ body: String) async throws -> [Element] {

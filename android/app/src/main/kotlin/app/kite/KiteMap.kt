@@ -66,6 +66,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     private val cameras = mutableMapOf<Long, RoadCamera>()
     private val cameraCells = mutableSetOf<String>()
     private var cameraFetch: Job? = null
+    private var wazeCameraFetch: Job? = null
     private var surveillanceFetch: Job? = null
     private var surveillanceWasOn = false
     private val surveillanceCells = mutableSetOf<String>()
@@ -115,7 +116,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
                 if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) model.nav?.let { if (it.following) it.following = false }
             }
             m.addOnCameraIdleListener {
-                loadCameras(m); loadSurveillance(m); loadWaze(m); loadLiveCams(m); render(); updateHeat(m); loadRail(m); noteHeading(m)
+                loadCameras(m); loadWazeCameras(m); loadSurveillance(m); loadWaze(m); loadLiveCams(m); render(); updateHeat(m); loadRail(m); noteHeading(m)
             }
             m.addOnCameraMoveListener { noteHeading(m) }
             WazeHistory.onChange = { render() }
@@ -139,7 +140,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         lastResultsKey = ""; lastRouteKey = ""; lastMineKey = ""; lastPuckKey = ""; lastHeadKey = ""; lastCameraKey = ""; lastSignalsKey = ""; lastWazeKey = ""; lastLiveKey = ""
         enableLocation(style)
         render()
-        loadCameras(m); loadWaze(m); loadLiveCams(m); updateHeat(m)
+        loadCameras(m); loadWazeCameras(m); loadWaze(m); loadLiveCams(m); updateHeat(m)
     }
 
     @SuppressLint("MissingPermission")
@@ -470,10 +471,13 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     private fun renderCameras(style: Style) {
         val s = model.settings
         val line = model.nav?.route?.polyline ?: model.directions?.route?.polyline ?: emptyList()
-        val key = "${s.speedCameras}${s.plateCameras}${s.surveillanceCameras}${surveillance.size}${cameras.size}${line.size}${line.firstOrNull()?.lat ?: 0}"
+        val waze = s.speedCameras && s.wazeOn
+        val key = "${s.speedCameras}${s.plateCameras}${s.surveillanceCameras}${surveillance.size}${cameras.size}${line.size}${line.firstOrNull()?.lat ?: 0}$waze${WazeCameras.shared.version}"
         if (key == lastCameraKey) return
         lastCameraKey = key
-        val shown = cameras.values.filter { if (it.kind == RoadCamera.Kind.SPEED) s.speedCameras else s.plateCameras }
+        val mapped = cameras.values.filter { if (it.kind == RoadCamera.Kind.SPEED) s.speedCameras else s.plateCameras }
+        // Waze's speed cameras join OpenStreetMap's; one both maps hold shows once.
+        val shown = if (waze) WazeCameras.merge(mapped, WazeCameras.shared.known()) else mapped
         val cum = if (line.size >= 2) Geo.cumulative(line) else null
         val features = shown.map { cam ->
             val onRoute = cum != null && Geo.project(cam.location, line, cum).offset < 40
@@ -634,6 +638,19 @@ class KiteMap(private val model: AppModel, private val context: Context) {
             missing.forEach { cameraCells.add("${it.first},${it.second}") }
             found.forEach { cameras[it.id] = it }
             render(); loadCameras(m)
+        }
+    }
+
+    /** Waze's speed cameras for what's on screen, once zoomed in to a town; each piece of its map once a week. */
+    fun loadWazeCameras(m: MapLibreMap) {
+        val s = model.settings
+        WazeCameras.enabled = s.wazeOn
+        if (!s.speedCameras || !s.wazeOn || m.cameraPosition.zoom < 13 || wazeCameraFetch != null) return
+        val b = m.projection.visibleRegion.latLngBounds
+        wazeCameraFetch = scope.launch {
+            val fresh = runCatching { WazeCameras.load(b.latitudeSouth, b.longitudeWest, b.latitudeNorth, b.longitudeEast) }.getOrDefault(false)
+            wazeCameraFetch = null
+            if (fresh) render()
         }
     }
 
