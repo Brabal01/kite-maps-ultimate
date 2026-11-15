@@ -15,11 +15,11 @@ public enum WazeCameras {
     /** The cameras read so far, kept on the phone. Swapped for an empty one in tests. */
     nonisolated(unsafe) public static var shared = WazeCameraStore()
 
-    static let rows = 18_000
+    public static let rows = 18_000
     /** A drive's pieces, nearest first: about 300 km of road. */
-    static let maxRouteTiles = 700
+    public static let maxRouteTiles = 700
     /** The most pieces one look at the map may ask for: a town, not a county. */
-    static let maxBoxTiles = 80
+    public static let maxBoxTiles = 80
 
     /** Waze's number for the piece of map holding [p]. */
     public static func tileId(_ p: LatLng) -> Int {
