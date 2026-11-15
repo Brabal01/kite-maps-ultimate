@@ -227,6 +227,22 @@ public actor WazeLive {
         throw Failure.rejected("login: no session in the answer")
     }
 
+    /** Probe only: one piece of Waze's own map (the tile SABRE reads to snap reports to a road), raw. */
+    public func mapTile(_ p: LatLng) async -> (data: Data, code: Int, id: Int)? {
+        if session == nil { _ = await alerts(boxes: [Self.box(around: p, meters: 1_000)], near: p) }
+        guard let session else { return nil }
+        let r = Self.region(p)
+        let host = r == "na" ? "ctilesgcs-am.waze.com" : r == "il" ? "ctilesgcs-il.waze.com" : "ctilesgcs-row.waze.com"
+        let id = ((Int(p.lng * 1_000_000) + 180_000_000) / 10_000) * 18_000 + (Int(p.lat * 1_000_000) + 90_000_000) / 10_000
+        guard let url = URL(string: "https://\(host)/TileServer/multi-get?reqtype=tileBatch&protocol=2&sessionid=\(session.id)&cookie=\(session.secret)&num=1&variation=PARTIAL_SIMPLIFICATION&t0=\(id)&v0=0&p0=42") else { return nil }
+        var req = URLRequest(url: url)
+        req.setValue(Self.appVersion, forHTTPHeaderField: "User-Agent")
+        req.setValue("Thu, 01 Jan 1970 00:00:00 GMT", forHTTPHeaderField: "if-modified-since")
+        guard let (data, resp) = try? await http.data(for: req) else { return nil }
+        Self.bytes += data.count
+        return (data, (resp as? HTTPURLResponse)?.statusCode ?? 0, id)
+    }
+
     private func command(_ body: String) async throws -> [Element] {
         guard let session else { throw Failure.expired("ask before login") }
         var uid = ProtoWriter()
