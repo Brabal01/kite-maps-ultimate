@@ -12,14 +12,30 @@ func googleIncidents() async {
         ("M27 Southampton to Portsmouth", LatLng(50.915, -1.380), LatLng(50.805, -1.087)),
         ("Heathrow to the City", LatLng(51.470, -0.454), LatLng(51.513, -0.090)),
         ("Santa Monica to Downtown LA", LatLng(34.019, -118.491), LatLng(34.050, -118.250)),
+        // Past fixed speed cameras known to be real: does Google's answer mention any of them?
+        ("Thomas Lewis Way towards the city centre", LatLng(50.94056, -1.37789), LatLng(50.91894, -1.39534)),
+        ("Northam Bridge eastbound (camera at 50.91563,-1.38512)", LatLng(50.9128, -1.3920), LatLng(50.9160, -1.3700)),
+        ("M27 J4 to J8 (cameras at J5 and J7)", LatLng(50.9560, -1.4060), LatLng(50.9050, -1.3120)),
+        ("M3 J10 to J9 northbound (camera at 51.07279,-1.29200)", LatLng(51.0450, -1.3050), LatLng(51.0900, -1.2850)),
+        ("London A40 Westway and Western Avenue", LatLng(51.5205, -0.1830), LatLng(51.5330, -0.3200)),
     ]
     let words = ["speed trap", "police", "crash", "accident", "reported", "waze", "speed camera", "hazard",
-                 "roadwork", "construction", "lane clos", "road closed", "incident", "stalled", "object on"]
+                 "roadwork", "construction", "lane clos", "road closed", "incident", "stalled", "object on",
+                 "camera", "radar", "speed check", "enforcement", "red light"]
     for (name, a, b) in drives {
         do {
             let body = try await GoogleClient.shared.directionsBody(from: a, to: b, mode: .drive)
             let low = body.lowercased()
             print("Google incidents · \(name): \(body.count) chars")
+            // Every kind of thing Google marks along the route: [number, ["Label"]].
+            if let re = try? NSRegularExpression(pattern: #"\[(\d+),\[\\?"([^"\\\]]{3,40})\\?"\]\]"#) {
+                var kinds: [String: Int] = [:]
+                let ns = body as NSString
+                for m in re.matches(in: body, range: NSRange(location: 0, length: ns.length)) {
+                    kinds["\(ns.substring(with: m.range(at: 1))) \(ns.substring(with: m.range(at: 2)))", default: 0] += 1
+                }
+                print("  kinds marked: " + (kinds.isEmpty ? "none" : kinds.sorted { $0.value > $1.value }.map { "\($0.key) x\($0.value)" }.joined(separator: ", ")))
+            }
             for w in words {
                 var hits: [String] = []
                 var from = low.startIndex
