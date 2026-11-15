@@ -77,11 +77,30 @@ if args.count > 1, args[1] == "wazert" {
     }
     WazeLive.mapScale = 67186
     WazeLive.census = nil
-    // Waze's own map pieces (the ones SABRE reads): do they hold the fixed cameras?
-    for (name, p) in cams + [("M27 J8", LatLng(50.9101758, -1.3184896)), ("Bitterne Rd", LatLng(50.9156984, -1.3614169))] {
-        guard let t = await WazeLive.shared.mapTile(p) else { print("TILE \(name): no answer"); continue }
-        wazeTileReport(name, p, t.data, t.code, t.id)
+    // Waze's own map pieces (the ones SABRE reads) hold fixed cameras in table 25. List every one
+    // along Thomas Lewis Way and round the other known cameras.
+    var seen = Set<Int>()
+    var spots: [(String, LatLng)] = []
+    for i in 0...24 { spots.append(("Thomas Lewis Way", LatLng(50.91894 + (50.94056 - 50.91894) * Double(i) / 24, -1.39534 + (-1.37789 + 1.39534) * Double(i) / 24))) }
+    spots += cams + [("M27 J7 b", LatLng(50.935568, -1.3387029)), ("M27 J8", LatLng(50.9101758, -1.3184896)), ("Bitterne Rd", LatLng(50.9156984, -1.3614169))]
+    var tiles = 0, total = 0
+    for (name, p) in spots {
+        for (dLat, dLng) in name == "Thomas Lewis Way" ? [(0.0, 0.0), (0.0, 0.01), (0.0, -0.01)] : [(0.0, 0.0)] {
+            let q = LatLng(p.lat + dLat, p.lng + dLng)
+            guard let t = await WazeLive.shared.mapTile(q), seen.insert(t.id).inserted else { continue }
+            tiles += 1
+            let found = wazeTileCameras(t.data)
+            total += found.count
+            print("TILECAMS \(name) tile \(t.id) (HTTP \(t.code), \(t.data.count) bytes): \(found.count)")
+            for c in found {
+                let line = (0...24).map { LatLng(50.91894 + (50.94056 - 50.91894) * Double($0) / 24, -1.39534 + (-1.37789 + 1.39534) * Double($0) / 24) }
+                let road = line.map { $0.distance(to: c.at) }.min() ?? -1
+                let cam = cams.map { $0.1.distance(to: c.at) }.min() ?? -1
+                print(String(format: "   %.5f,%.5f · facing %d° · kind %d · %d km/h (%d mph) · %.0f m from Thomas Lewis Way · %.0f m from a camera the free map has", c.at.lat, c.at.lng, c.heading, c.kind, c.speed, Int((Double(c.speed) / 1.609).rounded()), road, cam))
+            }
+        }
     }
+    print("TILECAMS total: \(total) in \(tiles) pieces, data used so far \(WazeLive.bytes / 1024) KB")
     // What happens when Waze can't be reached: a quick failure, then a pause before asking again.
     WazeLive.hostOverride = "127.0.0.1:9"
     let t = Date()
@@ -467,6 +486,33 @@ func wazeTileReport(_ name: String, _ cam: LatLng, _ raw: Data, _ code: Int, _ i
         }
     }
     if blobs == 0 { print("  no WZDF map data in the answer: \(String(decoding: d.prefix(200).map { $0 >= 32 && $0 < 127 ? $0 : 46 }, as: UTF8.self))") }
+}
+
+/** The fixed cameras in one piece of Waze's map: table 25, 16 bytes each (place, facing, kind, speed, id). */
+func wazeTileCameras(_ raw: Data) -> [(at: LatLng, heading: Int, kind: Int, speed: Int)] {
+    let d = [UInt8](raw)
+    func u32(_ b: [UInt8], _ o: Int) -> Int { o + 4 <= b.count ? Int(b[o]) | Int(b[o + 1]) << 8 | Int(b[o + 2]) << 16 | Int(b[o + 3]) << 24 : 0 }
+    func i32(_ b: [UInt8], _ o: Int) -> Int { Int(Int32(truncatingIfNeeded: u32(b, o))) }
+    var at = 0
+    while at + 20 <= d.count, !(d[at] == 87 && d[at + 1] == 90 && d[at + 2] == 68 && d[at + 3] == 70) { at += 1 }
+    guard at + 20 <= d.count else { return [] }
+    let comp = u32(d, at + 12)
+    guard comp > 6, at + 20 + comp <= d.count else { return [] }
+    guard let out = try? (Data(d[(at + 22)..<(at + 20 + comp - 4)]) as NSData).decompressed(using: .zlib) as Data else { return [] }
+    let s = [UInt8](out)
+    let n = u32(s, 0), bits = u32(s, 4)
+    guard n > 25, n < 200, 8 + n * 4 <= s.count, bits < 16 else { return [] }
+    let base = 8 + n * 4, mask = (1 << bits) - 1
+    let start = (u32(s, 8 + 24 * 4) + mask) & ~mask, end = u32(s, 8 + 25 * 4)
+    guard end > start, base + end <= s.count else { return [] }
+    let b = Array(s[(base + start)..<(base + end)])
+    var list: [(at: LatLng, heading: Int, kind: Int, speed: Int)] = []
+    var o = 0
+    while o + 16 <= b.count {
+        list.append((LatLng(Double(i32(b, o + 4)) / 1e6, Double(i32(b, o)) / 1e6), Int(b[o + 8]) | Int(b[o + 9]) << 8, Int(b[o + 10]), Int(b[o + 11])))
+        o += 16
+    }
+    return list
 }
 
 func wazeCensusReport() {
