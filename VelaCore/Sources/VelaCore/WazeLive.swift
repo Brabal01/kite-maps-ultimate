@@ -27,6 +27,9 @@ public actor WazeLive {
     /** Set by the probe to count everything Waze sends, including what Kite doesn't read. Nil in the app. */
     nonisolated(unsafe) public static var census: WazeCensus?
 
+    /** The number the app sends with each map box (its zoom, it seems). Only the probe changes it. */
+    nonisolated(unsafe) public static var mapScale = 67186
+
     static let protocolVersion = 234
     static let appVersion = "5.17.1.0"
 
@@ -298,7 +301,7 @@ public actor WazeLive {
     public static func mapDisplayed(_ b: (s: Double, w: Double, n: Double, e: Double)) -> String {
         func f(_ v: Double) -> String { String(format: "%.6f", v) }
         let corners = [f(b.w), f(b.n), f(b.e), f(b.n), f(b.e), f(b.s), f(b.w), f(b.s)].joined(separator: ",")
-        return "MapDisplayed,\(corners),\(f((b.w + b.e) / 2)),\(f((b.s + b.n) / 2)),67186,\(corners)"
+        return "MapDisplayed,\(corners),\(f((b.w + b.e) / 2)),\(f((b.s + b.n) / 2)),\(mapScale),\(corners)"
     }
 
     /** One line of a body: "ProtoBase64," + a Batch holding one element. */
