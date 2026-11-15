@@ -3,6 +3,13 @@
 Every version of Kite Maps, newest first. The small number goes up for fixes and polish, and
 the middle number for big milestones.
 
+## 0.7.14 (iPhone and Android)
+
+- **Speed cameras from Waze's map too.** The free map misses cameras (Thomas Lewis Way in
+  Southampton had none), so Kite now also reads the fixed speed cameras in Waze's own map, with
+  their limits. A camera both maps hold shows once. Only while Waze is switched on in Settings;
+  Waze's map is read in small pieces along your route and kept on the phone for a week.
+
 ## 0.7.13 (iPhone and Android)
 
 A new, lighter look for the map and the driving screen, picked by Matteo from three mockups
@@ -33,10 +40,6 @@ Speed camera fixes, after Matteo saw cameras that had been taken away:
 - **Kite forgets a camera once the map drops it.** Kite remembers the cameras on roads you've
   driven so they show the moment a drive starts, but it never forgot one. Now a fresh answer for
   a stretch of road clears any remembered camera that is no longer there.
-- **Speed cameras from Waze's map too.** The free map misses cameras (Thomas Lewis Way in
-  Southampton had none), so Kite now also reads the fixed speed cameras in Waze's own map, with
-  their limits. A camera both maps hold shows once. Only while Waze is switched on in Settings;
-  Waze's map is read in small pieces along your route and kept on the phone for a week.
 
 ## 0.7.12 (iPhone and Android)
 
