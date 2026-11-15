@@ -455,7 +455,7 @@ func wazeTileReport(_ name: String, _ cam: LatLng, _ raw: Data, _ code: Int, _ i
                 print("  table \(i): \(pts.count) full places: " + list.joined(separator: " · "))
             }
             let text = String(decoding: b.map { $0 >= 32 && $0 < 127 ? $0 : 124 }, as: UTF8.self)
-            let words = text.split(separator: "|").filter { $0.count >= 3 }
+            let words: [String] = text.split(separator: "|").map { String($0) }.filter { $0.count >= 3 }
             if words.count >= 3 && words.map(\.count).reduce(0, +) * 2 > b.count {
                 let hits = words.filter { let w = $0.lowercased(); return w.contains("cam") || w.contains("speed") || w.contains("radar") || w.contains("alert") }
                 print("  table \(i) text (\(words.count) words): \(words.prefix(12).joined(separator: "; "))" + (hits.isEmpty ? "" : " · CAMERA WORDS: \(hits.prefix(10).joined(separator: "; "))"))
