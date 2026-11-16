@@ -398,8 +398,11 @@ object Valhalla {
             val end = min(total, start + 25_000)
             val piece = Geo.slice(line, start, end, cum)
             val data = fetch(thin(piece)) ?: return null
-            val parsed = parse(data) ?: return null
-            val placed = Overpass.speedLimits(parsed.second, piece)
+            // Reading and placing a long route's roads is heavy: not on the main thread.
+            val (parsed, placed) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                val r = parse(data) ?: return@withContext null
+                r to Overpass.speedLimits(r.second, piece)
+            } ?: return null
             val scale = if (parsed.third > 0) (end - start) / parsed.third else 1.0
             var m = 0.0
             while (m < end - start) {

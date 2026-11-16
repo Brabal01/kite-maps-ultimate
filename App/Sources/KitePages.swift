@@ -254,7 +254,8 @@ struct SettingsPage: View {
             ZStack(alignment: .bottom) {
                 Vela.ground(scheme).ignoresSafeArea()
                 SettingsView(settings: settings, model: model, inTab: true, pick: { model.picking = $0 }, onChange: { model.reloadRoutes() })
-                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: KiteDock.height + 10) }
+                    // Inside the page's own lists (the NavigationView swallows an inset put on it from out here).
+                    .environment(\.kiteDockSpace, KiteDock.height + 10)
                 KiteDock(model: model, bottomInset: geo.safeAreaInsets.bottom)
                     .ignoresSafeArea(edges: .bottom)
                     .offset(y: geo.safeAreaInsets.bottom)

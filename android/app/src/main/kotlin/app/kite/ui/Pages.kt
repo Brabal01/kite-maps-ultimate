@@ -324,7 +324,7 @@ private fun CameraSettings() {
         RowDivider()
         ToggleRow("Say when I'm over the speed limit", Icons.Filled.Speed, 0xEA580C, s.speedingAlert) { s.speedingAlert = it }
     }
-    SettingsGroup("Show on the map and route", "Camera locations come from OpenStreetMap. General surveillance cameras are not necessarily plate readers and are shown only on the map. Some countries, like France and Germany, don't allow warnings of speed cameras, so check before you turn the voice on there.") {
+    SettingsGroup("Show on the map and route", "Camera locations come from OpenStreetMap, and speed cameras from Waze's map too while Road alerts are on. General surveillance cameras are not necessarily plate readers and are shown only on the map. Some countries, like France and Germany, don't allow warnings of speed cameras, so check before you turn the voice on there.") {
         ToggleRow("Speed cameras", Icons.Filled.PhotoCamera, 0xDC2626, s.speedCameras) { s.speedCameras = it }
         RowDivider()
         ToggleRow("Surveillance cameras", Icons.Filled.Videocam, 0x16A34A, s.surveillanceCameras) { s.surveillanceCameras = it }

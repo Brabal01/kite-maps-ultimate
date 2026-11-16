@@ -47,10 +47,23 @@ struct KiteType: ViewModifier {
 }
 
 /** A settings-style list on Kite's own ground colour, with the taller rows. */
+/** Room a list leaves at its end for the floating tab bar over it (only the Settings tab sets it). */
+private struct KiteDockSpace: EnvironmentKey { static let defaultValue: CGFloat = 0 }
+
+extension EnvironmentValues {
+    var kiteDockSpace: CGFloat {
+        get { self[KiteDockSpace.self] }
+        set { self[KiteDockSpace.self] = newValue }
+    }
+}
+
 struct KiteList: ViewModifier {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.kiteDockSpace) private var dockSpace
     func body(content: Content) -> some View {
         content
+            // The last rows can scroll up clear of the tab bar instead of ending up under it.
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: dockSpace) }
             .scrollContentBackground(.hidden)
             .background(Vela.ground(scheme))
             .environment(\.defaultMinListRowHeight, 56)

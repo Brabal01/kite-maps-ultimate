@@ -429,7 +429,9 @@ object Directions {
         avoidHighways: Boolean = false, avoidTolls: Boolean = false,
         useGoogle: Boolean = true, via: List<LatLng> = emptyList(), heading: Double? = null,
         alternatives: Boolean = false,
-    ): Result = coroutineScope {
+    ): Result = withContext(Dispatchers.Default) {
+        // Off the main thread: fitting the open router's steps onto a long route (a drive across the
+        // country) is millions of sums, enough to freeze the screen for seconds.
         // Ask both at once: Google's route knows traffic, OSRM's steps read better.
         val osrmTask = async(Dispatchers.IO) { runCatching { OSRM.route(a, b, mode, via, heading) } }
         var err: String? = null
@@ -483,7 +485,7 @@ object Directions {
                         if (a.lat in 49.8..61.0 && a.lng in -11.0..2.0) for (m in g[i].maneuvers) m.instruction = British.words(m.instruction)
                     }
                     osrmTask.cancel()
-                    return@coroutineScope Result(g)
+                    return@withContext Result(g)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -495,7 +497,7 @@ object Directions {
         // The open router only knows Europe: asked for somewhere it has no roads to (California, an
         // island with no ferry), it snaps the end to its nearest road, and Southampton to Davis came
         // back as 1,280 miles to Cabo da Roca in Portugal. A route that stops miles short isn't one.
-        o.getOrNull()?.filter { reaches(it.polyline, a, b) }?.let { if (it.isNotEmpty()) return@coroutineScope Result(it.map { r -> StepMerge.tidy(r.maneuvers); Roundabouts.settle(r) }) }
+        o.getOrNull()?.filter { reaches(it.polyline, a, b) }?.let { if (it.isNotEmpty()) return@withContext Result(it.map { r -> StepMerge.tidy(r.maneuvers); Roundabouts.settle(r) }) }
         o.exceptionOrNull()?.let { err = it.message }
         Result(emptyList(), err ?: "No route found.")
     }

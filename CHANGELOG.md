@@ -16,6 +16,15 @@ Fixes from a full check of both apps:
   asked the phone's speech app for its whole list of voices while the screen waited. With Google's
   speech app that took up to seven seconds, long enough for Android to call Kite "not responding"
   and sometimes close it. The voice now gets ready in the background.
+- **Android: no more long freeze when planning a long drive.** Fitting the turn-by-turn steps
+  onto a route of hundreds of miles, placing its speed limits and finding the live cameras along it
+  all happened while the screen waited, freezing Kite for up to eight seconds. That work now
+  happens in the background.
+- **iPhone: the last row in Settings no longer hides under the tab bar.** "About" (and the end of
+  longer pages like Road alerts) can now scroll up clear of it.
+- **iPhone: Road alerts has a big title** like every other Settings page.
+- **Cameras & speed says where cameras come from:** OpenStreetMap, and Waze's map too while Road
+  alerts are on (iPhone and Android).
 
 ## 0.7.13 (iPhone and Android)
 

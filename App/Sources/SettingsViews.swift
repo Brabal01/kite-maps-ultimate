@@ -197,7 +197,7 @@ struct SettingsView: View {
             } header: {
                 Text("Show on the map and route")
             } footer: {
-                Text("Camera locations come from OpenStreetMap. General surveillance cameras are not necessarily plate readers and are shown only on the map. Some countries, like France and Germany, don't allow warnings of speed cameras, so check before you turn the voice on there.")
+                Text("Camera locations come from OpenStreetMap, and speed cameras from Waze's map too while Road alerts are on. General surveillance cameras are not necessarily plate readers and are shown only on the map. Some countries, like France and Germany, don't allow warnings of speed cameras, so check before you turn the voice on there.")
             }
         }
         .kiteList()
@@ -484,6 +484,5 @@ struct WazeSettingsView: View {
                 remembered = 0
             }
         }
-        .navigationBarTitleDisplayMode(.inline)
     }
 }

@@ -244,9 +244,14 @@ fun RouteLiveCams(model: AppModel, route: Route) {
         if (webcams) LiveCamStore.loadWindyRoute(route.id, route.polyline)
     }
     val version = LiveCamStore.version
-    val list = remember(route.id, version, webcams) {
+    // Worked out off the main thread: thousands of cameras against a long route takes seconds.
+    val list by produceState(emptyList<LiveCams.OnRoute>(), route.id, version, webcams) {
         val web = if (webcams) LiveCamStore.webcams else emptyList()
-        LiveCams.along(LiveCamStore.road + web, route.polyline, webcamOffset = if (web.isEmpty()) 0.0 else LiveCams.WEBCAM_ROUTE_OFFSET)
+        val road = LiveCamStore.road
+        val line = route.polyline
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            LiveCams.along(road + web, line, webcamOffset = if (web.isEmpty()) 0.0 else LiveCams.WEBCAM_ROUTE_OFFSET)
+        }
     }
     if (list.isEmpty()) return
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

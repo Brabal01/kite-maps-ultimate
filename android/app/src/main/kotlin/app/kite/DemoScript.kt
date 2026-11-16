@@ -256,7 +256,10 @@ object DemoScript {
                 st.units = UnitsMode.YARDS
                 val to = Place("demo-pitlochry", "Pitlochry", LatLng(56.7030, -3.7340), "demo")
                 model.select(to); delay(2000)
-                model.openDirections(to); delay(10000)
+                model.openDirections(to)
+                // A long drive's route can take a while: wait for it rather than a fixed time.
+                for (i in 0 until 40) { if (model.directions?.route != null) break; delay(1000) }
+                delay(1000)
                 model.startNavigation(); delay(5000)
                 if (step == "roundabout") model.nav?.showDemoRoundabout()
                 model.nav?.showDemoAlerts()
