@@ -3,6 +3,12 @@
 Every version of Kite Maps, newest first. The small number goes up for fixes and polish, and
 the middle number for big milestones.
 
+## 0.7.15 (iPhone and Android)
+
+- **Parking is back to manual only.** Kite no longer saves where you parked by itself when a drive
+  ends, and the "Save where I parked when a drive ends" switch is gone from Settings. To save your
+  spot, tap the P button on the "You've arrived" card or on the map, as before 0.7.12.
+
 ## 0.7.14 (iPhone and Android)
 
 - **Speed cameras from Waze's map too.** The free map misses cameras (Thomas Lewis Way in

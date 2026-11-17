@@ -41,8 +41,6 @@ final class AppSettings: ObservableObject {
     @Published var voice: Bool { didSet { d.set(voice, forKey: "voice") } }
     /** The speaker button was last left on "Alerts only" (cameras and police, no turns). */
     @Published var voiceAlertsOnly: Bool { didSet { d.set(voiceAlertsOnly, forKey: "voiceAlertsOnly") } }
-    /** Save where the car is by itself when a drive ends. */
-    @Published var autoParking: Bool { didSet { d.set(autoParking, forKey: "autoParking") } }
     @Published var traffic: Bool { didSet { d.set(traffic, forKey: "traffic") } }
     @Published var satellite: Bool { didSet { d.set(satellite, forKey: "satellite") } }
     /** Hill shading, and metro/rail lines in their colors. */
@@ -107,7 +105,6 @@ final class AppSettings: ObservableObject {
         units = UnitsMode(rawValue: d.string(forKey: "units") ?? "") ?? .auto
         voice = d.object(forKey: "voice") as? Bool ?? true
         voiceAlertsOnly = d.bool(forKey: "voiceAlertsOnly")
-        autoParking = d.object(forKey: "autoParking") as? Bool ?? true
         traffic = d.object(forKey: "traffic") as? Bool ?? true
         satellite = d.bool(forKey: "satellite")
         terrain = d.bool(forKey: "terrain")

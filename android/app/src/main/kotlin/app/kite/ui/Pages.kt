@@ -370,10 +370,6 @@ private fun MapSettings() {
         PickRow("Distance units", Icons.Filled.Straighten, 0x0891B2, s.units, UnitsMode.entries.toList(), { it.label }) { s.units = it }
         RowDivider()
         ToggleRow("Parking button on the map", Icons.Filled.LocalParking, 0x2563EB, s.parkingButton) { s.parkingButton = it }
-        if (s.parkingButton) {
-            RowDivider()
-            ToggleRow("Save where I parked when a drive ends", Icons.Filled.DirectionsCar, 0x2563EB, s.autoParking) { s.autoParking = it }
-        }
     }
 }
 

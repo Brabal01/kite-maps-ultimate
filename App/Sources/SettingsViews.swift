@@ -243,9 +243,6 @@ struct SettingsView: View {
                     ForEach(UnitsMode.allCases) { Text($0.label).tag($0) }
                 } label: { SettingLabel("Distance units", icon: "ruler.fill", color: 0x0891B2) }
                 Toggle(isOn: $settings.parkingButton) { SettingLabel("Parking button on the map", icon: "parkingsign", color: 0x2563EB) }
-                if settings.parkingButton {
-                    Toggle(isOn: $settings.autoParking) { SettingLabel("Save where I parked when a drive ends", icon: "car.fill", color: 0x2563EB) }
-                }
             }
         }
         .kiteList()

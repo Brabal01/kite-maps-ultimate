@@ -126,8 +126,6 @@ class AppModel {
     var autoStart by mutableStateOf(false)
     /** A drive that was under way when the app last closed, offered again on the home map. */
     var resumeOffer by mutableStateOf<SavedTrip?>(null)
-    /** This drive's parking spot was saved by itself on arriving. */
-    var autoParked by mutableStateOf(false)
     private var tripSavedAt = 0L
     /** Bumped when the map should redraw overlays that don't come from a state value. */
     var mapTick by mutableIntStateOf(0)
@@ -444,9 +442,8 @@ class AppModel {
     }
 
     /** Remember where the car is: here, now, with the street name when one is found. */
-    fun saveParking(quiet: Boolean = false) {
+    fun saveParking() {
         val me = userLatLng ?: run {
-            if (quiet) return
             notice = if (location.denied) "Location is off for Kite. Turn it on in Settings to save where you parked."
             else "Still finding your location. Try again in a moment."
             return
@@ -454,7 +451,7 @@ class AppModel {
         val p = Place(id = "parking:${System.currentTimeMillis() / 1000}", name = "Parked car", location = me, source = "osm",
             category = "Parked at ${Fmt.time(java.util.Date())}")
         settings.parking = p
-        if (!quiet) notice = "Parking spot saved. Tap the P button to find your car."
+        notice = "Parking spot saved. Tap the P button to find your car."
         scope.launch {
             val found = Photon.reverse(me) ?: return@launch
             if (settings.parking?.id != p.id) return@launch
@@ -668,7 +665,6 @@ class AppModel {
             }
         }
         resumeOffer = null
-        autoParked = false
         rememberTrip(n)
         location.setNavigating(true)
         DriveService.start(KiteApp.app)
@@ -727,11 +723,6 @@ class AppModel {
     private fun tripCheck(n: Navigator) {
         if (n.arrived) {
             if (settings.trip != null) settings.trip = null
-            // Where you parked, without having to find the P button while getting out of the car.
-            if (!autoParked && n.route.mode == TravelMode.DRIVE && settings.autoParking && settings.parkingButton && userLatLng != null) {
-                autoParked = true
-                saveParking(quiet = true)
-            }
         } else if (System.currentTimeMillis() - tripSavedAt > 60_000 || settings.trip?.stops?.size != n.stops.size) {
             rememberTrip(n)
         }

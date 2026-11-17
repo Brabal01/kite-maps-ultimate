@@ -141,7 +141,7 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
             Column(Modifier.padding(horizontal = 12.dp).padding(top = 4.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (nav.arrived) {
                     ArrivedCard(nav.destination.name, if (nav.route.mode == TravelMode.DRIVE) ({ model.saveParking() }) else null,
-                        saved = model.autoParked, note = if (nav.wazeWarned > 0) "Waze drivers warned you about ${nav.wazeWarned} report${if (nav.wazeWarned == 1) "" else "s"} on the way" else null) {
+                        note = if (nav.wazeWarned > 0) "Waze drivers warned you about ${nav.wazeWarned} report${if (nav.wazeWarned == 1) "" else "s"} on the way" else null) {
                         model.endNavigation()
                     }
                 } else InstructionBanner(nav)
@@ -561,7 +561,7 @@ internal fun distanceParts(m: Double): Pair<String, String> {
 }
 
 @Composable
-fun ArrivedCard(name: String, onPark: (() -> Unit)?, saved: Boolean = false, note: String?, done: () -> Unit) {
+fun ArrivedCard(name: String, onPark: (() -> Unit)?, note: String?, done: () -> Unit) {
     var parked by remember { mutableStateOf(false) }
     val dark = LocalDark.current
     Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -571,15 +571,10 @@ fun ArrivedCard(name: String, onPark: (() -> Unit)?, saved: Boolean = false, not
                 Text("You've arrived", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = primaryText, maxLines = 1)
                 Text(name, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = primaryText, maxLines = 3)
                 if (note != null) Text(note, fontSize = KType.subheadline, color = Vela.muted(dark), maxLines = 2)
-                // The parking spot was already saved by itself.
-                if (saved) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Icons.Filled.LocalParking, null, tint = primaryText, modifier = Modifier.size(18.dp))
-                    Text("Parking spot saved", fontSize = KType.subheadline, fontWeight = FontWeight.SemiBold, color = primaryText)
-                }
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.End)) {
-            if (onPark != null && !parked && !saved) {
+            if (onPark != null && !parked) {
                 Box(Modifier.size(56.dp).clip(CircleShape).background(Vela.chip(dark)).tap { onPark(); parked = true }, contentAlignment = Alignment.Center) {
                     Icon(Icons.Filled.LocalParking, "Save parking", tint = primaryText, modifier = Modifier.size(26.dp))
                 }

@@ -132,8 +132,6 @@ final class AppModel: ObservableObject {
     @Published var autoStart = false
     /** A trip that was cut short when Kite closed (swiped away, a crash, the phone restarting): "Carry on to…?" */
     @Published var resumeOffer: SavedTrip?
-    /** This drive's parking spot was saved by itself on arriving. */
-    @Published var autoParked = false
     private var tripSavedAt = Date.distantPast
     /** Bumped when the map should redraw overlays that don't come from a published value. */
     @Published var mapTick = 0
@@ -482,9 +480,8 @@ final class AppModel: ObservableObject {
     }
 
     /** Remember where the car is: here, now, with the street name when one is found. */
-    func saveParking(quiet: Bool = false) {
+    func saveParking() {
         guard let me = userLatLng else {
-            if quiet { return }
             notice = location.denied ? "Location is off for Kite. Turn it on in Settings to save where you parked." : "Still finding your location. Try again in a moment."
             return
         }
@@ -494,7 +491,7 @@ final class AppModel: ObservableObject {
         f.dateStyle = .none
         p.category = "Parked at \(f.string(from: Date()))"
         settings.parking = p
-        if !quiet { notice = "Parking spot saved. Tap the P button to find your car." }
+        notice = "Parking spot saved. Tap the P button to find your car."
         let pid = p.id
         Task {
             guard let found = await Photon.reverse(me), settings.parking?.id == pid else { return }
@@ -726,7 +723,6 @@ final class AppModel: ObservableObject {
             self.mapTick += 1
         }
         resumeOffer = nil
-        autoParked = false
         rememberTrip(n)
         location.setNavigating(true, mode: route.mode.rawValue)
         map?.showsUserLocation = false
@@ -769,15 +765,10 @@ final class AppModel: ObservableObject {
         tripCheck(n)
     }
 
-    /** Keeps the saved trip fresh while driving, and on arriving forgets it and saves where the car is. */
+    /** Keeps the saved trip fresh while driving, and on arriving forgets it. */
     private func tripCheck(_ n: Navigator) {
         if n.arrived {
             if settings.trip != nil { settings.trip = nil }
-            // Where you parked, without having to find the P button while getting out of the car.
-            if !autoParked, n.route.mode == .drive, settings.autoParking, settings.parkingButton, userLatLng != nil {
-                autoParked = true
-                saveParking(quiet: true)
-            }
         } else if Date().timeIntervalSince(tripSavedAt) > 60 || settings.trip?.stops.count != n.stops.count {
             rememberTrip(n)
         }

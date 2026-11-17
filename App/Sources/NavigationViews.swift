@@ -80,7 +80,6 @@ struct NavigationOverlay: View {
             VStack(spacing: 10) {
                 if nav.arrived {
                     ArrivedCard(name: nav.destination.name, onPark: nav.route.mode == .drive ? { model.saveParking() } : nil,
-                                saved: model.autoParked,
                                 note: nav.wazeWarned > 0 ? "Waze drivers warned you about \(nav.wazeWarned) report\(nav.wazeWarned == 1 ? "" : "s") on the way" : nil) { model.endNavigation() }
                 } else {
                     InstructionBanner(nav: nav)
@@ -751,8 +750,6 @@ struct FasterRouteCard: View {
 struct ArrivedCard: View {
     let name: String
     var onPark: (() -> Void)?
-    /** The parking spot was already saved by itself. */
-    var saved = false
     var note: String?
     let done: () -> Void
     @State private var parked = false
@@ -785,14 +782,13 @@ struct ArrivedCard: View {
                 .fixedSize(horizontal: fit, vertical: false)
             Text(name).font(.system(size: 18, weight: .semibold)).lineLimit(fit ? 1 : 3)
                 .fixedSize(horizontal: fit, vertical: !fit)
-            if saved { Label("Parking spot saved", systemImage: "parkingsign").font(.subheadline.weight(.semibold)).opacity(0.95) }
             if let note { Text(note).font(.subheadline).opacity(0.85).lineLimit(2) }
         }
     }
 
     private var buttons: some View {
         HStack(spacing: 14) {
-            if let onPark, !parked, !saved {
+            if let onPark, !parked {
                 Button { onPark(); parked = true } label: {
                     Image(systemName: "parkingsign").font(.system(size: 22, weight: .bold))
                         .frame(width: 56, height: 56)
