@@ -57,16 +57,18 @@ class NavGlide : Choreographer.FrameCallback {
     private var line: List<LatLng> = emptyList()
     private var cum = DoubleArray(1)
     private var targetAcross = 600.0
+    private var targetPitch = 50.0
 
     private var shownAlong: Double? = null
     private var shownCoord: LatLng? = null
     private var shownBearing = 0.0
     private var shownAcross = 600.0
+    private var shownPitch = 50.0
 
     private fun nowS() = System.nanoTime() / 1e9
 
     /** Called on every GPS fix while navigating. */
-    fun fix(n: Navigator, loc: Fix, across: Double, jump: Boolean) {
+    fun fix(n: Navigator, loc: Fix, across: Double, pitch: Double = 50.0, jump: Boolean) {
         nav = n
         val p = n.progress
         val poly = n.route.polyline
@@ -83,11 +85,13 @@ class NavGlide : Choreographer.FrameCallback {
         fixCourse = if (loc.courseKnown && loc.speed > 2) loc.course else -1.0
         fixBearing = if (fixCourse >= 0) fixCourse else (p?.routeBearing ?: shownBearing)
         targetAcross = across
+        targetPitch = pitch
         if (jump || shownCoord == null) {
             shownAlong = if (onRoute) fixAlong else null
             shownCoord = if (onRoute) coord(fixAlong) else fixCoord
             shownBearing = fixBearing
             shownAcross = across
+            shownPitch = pitch
         }
         start()
         if (jump) step(0.0)
@@ -154,7 +158,10 @@ class NavGlide : Choreographer.FrameCallback {
         var turn = (bearingTarget - shownBearing) % 360
         if (turn > 180) turn -= 360 else if (turn < -180) turn += 360
         shownBearing = (shownBearing + turn * (if (dt == 0.0) 1.0 else 1 - exp(-dt / 0.4)) + 360) % 360
-        shownAcross += (targetAcross - shownAcross) * (if (dt == 0.0) 1.0 else 1 - exp(-dt / 1.0))
+        // Zooming in for a turn takes about a second; easing back out afterwards is gentler.
+        val zoomTime = if (targetAcross < shownAcross) 1.0 else 2.0
+        shownAcross += (targetAcross - shownAcross) * (if (dt == 0.0) 1.0 else 1 - exp(-dt / zoomTime))
+        shownPitch += (targetPitch - shownPitch) * (if (dt == 0.0) 1.0 else 1 - exp(-dt / zoomTime))
 
         val style = m.style ?: return
         if (n.following) {
@@ -177,7 +184,7 @@ class NavGlide : Choreographer.FrameCallback {
             // A pitched camera sees farther than the same zoom flat: zoom in a little to match the iPhone's distance.
             val zoom = MapCam.zoomFor(shownAcross, coordNow.lat, 400f) + 0.35
             m.moveCamera(CameraUpdateFactory.newCameraPosition(
-                CameraPosition.Builder().target(coordNow.ml()).zoom(zoom).tilt(50.0).bearing(shownBearing)
+                CameraPosition.Builder().target(coordNow.ml()).zoom(zoom).tilt(shownPitch).bearing(shownBearing)
                     .padding(0.0, topInset(heightDp) * d, 0.0, BOTTOM_INSET * d).build()))
         }
     }

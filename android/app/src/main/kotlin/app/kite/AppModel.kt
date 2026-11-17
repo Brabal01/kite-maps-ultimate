@@ -730,11 +730,9 @@ class AppModel {
 
     private fun followCamera(n: Navigator, f: Fix, animated: Boolean) {
         val p = n.progress
-        val speed = max(0.0, f.speed)
-        var across = if (n.route.mode == TravelMode.DRIVE) min(1400.0, max(450.0, 300 + speed * 30)) else 300.0
-        // Close to a roundabout, zoom in so the whole of it and its exits fill the view.
-        if (n.nextManeuver?.type == ManeuverType.ROUNDABOUT && p != null && p.distanceToNext < 350) across = min(across, 380.0)
-        glide.fix(n, f, across, jump = !animated)
+        // Further out on long stretches, closer in and flatter just before a turn (see NavZoom).
+        val view = NavZoom.view(f.speed, p?.distanceToNext, n.nextManeuver?.type, n.route.mode == TravelMode.DRIVE)
+        glide.fix(n, f, view.across, view.pitch, jump = !animated)
     }
 
     // Map

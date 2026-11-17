@@ -45,15 +45,17 @@ final class NavGlide: NSObject {
     private var line: [LatLng] = []
     private var cum: [Double] = []
     private var targetAcross: Double = 600
+    private var targetPitch: Double = 50
 
     // What is on screen now.
     private var shownAlong: Double?
     private var shownCoord: CLLocationCoordinate2D?
     private var shownBearing: Double = 0
     private var shownAcross: Double = 600
+    private var shownPitch: Double = 50
 
     /** Called on every GPS fix while navigating. */
-    func fix(_ n: Navigator, _ loc: CLLocation, across: Double, jump: Bool) {
+    func fix(_ n: Navigator, _ loc: CLLocation, across: Double, pitch: Double = 50, jump: Bool) {
         nav = n
         let p = n.progress
         let poly = n.route.polyline
@@ -70,11 +72,13 @@ final class NavGlide: NSObject {
         fixCourse = loc.course >= 0 && loc.speed > 2 ? loc.course : -1
         fixBearing = fixCourse >= 0 ? fixCourse : (p?.routeBearing ?? shownBearing)
         targetAcross = across
+        targetPitch = pitch
         if jump || shownCoord == nil {
             shownAlong = onRoute ? fixAlong : nil
             shownCoord = onRoute ? coord(at: fixAlong) : fixCoord
             shownBearing = fixBearing
             shownAcross = across
+            shownPitch = pitch
         }
         start()
         if jump { step(dt: 0) }
@@ -142,7 +146,10 @@ final class NavGlide: NSObject {
         var turn = (bearingTarget - shownBearing).truncatingRemainder(dividingBy: 360)
         if turn > 180 { turn -= 360 } else if turn < -180 { turn += 360 }
         shownBearing = (shownBearing + turn * (dt == 0 ? 1 : 1 - exp(-dt / 0.4)) + 360).truncatingRemainder(dividingBy: 360)
-        shownAcross += (targetAcross - shownAcross) * (dt == 0 ? 1 : 1 - exp(-dt / 1.0))
+        // Zooming in for a turn takes about a second; easing back out afterwards is gentler.
+        let zoomTime = targetAcross < shownAcross ? 1.0 : 2.0
+        shownAcross += (targetAcross - shownAcross) * (dt == 0 ? 1 : 1 - exp(-dt / zoomTime))
+        shownPitch += (targetPitch - shownPitch) * (dt == 0 ? 1 : 1 - exp(-dt / zoomTime))
 
         if let src = map.style?.source(withIdentifier: "vela-puck") as? MLNShapeSource {
             let f = MLNPointFeature()
@@ -151,7 +158,7 @@ final class NavGlide: NSObject {
             src.shape = f
         }
         if n.following {
-            let cam = MLNMapCamera(lookingAtCenter: coordNow, acrossDistance: shownAcross, pitch: 50, heading: shownBearing)
+            let cam = MLNMapCamera(lookingAtCenter: coordNow, acrossDistance: shownAcross, pitch: shownPitch, heading: shownBearing)
             let pad = UIEdgeInsets(top: Self.topInset(map.bounds.height), left: leftInset, bottom: Self.bottomInset, right: 0)
             map.setCamera(cam, withDuration: 0, animationTimingFunction: nil, edgePadding: pad, completionHandler: nil)
         }

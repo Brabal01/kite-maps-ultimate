@@ -776,11 +776,9 @@ final class AppModel: ObservableObject {
 
     private func followCamera(_ n: Navigator, _ loc: CLLocation, animated: Bool) {
         let p = n.progress
-        let speed = max(0, loc.speed)
-        var across = n.route.mode == .drive ? min(1400, max(450, 300 + speed * 30)) : 300
-        // Close to a roundabout, zoom in so the whole of it and its exits fill the view.
-        if n.nextManeuver?.type == .roundabout, let d = p?.distanceToNext, d < 350 { across = min(across, 380) }
-        glide.fix(n, loc, across: across, jump: !animated)
+        // Further out on long stretches, closer in and flatter just before a turn (see NavZoom).
+        let view = NavZoom.view(speed: loc.speed, toNext: p?.distanceToNext, next: n.nextManeuver?.type, driving: n.route.mode == .drive)
+        glide.fix(n, loc, across: view.across, pitch: view.pitch, jump: !animated)
     }
 
     // MARK: Map

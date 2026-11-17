@@ -40,6 +40,8 @@ import kotlin.math.*
 class KiteMap(private val model: AppModel, private val context: Context) {
     companion object {
         const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
+        /** How see-through cameras and reports off your route are while driving. */
+        const val OFF_ROUTE_OPACITY = 0.3
         /** Reports that always keep their own icon, never joining a numbered bubble. */
         val NEVER_GROUPED = setOf(WazeAlert.Kind.POLICE, WazeAlert.Kind.ACCIDENT)
         private fun c(hex: Long, a: Float = 1f) = Color.argb((a * 255).toInt(), ((hex shr 16) and 0xFF).toInt(), ((hex shr 8) and 0xFF).toInt(), (hex and 0xFF).toInt())
@@ -60,6 +62,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     private var lastMineKey = ""
     private var lastPuckKey = ""
     private var lastHeadKey = ""
+    private var lastNextRoadKey = ""
     private var styledDriving: Boolean? = null
     private var lastCameraKey = ""
     private var lastSignalsKey = ""
@@ -137,7 +140,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         heatTiles.styleReloaded()
         styledDriving = null
         repaint()
-        lastResultsKey = ""; lastRouteKey = ""; lastMineKey = ""; lastPuckKey = ""; lastHeadKey = ""; lastCameraKey = ""; lastSignalsKey = ""; lastWazeKey = ""; lastLiveKey = ""
+        lastResultsKey = ""; lastRouteKey = ""; lastMineKey = ""; lastPuckKey = ""; lastHeadKey = ""; lastNextRoadKey = ""; lastCameraKey = ""; lastSignalsKey = ""; lastWazeKey = ""; lastLiveKey = ""
         enableLocation(style)
         render()
         loadCameras(m); loadWazeCameras(m); loadWaze(m); loadLiveCams(m); updateHeat(m)
@@ -319,7 +322,9 @@ class KiteMap(private val model: AppModel, private val context: Context) {
             iconSize(interpolate(linear(), zoom(),
                 stop(11, switchCase(big, literal(1.0), literal(0.7))),
                 stop(14, switchCase(big, literal(1.33), literal(0.92))),
-                stop(17, switchCase(big, literal(1.65), literal(1.15)))))).apply { minZoom = 11f; setFilter(not(has("point_count"))) })
+                stop(17, switchCase(big, literal(1.65), literal(1.15))))),
+            // While driving, cameras off your route fade back (see renderCameras).
+            iconOpacity(coalesce(get("op"), literal(1.0)))).apply { minZoom = 11f; setFilter(not(has("point_count"))) })
         groupBubbles(style, "vela-cameras", 0xFF8A00)
 
         src("vela-waze-heat")
@@ -369,11 +374,12 @@ class KiteMap(private val model: AppModel, private val context: Context) {
 
         src("vela-turn-arrow")
         val shaft = eq(get("part"), literal("shaft"))
-        val arrowShadow = line("vela-turn-arrow-shadow", "vela-turn-arrow", Color.BLACK, 11f).withProperties(
+        val arrowShadow = line("vela-turn-arrow-shadow", "vela-turn-arrow", Color.BLACK, 22f).withProperties(
             lineOpacity(0.35f), lineBlur(4f), lineTranslate(arrayOf(0f, 2f)))
         arrowShadow.setFilter(shaft)
-        val arrowEdge = line("vela-turn-arrow-edge", "vela-turn-arrow", c(0x0F766E), 15f).withProperties(lineOpacity(0f)); arrowEdge.setFilter(shaft)
-        val arrowLine = line("vela-turn-arrow", "vela-turn-arrow", Color.WHITE, 7f); arrowLine.setFilter(shaft)
+        // A big white arrow with a teal edge, like Waze's, so it's clear at a glance.
+        val arrowEdge = line("vela-turn-arrow-edge", "vela-turn-arrow", c(0x0F766E), 23f); arrowEdge.setFilter(shaft)
+        val arrowLine = line("vela-turn-arrow", "vela-turn-arrow", Color.WHITE, 15f); arrowLine.setFilter(shaft)
         // The head has a source of its own, updated only when the turn changes: the map fades a symbol
         // in afresh each time its source changes, which would keep the head see-through.
         src("vela-turn-head")
@@ -382,6 +388,14 @@ class KiteMap(private val model: AppModel, private val context: Context) {
             iconAllowOverlap(true), iconIgnorePlacement(true))
         listOf(arrowShadow, arrowEdge, arrowLine, head).forEach { style.addLayer(it) }
 
+        // The name of the road you're about to turn onto, lit up in a teal pill on the road itself.
+        // Its own source, updated only when the turn changes, like the head.
+        src("vela-next-road")
+        style.addLayer(SymbolLayer("vela-next-road", "vela-next-road").withProperties(
+            iconImage("road-pill"), iconTextFit(Property.ICON_TEXT_FIT_BOTH), iconTextFitPadding(arrayOf(5f, 11f, 5f, 11f)),
+            textField(get("label")), textFont(arrayOf("Noto Sans Bold")), textSize(16f), textColor(c(0x06201C)),
+            textPitchAlignment(Property.TEXT_PITCH_ALIGNMENT_VIEWPORT), iconAllowOverlap(true), textAllowOverlap(true)))
+
         src(NavGlide.PUCK)
         style.addLayer(SymbolLayer(NavGlide.PUCK, NavGlide.PUCK).withProperties(
             iconImage("puck"), iconRotate(get("bearing")), iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
@@ -389,6 +403,19 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     }
 
     // Render
+
+    /** The road a turn goes onto, for the pill on the map: "Stoneham Way" from "Turn left onto Stoneham Way". */
+    private fun nextRoadName(m: Maneuver): String? {
+        val text = SpokenText.forScreen(m.instruction)
+        val at = text.lastIndexOf(" onto ")
+        val road = m.road
+        val name = when {
+            at >= 0 -> text.substring(at + 6)
+            !road.isNullOrEmpty() && text.contains(road) -> SpokenText.forScreen(road)
+            else -> null
+        }?.trim()?.trimEnd('.')?.trim()
+        return name?.takeIf { it.isNotEmpty() && it.length <= 40 }
+    }
 
     private fun setShape(style: Style, id: String, features: List<Feature>) {
         (style.getSource(id) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(features))
@@ -472,7 +499,9 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         val s = model.settings
         val line = model.nav?.route?.polyline ?: model.directions?.route?.polyline ?: emptyList()
         val waze = s.speedCameras && s.wazeOn
-        val key = "${s.speedCameras}${s.plateCameras}${s.surveillanceCameras}${surveillance.size}${cameras.size}${line.size}${line.firstOrNull()?.lat ?: 0}$waze${WazeCameras.shared.version}"
+        // While driving, only what's on your way stands out: everything off the route fades back.
+        val driving = model.nav?.route?.mode == TravelMode.DRIVE
+        val key = "${s.speedCameras}${s.plateCameras}${s.surveillanceCameras}${surveillance.size}${cameras.size}${line.size}${line.firstOrNull()?.lat ?: 0}$waze${WazeCameras.shared.version}$driving"
         if (key == lastCameraKey) return
         lastCameraKey = key
         val mapped = cameras.values.filter { if (it.kind == RoadCamera.Kind.SPEED) s.speedCameras else s.plateCameras }
@@ -482,12 +511,14 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         val features = shown.map { cam ->
             val onRoute = cum != null && Geo.project(cam.location, line, cum).offset < 40
             point(cam.location, mapOf("icon" to if (cam.kind == RoadCamera.Kind.SPEED) "cam-speed" else "cam-plate",
-                "big" to if (onRoute) 1 else 0, "surveillanceId" to if (cam.kind == RoadCamera.Kind.PLATE) cam.id.toString() else ""))
+                "big" to if (onRoute) 1 else 0, "op" to if (driving && !onRoute) OFF_ROUTE_OPACITY else 1.0,
+                "surveillanceId" to if (cam.kind == RoadCamera.Kind.PLATE) cam.id.toString() else ""))
         }.toMutableList()
         if (s.surveillanceCameras) {
             for (camera in surveillance.values) {
                 if (camera.isALPR && s.plateCameras && cameras[camera.id] != null) continue
-                features.add(point(camera.location, mapOf("icon" to if (camera.isALPR) "cam-plate" else "cam-surveillance", "big" to 0, "surveillanceId" to camera.id.toString())))
+                features.add(point(camera.location, mapOf("icon" to if (camera.isALPR) "cam-plate" else "cam-surveillance", "big" to 0,
+                    "op" to if (driving) OFF_ROUTE_OPACITY else 1.0, "surveillanceId" to camera.id.toString())))
             }
         }
         setShape(style, "vela-cameras", features)
@@ -506,15 +537,20 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         val history = WazeHistory.all
         val kinds = s.wazeKinds.map { it.key }.sorted().joinToString("")
         val live = model.nav?.liveAlerts ?: emptyList()
-        val key = "${s.wazeOn}${s.wazeOnMap}${s.wazeHeatmap}${s.wazeMaxAge}$kinds$wazeAt${history.size}${live.joinToString("") { it.id }}"
+        // While driving, reports off your route fade back so the ones you'll meet stand out.
+        val route = if (model.nav?.route?.mode == TravelMode.DRIVE) model.nav?.route?.polyline ?: emptyList() else emptyList()
+        val key = "${s.wazeOn}${s.wazeOnMap}${s.wazeHeatmap}${s.wazeMaxAge}$kinds$wazeAt${history.size}${live.joinToString("") { it.id }}${route.size}${route.firstOrNull()?.lat ?: 0}"
         if (key == lastWazeKey) return
         lastWazeKey = key
         val ids = wazeAlerts.map { it.id }.toSet()
         val all = wazeAlerts + live.filter { !ids.contains(it.id) }
         val shown = if (s.wazeOn && s.wazeOnMap) all.filter { s.shows(it) } else emptyList()
+        val cum = if (route.size >= 2) Geo.cumulative(route) else null
         fun feature(a: WazeAlert): Feature {
             val age = (now() - a.reportedAtMillis) / 1000.0
-            return point(a.location, mapOf("id" to a.id, "icon" to "waze-${a.kind.key}", "op" to max(0.5, 1 - age / 14_400)))
+            var op = max(0.5, 1 - age / 14_400)
+            if (cum != null && Geo.project(a.location, route, cum).offset > 60) op = OFF_ROUTE_OPACITY
+            return point(a.location, mapOf("id" to a.id, "icon" to "waze-${a.kind.key}", "op" to op))
         }
         // Police and crashes matter most, so they never get grouped into a bubble.
         val (alone, grouped) = shown.partition { it.kind in NEVER_GROUPED }
@@ -697,8 +733,8 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         } ?: emptyList())
         val r = main
         if (r == null) {
-            for (id in listOf("vela-route", "vela-route-traffic", "vela-route-bubbles", "vela-route-done", "vela-turn-arrow", "vela-turn-head")) setShape(style, id, emptyList())
-            lastHeadKey = ""
+            for (id in listOf("vela-route", "vela-route-traffic", "vela-route-bubbles", "vela-route-done", "vela-turn-arrow", "vela-turn-head", "vela-next-road")) setShape(style, id, emptyList())
+            lastHeadKey = ""; lastNextRoadKey = ""
             return
         }
         val cum = Geo.cumulative(r.polyline)
@@ -713,32 +749,40 @@ class KiteMap(private val model: AppModel, private val context: Context) {
             val piece = Geo.slice(r.polyline, a, b, cum)
             if (piece.size >= 2) polyline(piece, mapOf("level" to min(s.level, 3))) else null
         })
-        // Turn arrow: 35 m of road before the next turn and 22 m after it.
+        // Turn arrow: 50 m of road before the next turn and 40 m into the new road.
         val m = n?.nextManeuver
         val p = n?.progress
         var arrow = emptyList<Feature>()
         var head: Pair<LatLng, Double>? = null
+        var nextRoad: Pair<LatLng, String>? = null
         if (n != null && m != null && p != null && m.type != ManeuverType.ARRIVE && m.type != ManeuverType.DEPART &&
             m.type != ManeuverType.STRAIGHT && m.alongMeters - p.alongMeters < 600) {
-            var end = m.alongMeters + 22
+            var end = m.alongMeters + 40
             if (m.type == ManeuverType.ROUNDABOUT) {
                 n.route.maneuvers.firstOrNull { it.leavesRoundabout && it.alongMeters > m.alongMeters }?.let {
-                    if (it.alongMeters - m.alongMeters < 250) end = it.alongMeters + 22
+                    if (it.alongMeters - m.alongMeters < 250) end = it.alongMeters + 40
                 }
             }
-            val a = max(m.alongMeters - 35, from); val b = min(end, total)
+            val a = max(m.alongMeters - 50, from); val b = min(end, total)
             val shaft = Geo.slice(r.polyline, a, b, cum)
             if (shaft.size >= 2) {
                 val tip = shaft.last(); val prev = Geo.point(r.polyline, max(a, b - 4), cum)
                 arrow = listOf(polyline(shaft, mapOf("part" to "shaft")))
                 head = tip to Geo.bearing(prev, tip)
             }
+            // The new road's name, a little way into it (past the end of the arrow).
+            nextRoadName(m)?.let { nextRoad = Geo.point(r.polyline, min(end + 30, total), cum) to it }
         }
         setShape(style, "vela-turn-arrow", arrow)
         val headKey = head?.let { (t, b) -> String.format(java.util.Locale.US, "%.6f,%.6f,%.0f", t.lat, t.lng, b) } ?: ""
         if (headKey != lastHeadKey) {
             lastHeadKey = headKey
             setShape(style, "vela-turn-head", head?.let { (t, b) -> listOf(point(t, mapOf("bearing" to b))) } ?: emptyList())
+        }
+        val nextRoadKey = nextRoad?.let { (at, name) -> String.format(java.util.Locale.US, "%.6f,%.6f,%s", at.lat, at.lng, name) } ?: ""
+        if (nextRoadKey != lastNextRoadKey) {
+            lastNextRoadKey = nextRoadKey
+            setShape(style, "vela-next-road", nextRoad?.let { (at, name) -> listOf(point(at, mapOf("label" to name))) } ?: emptyList())
         }
         if (n != null || d == null) { setShape(style, "vela-route-bubbles", emptyList()); return }
         val bubbles = d.current.mapIndexed { i, route ->

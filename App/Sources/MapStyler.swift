@@ -21,12 +21,13 @@ enum MapStyler {
         var border: UIColor
     }
 
-    // Night: near-black land with quiet grey roads, so the teal route and the warnings are what you see.
+    // Night: near-black land with quiet roads, so the teal route and the warnings are what you see.
+    // Motorways a soft blue and A roads a soft green, like British road signs; smaller roads grey.
     static let dark = Palette(
         land: UIColor(hex: 0x12161D), water: UIColor(hex: 0x15273B), park: UIColor(hex: 0x15291F),
         pitch: UIColor(hex: 0x15291F), landuse: UIColor(hex: 0x161B23), landuseOpacity: 0.5,
         building: UIColor(hex: 0x1A2029), buildingOutline: UIColor(hex: 0x202733),
-        minor: UIColor(hex: 0x29313D), major: UIColor(hex: 0x353F4E), motorway: UIColor(hex: 0x465264),
+        minor: UIColor(hex: 0x29313D), major: UIColor(hex: 0x2F4C3D), motorway: UIColor(hex: 0x34507C),
         service: UIColor(hex: 0x1F2630), path: UIColor(hex: 0x1C222B),
         casing: UIColor(hex: 0x12161D), motorwayCasing: UIColor(hex: 0x12161D),
         rail: UIColor(hex: 0x252C37),
@@ -35,13 +36,14 @@ enum MapStyler {
         roadLabel: UIColor(hex: 0xD5DBE5), roadHalo: UIColor(hex: 0x12161D),
         border: UIColor(hex: 0x5F6977))
 
+    // Day: white streets, with motorways and A roads tinted blue and green like the road signs.
     static let light = Palette(
         land: UIColor(hex: 0xF2F1EE), water: UIColor(hex: 0x90DAEE), park: UIColor(hex: 0xCFECCD),
         pitch: UIColor(hex: 0xD3F8E2), landuse: UIColor(hex: 0xF2F1EE), landuseOpacity: 1,
         building: UIColor(hex: 0xDDE1E7), buildingOutline: UIColor(hex: 0xC4C9D1),
-        minor: .white, major: .white, motorway: UIColor(hex: 0xF9D27A),
+        minor: .white, major: UIColor(hex: 0xD3EDCF), motorway: UIColor(hex: 0xA9C5EE),
         service: .white, path: UIColor(hex: 0xDCDFE4),
-        casing: UIColor(hex: 0xDADDE2), motorwayCasing: UIColor(hex: 0xF0B85A),
+        casing: UIColor(hex: 0xDADDE2), motorwayCasing: UIColor(hex: 0x86A9DD),
         rail: UIColor(hex: 0xC4C9D1),
         airport: UIColor(hex: 0xE6E8EC), runway: UIColor(hex: 0xD0D4DA),
         label: nil, halo: nil,
@@ -122,6 +124,12 @@ enum MapStyler {
     private static var savedLabelSizes: [String: NSExpression] = [:]
     private static var savedShieldSpacing: [String: NSExpression] = [:]
     private static var savedShieldPadding: [String: NSExpression] = [:]
+    private static var savedLineOpacity: [String: NSExpression] = [:]
+
+    /** Side streets and service roads: a little quieter while driving, so the roads that matter stand out. */
+    private static func sideRoad(_ id: String) -> Bool {
+        (id.hasPrefix("road_") || id.hasPrefix("bridge_") || id.hasPrefix("tunnel_")) && (id.contains("minor") || id.contains("service_track"))
+    }
 
     /** Strips the map to roads, water, parks and big road names while navigating, and puts it back after. */
     static func drive(_ style: MLNStyle, on: Bool) {
@@ -138,6 +146,11 @@ enum MapStyler {
                 }
                 s.symbolSpacing = on ? NSExpression(forConstantValue: 900) : savedShieldSpacing[id]!
                 s.iconPadding = on ? NSExpression(forConstantValue: 30) : savedShieldPadding[id]!
+                continue
+            }
+            if let l = layer as? MLNLineStyleLayer, sideRoad(id) {
+                if savedLineOpacity[id] == nil { savedLineOpacity[id] = l.lineOpacity }
+                l.lineOpacity = on ? NSExpression(forConstantValue: 0.6) : savedLineOpacity[id]!
                 continue
             }
             if let s = layer as? MLNSymbolStyleLayer, id == "highway-name-major" || id == "highway-name-minor" {

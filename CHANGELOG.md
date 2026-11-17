@@ -5,6 +5,23 @@ the middle number for big milestones.
 
 ## 0.7.15 (iPhone and Android)
 
+A clearer map while you drive, picked by Matteo from six ideas (1 to 4):
+
+- **Zoom that follows your next turn:** on a long straight road the map pulls back and tilts up
+  so you see far ahead. About 300 yards before a turn it glides in and flattens, so the whole
+  junction and the road you turn onto fill the screen, then eases back out after it. The faster
+  you're going the further out it stays, so a motorway exit still shows the slip road.
+- **A big turn arrow on the road:** the arrow drawn on the road at your next turn is now a chunky
+  white arrow with a teal edge, like Waze's, and it reaches further back and further into the
+  new road, so it's clear at a glance.
+- **Roads that look like British roads:** motorways are a soft blue and A roads a soft green, like
+  the road signs (dark and quiet at night, so the teal route still stands out). In the day the
+  yellow motorways are now blue too.
+- **The next road's name on the map:** the road you're about to turn onto has its name in a teal
+  pill on the road itself.
+- **Quieter off your route:** while driving, cameras and drivers' reports that aren't on your
+  route fade back, and side streets are a little darker. Cameras on your route stay big and bright.
+
 - **Parking is back to manual only.** Kite no longer saves where you parked by itself when a drive
   ends, and the "Save where I parked when a drive ends" switch is gone from Settings. To save your
   spot, tap the P button on the "You've arrived" card or on the map, as before 0.7.12.

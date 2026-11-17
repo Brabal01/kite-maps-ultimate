@@ -37,6 +37,7 @@ enum MapIcons {
         style.setImage(puck(dark: true), forName: "puck")
         style.setImage(bubble(fill: UIColor(hex: 0x0F766E), stroke: .white), forName: "bubble-sel")
         style.setImage(bubble(fill: .white, stroke: UIColor(hex: 0xBDC1C6)), forName: "bubble-alt")
+        style.setImage(bubble(fill: UIColor(hex: 0x2DD4BF), stroke: UIColor(hex: 0x0F766E)), forName: "road-pill")
         style.setImage(speedCamera(), forName: "cam-speed")
         style.setImage(plateCamera(), forName: "cam-plate")
         style.setImage(surveillanceCamera(), forName: "cam-surveillance")
@@ -56,26 +57,23 @@ enum MapIcons {
     }
 
     /** Vela's speed camera badge: amber rounded square, head-on camera with a big lens and flash slit. */
-    /** The head of the turn arrow drawn on the road: plain white with a soft shadow, pointing up. */
+    /** The head of the turn arrow drawn on the road: big and white with a teal edge and a soft shadow, pointing up. */
     static func turnHead() -> UIImage {
-        let size = CGSize(width: 44, height: 40)
+        let size = CGSize(width: 64, height: 60)
         return UIGraphicsImageRenderer(size: size).image { ctx in
             let p = UIBezierPath()
-            p.move(to: CGPoint(x: 22, y: 6))
-            p.addLine(to: CGPoint(x: 38, y: 32))
-            p.addLine(to: CGPoint(x: 6, y: 32))
+            p.move(to: CGPoint(x: 32, y: 7))
+            p.addLine(to: CGPoint(x: 57, y: 46))
+            p.addLine(to: CGPoint(x: 7, y: 46))
             p.close()
             p.lineJoinStyle = .round
-            ctx.cgContext.setShadow(offset: CGSize(width: 0, height: 2), blur: 3, color: UIColor.black.withAlphaComponent(0.4).cgColor)
-            UIColor.white.setStroke()
-            p.lineWidth = 4
+            ctx.cgContext.setShadow(offset: CGSize(width: 0, height: 2), blur: 4, color: UIColor.black.withAlphaComponent(0.4).cgColor)
+            UIColor(hex: 0x0F766E).setStroke()
+            p.lineWidth = 8
             p.stroke()
             ctx.cgContext.setShadow(offset: .zero, blur: 0, color: nil)
             UIColor.white.setFill()
-            UIColor.white.setStroke()
-            p.lineWidth = 2.5
             p.fill()
-            p.stroke()
         }
     }
 

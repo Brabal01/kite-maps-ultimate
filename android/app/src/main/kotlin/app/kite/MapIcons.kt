@@ -82,6 +82,7 @@ object MapIcons {
         style.addImage("puck", puck(dark))
         style.addImage("bubble-sel", bubble(c(0x0F766E), Color.WHITE))
         style.addImage("bubble-alt", bubble(Color.WHITE, c(0xBDC1C6)))
+        style.addImage("road-pill", bubble(c(0x2DD4BF), c(0x0F766E)))
         style.addImage("cam-speed", speedCamera())
         style.addImage("cam-plate", plateCamera())
         style.addImage("cam-surveillance", badge(c(0x22863A)) { cv, _ -> drawIcon(cv, Icons.Filled.Videocam, RectF(12f, 12f, 34f, 34f), Color.WHITE) })
@@ -99,15 +100,15 @@ object MapIcons {
         style.addImage("mine-saved", dot(Icons.Filled.Bookmark, c(0x0F9D58)))
     }
 
-    fun turnHead() = image(44f, 40f) { cv ->
-        val p = Path().apply { moveTo(22f, 6f); lineTo(38f, 32f); lineTo(6f, 32f); close() }
+    /** The head of the turn arrow drawn on the road: big and white with a teal edge, pointing up. */
+    fun turnHead() = image(64f, 60f) { cv ->
+        val p = Path().apply { moveTo(32f, 7f); lineTo(57f, 46f); lineTo(7f, 46f); close() }
         // A soft shadow drawn by hand (a paint's own shadow comes out wrong on some phones' maps).
         cv.save(); cv.translate(0f, 2f)
-        cv.drawPath(p, paint(c(0x000000, 0.18f), Paint.Style.STROKE, 11f))
+        cv.drawPath(p, paint(c(0x000000, 0.18f), Paint.Style.STROKE, 14f))
         cv.restore()
-        cv.drawPath(p, paint(Color.WHITE, Paint.Style.STROKE, 4f))
+        cv.drawPath(p, paint(c(0x0F766E), Paint.Style.STROKE, 8f))
         cv.drawPath(p, paint(Color.WHITE))
-        cv.drawPath(p, paint(Color.WHITE, Paint.Style.STROKE, 2.5f))
     }
 
     fun speedCamera() = badge(c(0xEF6C00)) { cv, amber ->
