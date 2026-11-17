@@ -770,8 +770,8 @@ class KiteMap(private val model: AppModel, private val context: Context) {
                 arrow = listOf(polyline(shaft, mapOf("part" to "shaft")))
                 head = tip to Geo.bearing(prev, tip)
             }
-            // The new road's name, a little way into it (past the end of the arrow).
-            nextRoadName(m)?.let { nextRoad = Geo.point(r.polyline, min(end + 30, total), cum) to it }
+            // The new road's name, a little way into it, clear of the arrow head.
+            nextRoadName(m)?.let { nextRoad = Geo.point(r.polyline, min(end + 90, total), cum) to it }
         }
         setShape(style, "vela-turn-arrow", arrow)
         val headKey = head?.let { (t, b) -> String.format(java.util.Locale.US, "%.6f,%.6f,%.0f", t.lat, t.lng, b) } ?: ""

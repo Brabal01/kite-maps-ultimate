@@ -1024,9 +1024,9 @@ struct VelaMapView: UIViewRepresentable {
                 } else {
                     arrowSrc?.shape = nil
                 }
-                // The new road's name, a little way into it (past the end of the arrow).
+                // The new road's name, a little way into it, clear of the arrow head.
                 if let name = Self.nextRoadName(m) {
-                    let at = Geo.point(along: r.polyline, meters: min(end + 30, total), cumulative: cum)
+                    let at = Geo.point(along: r.polyline, meters: min(end + 90, total), cumulative: cum)
                     let f = MLNPointFeature()
                     f.coordinate = CLLocationCoordinate2D(latitude: at.lat, longitude: at.lng)
                     f.attributes = ["label": name]
