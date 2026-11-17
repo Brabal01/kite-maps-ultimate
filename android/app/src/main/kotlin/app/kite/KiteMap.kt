@@ -771,7 +771,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
                 head = tip to Geo.bearing(prev, tip)
             }
             // The new road's name, a little way into it, clear of the arrow head.
-            nextRoadName(m)?.let { nextRoad = Geo.point(r.polyline, min(end + 90, total), cum) to it }
+            nextRoadName(m)?.let { nextRoad = Geo.point(r.polyline, min(end + 55, total), cum) to it }
         }
         setShape(style, "vela-turn-arrow", arrow)
         val headKey = head?.let { (t, b) -> String.format(java.util.Locale.US, "%.6f,%.6f,%.0f", t.lat, t.lng, b) } ?: ""
