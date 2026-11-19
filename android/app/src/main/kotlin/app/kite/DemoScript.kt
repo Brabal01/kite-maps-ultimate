@@ -265,7 +265,9 @@ object DemoScript {
             }
             "roundabout", "uk", "nextlimit", "flat", "northup", "closer", "wider" -> {
                 st.units = UnitsMode.YARDS
-                val to = Place("demo-pitlochry", "Pitlochry", LatLng(56.7030, -3.7340), "demo")
+                // The 2D, north-up and zoom views only need a drive going: a short one starts quicker.
+                val to = if (step in setOf("flat", "northup", "closer", "wider")) Place("demo-oxford", "Oxford", LatLng(51.7520, -1.2577), "demo")
+                    else Place("demo-pitlochry", "Pitlochry", LatLng(56.7030, -3.7340), "demo")
                 model.select(to); delay(2000)
                 model.openDirections(to)
                 // A long drive's route can take a while: wait for it rather than a fixed time.
