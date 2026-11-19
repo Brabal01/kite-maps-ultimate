@@ -14,7 +14,7 @@
       }
     },
     "address": "https://raw.githubusercontent.com/MatteoFX1/kite-maps/fdroid/repo",
-    "timestamp": 1794913566000,
+    "timestamp": 1795089719000,
     "categories": {
       "Navigation": {
         "name": {
@@ -26,12 +26,12 @@
   "packages": {
     "app.kite": {
       "metadata": {
-        "added": 1794718993000,
+        "added": 1794753539000,
         "categories": [
           "Navigation"
         ],
         "issueTracker": "https://github.com/MatteoFX1/kite-maps/issues",
-        "lastUpdated": 1794913560000,
+        "lastUpdated": 1795089713000,
         "license": "GPL-3.0-only",
         "sourceCode": "https://github.com/MatteoFX1/kite-maps",
         "authorName": "Kite Maps",
@@ -47,6 +47,68 @@
         "preferredSigner": "22bb174caed240788374d18488c7c3e57d0f81ce070427293deee30073670cad"
       },
       "versions": {
+        "4c5d64f42a0ce5e5a40591d83223961f650edd1b7dfdc3dd750bebd22d6785e6": {
+          "added": 1795089713000,
+          "file": {
+            "name": "/app.kite_716.apk",
+            "sha256": "4c5d64f42a0ce5e5a40591d83223961f650edd1b7dfdc3dd750bebd22d6785e6",
+            "size": 43724036
+          },
+          "manifest": {
+            "nativecode": [
+              "arm64-v8a",
+              "armeabi-v7a",
+              "x86",
+              "x86_64"
+            ],
+            "versionName": "0.7.16",
+            "versionCode": 716,
+            "usesSdk": {
+              "minSdkVersion": 26,
+              "targetSdkVersion": 35
+            },
+            "signer": {
+              "sha256": [
+                "22bb174caed240788374d18488c7c3e57d0f81ce070427293deee30073670cad"
+              ]
+            },
+            "usesPermission": [
+              {
+                "name": "android.permission.INTERNET"
+              },
+              {
+                "name": "android.permission.ACCESS_NETWORK_STATE"
+              },
+              {
+                "name": "android.permission.ACCESS_FINE_LOCATION"
+              },
+              {
+                "name": "android.permission.ACCESS_COARSE_LOCATION"
+              },
+              {
+                "name": "android.permission.FOREGROUND_SERVICE"
+              },
+              {
+                "name": "android.permission.FOREGROUND_SERVICE_LOCATION"
+              },
+              {
+                "name": "android.permission.POST_NOTIFICATIONS"
+              },
+              {
+                "name": "android.permission.WAKE_LOCK"
+              },
+              {
+                "name": "android.permission.VIBRATE"
+              },
+              {
+                "name": "android.permission.ACCESS_WIFI_STATE"
+              },
+              {
+                "name": "app.kite.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+              }
+            ]
+          }
+        },
         "86c54e2a40be56f605468cde5d37cae0ae4f7eabdad7450e62c51ba92f612ecd": {
           "added": 1794913560000,
           "file": {
@@ -125,68 +187,6 @@
             ],
             "versionName": "0.7.14",
             "versionCode": 714,
-            "usesSdk": {
-              "minSdkVersion": 26,
-              "targetSdkVersion": 35
-            },
-            "signer": {
-              "sha256": [
-                "22bb174caed240788374d18488c7c3e57d0f81ce070427293deee30073670cad"
-              ]
-            },
-            "usesPermission": [
-              {
-                "name": "android.permission.INTERNET"
-              },
-              {
-                "name": "android.permission.ACCESS_NETWORK_STATE"
-              },
-              {
-                "name": "android.permission.ACCESS_FINE_LOCATION"
-              },
-              {
-                "name": "android.permission.ACCESS_COARSE_LOCATION"
-              },
-              {
-                "name": "android.permission.FOREGROUND_SERVICE"
-              },
-              {
-                "name": "android.permission.FOREGROUND_SERVICE_LOCATION"
-              },
-              {
-                "name": "android.permission.POST_NOTIFICATIONS"
-              },
-              {
-                "name": "android.permission.WAKE_LOCK"
-              },
-              {
-                "name": "android.permission.VIBRATE"
-              },
-              {
-                "name": "android.permission.ACCESS_WIFI_STATE"
-              },
-              {
-                "name": "app.kite.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
-              }
-            ]
-          }
-        },
-        "b67c69938152cea1dc3b36a5b0eb6cc95956c4b44dd460fe724da3e34321decb": {
-          "added": 1794753539000,
-          "file": {
-            "name": "/app.kite_713.apk",
-            "sha256": "b67c69938152cea1dc3b36a5b0eb6cc95956c4b44dd460fe724da3e34321decb",
-            "size": 43707652
-          },
-          "manifest": {
-            "nativecode": [
-              "arm64-v8a",
-              "armeabi-v7a",
-              "x86",
-              "x86_64"
-            ],
-            "versionName": "0.7.13",
-            "versionCode": 713,
             "usesSdk": {
               "minSdkVersion": 26,
               "targetSdkVersion": 35

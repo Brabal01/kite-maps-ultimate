@@ -1,6 +1,6 @@
 {
   "repo": {
-    "timestamp": 1794913566000,
+    "timestamp": 1795089719000,
     "version": 20002,
     "name": "Kite Maps",
     "icon": "icon.png",
@@ -17,20 +17,86 @@
       "categories": [
         "Navigation"
       ],
-      "suggestedVersionCode": "715",
+      "suggestedVersionCode": "716",
       "description": "Kite is a maps and sat nav app built for driving: a big, clear driving screen,\nlane guidance and real roundabout pictures, speed cameras with direction, the\nspeed limit and your speed, live road alerts and a police heat map.\n\nNo account and no tracking. Works without Google Play Services.",
       "issueTracker": "https://github.com/MatteoFX1/kite-maps/issues",
       "license": "GPL-3.0-only",
       "name": "Kite Maps",
       "sourceCode": "https://github.com/MatteoFX1/kite-maps",
       "summary": "Driving-first maps with speed cameras, lanes and live road alerts",
-      "added": 1794718993000,
+      "added": 1794753539000,
       "packageName": "app.kite",
-      "lastUpdated": 1794913560000
+      "lastUpdated": 1795089713000
     }
   ],
   "packages": {
     "app.kite": [
+      {
+        "added": 1795089713000,
+        "apkName": "app.kite_716.apk",
+        "hash": "4c5d64f42a0ce5e5a40591d83223961f650edd1b7dfdc3dd750bebd22d6785e6",
+        "hashType": "sha256",
+        "minSdkVersion": 26,
+        "nativecode": [
+          "arm64-v8a",
+          "armeabi-v7a",
+          "x86",
+          "x86_64"
+        ],
+        "packageName": "app.kite",
+        "sig": "6796aa3882d44801a10abfd660409649",
+        "signer": "22bb174caed240788374d18488c7c3e57d0f81ce070427293deee30073670cad",
+        "size": 43724036,
+        "targetSdkVersion": 35,
+        "uses-permission": [
+          [
+            "android.permission.INTERNET",
+            null
+          ],
+          [
+            "android.permission.ACCESS_NETWORK_STATE",
+            null
+          ],
+          [
+            "android.permission.ACCESS_FINE_LOCATION",
+            null
+          ],
+          [
+            "android.permission.ACCESS_COARSE_LOCATION",
+            null
+          ],
+          [
+            "android.permission.FOREGROUND_SERVICE",
+            null
+          ],
+          [
+            "android.permission.FOREGROUND_SERVICE_LOCATION",
+            null
+          ],
+          [
+            "android.permission.POST_NOTIFICATIONS",
+            null
+          ],
+          [
+            "android.permission.WAKE_LOCK",
+            null
+          ],
+          [
+            "android.permission.VIBRATE",
+            null
+          ],
+          [
+            "android.permission.ACCESS_WIFI_STATE",
+            null
+          ],
+          [
+            "app.kite.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            null
+          ]
+        ],
+        "versionCode": 716,
+        "versionName": "0.7.16"
+      },
       {
         "added": 1794913560000,
         "apkName": "app.kite_715.apk",
@@ -162,72 +228,6 @@
         ],
         "versionCode": 714,
         "versionName": "0.7.14"
-      },
-      {
-        "added": 1794753539000,
-        "apkName": "app.kite_713.apk",
-        "hash": "b67c69938152cea1dc3b36a5b0eb6cc95956c4b44dd460fe724da3e34321decb",
-        "hashType": "sha256",
-        "minSdkVersion": 26,
-        "nativecode": [
-          "arm64-v8a",
-          "armeabi-v7a",
-          "x86",
-          "x86_64"
-        ],
-        "packageName": "app.kite",
-        "sig": "6796aa3882d44801a10abfd660409649",
-        "signer": "22bb174caed240788374d18488c7c3e57d0f81ce070427293deee30073670cad",
-        "size": 43707652,
-        "targetSdkVersion": 35,
-        "uses-permission": [
-          [
-            "android.permission.INTERNET",
-            null
-          ],
-          [
-            "android.permission.ACCESS_NETWORK_STATE",
-            null
-          ],
-          [
-            "android.permission.ACCESS_FINE_LOCATION",
-            null
-          ],
-          [
-            "android.permission.ACCESS_COARSE_LOCATION",
-            null
-          ],
-          [
-            "android.permission.FOREGROUND_SERVICE",
-            null
-          ],
-          [
-            "android.permission.FOREGROUND_SERVICE_LOCATION",
-            null
-          ],
-          [
-            "android.permission.POST_NOTIFICATIONS",
-            null
-          ],
-          [
-            "android.permission.WAKE_LOCK",
-            null
-          ],
-          [
-            "android.permission.VIBRATE",
-            null
-          ],
-          [
-            "android.permission.ACCESS_WIFI_STATE",
-            null
-          ],
-          [
-            "app.kite.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
-            null
-          ]
-        ],
-        "versionCode": 713,
-        "versionName": "0.7.13"
       }
     ]
   }
