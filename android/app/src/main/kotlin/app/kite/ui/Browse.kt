@@ -69,7 +69,7 @@ fun BrowseOverlay(model: AppModel) {
         }
         val navBottom = with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }
 
-        // Map buttons: layers, parking and the compass on the right, under the top cards.
+        // Map buttons: layers, parking and the 3D/2D/north-up button on the right, under the top cards.
         Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = if (idle) (if (model.resumeOffer != null) 266.dp else 166.dp) else 76.dp)) {
                 Spacer(Modifier.weight(1f))
@@ -81,11 +81,9 @@ fun BrowseOverlay(model: AppModel) {
                             if (p != null) model.select(p) else model.saveParking()
                         }
                     }
-                    AnimatedVisibility(model.mapHeading > 1 && model.mapHeading < 359, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
-                        CompassNeedle(model.mapHeading) {
-                            model.map?.let { m -> MapCam.animate(m, org.maplibre.android.camera.CameraPosition.Builder(m.cameraPosition).bearing(0.0).build(), ms = 300) }
-                        }
-                    }
+                    // 3D, 2D or north up, always there. On north up with the map turned by hand,
+                    // the needle shows which way north is and a tap faces north again.
+                    MapLookButton(model.browseLook, model.mapHeading, 48.dp) { model.cycleBrowseLook(ctx) }
                 }
             }
             Spacer(Modifier.weight(1f))

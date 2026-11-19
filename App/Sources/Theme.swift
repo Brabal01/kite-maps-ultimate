@@ -30,6 +30,9 @@ enum Vela {
     /** Behind whole pages (Saved, Settings). */
     static func ground(_ scheme: ColorScheme) -> Color { scheme == .dark ? Color(hex: 0x0E1726) : Color(hex: 0xF2F5F9) }
     static func chip(_ scheme: ColorScheme) -> Color { scheme == .dark ? Color(hex: 0x243349) : Color(hex: 0xEDF1F6) }
+    /** A soft amber for "worth knowing" chips, like a longer route or a road charge. */
+    static func warnFill(_ scheme: ColorScheme) -> Color { scheme == .dark ? Color(hex: 0x3A2A10) : Color(hex: 0xFDEFD9) }
+    static func warnText(_ scheme: ColorScheme) -> Color { scheme == .dark ? Color(hex: 0xFBBF24) : Color(hex: 0x9A4A08) }
     static func tonal(_ scheme: ColorScheme) -> Color { scheme == .dark ? Color(hex: 0x12403C) : Color(hex: 0xCCFBF1) }
     static func onTonal(_ scheme: ColorScheme) -> Color { scheme == .dark ? Color(hex: 0x99F6E4) : Color(hex: 0x134E4A) }
     static func muted(_ scheme: ColorScheme) -> Color { scheme == .dark ? Color(hex: 0x94A3B8) : Color(hex: 0x64748B) }
@@ -319,6 +322,46 @@ struct MapFab: View {
                 .glass(Circle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/**
+ The map's view button: "3D", "2D", or a compass needle for north up. It shows the view the map is in
+ now, and a tap goes on to the next one. The needle turns with the map, so it always points north.
+ */
+struct MapLookButton: View {
+    let look: MapLook
+    /** Which way the map faces, in degrees, so the needle points north. */
+    var heading: Double = 0
+    var size: CGFloat = 52
+    let action: () -> Void
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                switch look {
+                case .tilted, .flat:
+                    Text(look == .tilted ? "3D" : "2D")
+                        .font(.system(size: size * 0.34, weight: .heavy, design: .rounded))
+                        .foregroundColor(.primary)
+                case .north:
+                    ZStack {
+                        CompassNeedle()
+                        Text("N").font(.system(size: size * 0.2, weight: .heavy, design: .rounded))
+                            .foregroundColor(Color(hex: 0xEA4335))
+                            .offset(y: -size * 0.33)
+                    }
+                    .rotationEffect(.degrees(-heading))
+                }
+            }
+            .frame(width: size, height: size)
+            .glass(Circle())
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Map view: \(look.title)")
+        .accessibilityHint("Switches between 3D, 2D and north up")
     }
 }
 

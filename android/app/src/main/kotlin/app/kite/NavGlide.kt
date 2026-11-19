@@ -2,6 +2,7 @@ package app.kite
 
 import android.view.Choreographer
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.kite.core.*
@@ -39,7 +40,7 @@ class NavGlide : Choreographer.FrameCallback {
         fun topInset(height: Float): Float =
             if (height < 500) max(0f, min(height * TOP_FRACTION, height - BOTTOM_INSET - 100)) else height * TOP_FRACTION
         /** The car's height on a screen [height] dp tall, for things drawn next to it. */
-        fun carY(height: Float): Float = (topInset(height) + height - BOTTOM_INSET) / 2
+        fun carY(height: Float, north: Float = 0f): Float = (topInset(height) * (1 - north) + height - BOTTOM_INSET) / 2
         const val PUCK = "vela-puck"
     }
 
@@ -58,6 +59,19 @@ class NavGlide : Choreographer.FrameCallback {
     private var cum = DoubleArray(1)
     private var targetAcross = 600.0
     private var targetPitch = 50.0
+    /** 3D, 2D or north up, from the map button. */
+    var look = MapLook.TILTED
+    /** 0 facing the way you go, 1 north up; eased so a tap turns the map rather than jumping. */
+    private var northBlend = 0.0
+
+    /**
+     * For the car drawn on screen: how far up toward the middle it has moved (1 in north up), how far it
+     * turns (only north up turns it), and how flat it lies (squashed on the tilted map, round in 2D).
+     * Read inside drawing lambdas, so each frame only redraws the car.
+     */
+    var carNorth by mutableFloatStateOf(0f); private set
+    var carTurn by mutableFloatStateOf(0f); private set
+    var carSquash by mutableFloatStateOf(0.64f); private set
 
     private var shownAlong: Double? = null
     private var shownCoord: LatLng? = null
@@ -92,6 +106,7 @@ class NavGlide : Choreographer.FrameCallback {
             shownBearing = fixBearing
             shownAcross = across
             shownPitch = pitch
+            northBlend = if (look == MapLook.NORTH) 1.0 else 0.0
         }
         start()
         if (jump) step(0.0)
@@ -179,13 +194,26 @@ class NavGlide : Choreographer.FrameCallback {
                 puckPushed = coordNow; puckPushedAt = now; puckPushedBearing = shownBearing; puckOnMap = true
             }
         }
+        val northTarget = if (look == MapLook.NORTH) 1.0 else 0.0
+        northBlend += (northTarget - northBlend) * (if (dt == 0.0) 1.0 else 1 - exp(-dt / 0.3))
+        if (abs(northTarget - northBlend) < 0.001) northBlend = northTarget
         if (n.following) {
             val d = KiteApp.app.resources.displayMetrics.density.toDouble()
+            // North up: the map turns to face north and the car moves up to the middle, as the road
+            // ahead can be any way round. Otherwise it faces the way you go with the car low down.
+            var toNorth = (-shownBearing) % 360
+            if (toNorth > 180) toNorth -= 360 else if (toNorth < -180) toNorth += 360
+            val heading = (shownBearing + toNorth * northBlend + 360) % 360
+            var carAngle = (shownBearing - heading) % 360
+            if (carAngle > 180) carAngle -= 360 else if (carAngle < -180) carAngle += 360
+            carNorth = northBlend.toFloat()
+            carTurn = carAngle.toFloat()
+            carSquash = (1 - 0.36 * (shownPitch / 50.0).coerceIn(0.0, 1.0)).toFloat()
             // A pitched camera sees farther than the same zoom flat: zoom in a little to match the iPhone's distance.
             val zoom = MapCam.zoomFor(shownAcross, coordNow.lat, 400f) + 0.35
             m.moveCamera(CameraUpdateFactory.newCameraPosition(
-                CameraPosition.Builder().target(coordNow.ml()).zoom(zoom).tilt(shownPitch).bearing(shownBearing)
-                    .padding(0.0, topInset(heightDp) * d, 0.0, BOTTOM_INSET * d).build()))
+                CameraPosition.Builder().target(coordNow.ml()).zoom(zoom).tilt(shownPitch).bearing(heading)
+                    .padding(0.0, topInset(heightDp) * (1 - northBlend) * d, 0.0, BOTTOM_INSET * d).build()))
         }
     }
 

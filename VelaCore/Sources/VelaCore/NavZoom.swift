@@ -46,4 +46,67 @@ public enum NavZoom {
         }
         return View(across: across, pitch: pitch)
     }
+
+    /** How far ahead the next lower limit shows: about 15 seconds at your speed, 200 to 600 m. */
+    public static func limitHeadsUp(speed: Double) -> Double { min(600, max(200, max(0, speed) * 15)) }
+}
+
+/** How close the driving map sits, picked in Settings. Normal is the zoom Kite always had. */
+public enum MapZoom: String, CaseIterable, Sendable {
+    case closer, normal, wider
+
+    public var title: String {
+        switch self {
+        case .closer: return "Closer"
+        case .normal: return "Normal"
+        case .wider: return "Wider"
+        }
+    }
+
+    /** Times the normal distance across the screen. */
+    public var scale: Double {
+        switch self {
+        case .closer: return 0.7
+        case .normal: return 1
+        case .wider: return 1.4
+        }
+    }
+}
+
+/** Which way the map looks: tilted toward the road ahead, flat facing ahead, or flat with north up. */
+public enum MapLook: String, CaseIterable, Sendable {
+    case tilted, flat, north
+
+    /** The next one for the map button: 3D, then 2D, then north up, then round again. */
+    public var next: MapLook {
+        switch self {
+        case .tilted: return .flat
+        case .flat: return .north
+        case .north: return .tilted
+        }
+    }
+
+    /** What the button says for a moment after a tap. */
+    public var title: String {
+        switch self {
+        case .tilted: return "3D view"
+        case .flat: return "2D view"
+        case .north: return "North up"
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .tilted: return "Tilted toward the road ahead"
+        case .flat: return "Flat, facing the way you go"
+        case .north: return "Flat, with north at the top"
+        }
+    }
+}
+
+public extension NavZoom.View {
+    /** This view with the zoom setting and the map button's choice applied. */
+    func applying(_ zoom: MapZoom, _ look: MapLook) -> NavZoom.View {
+        NavZoom.View(across: across * zoom.scale, pitch: look == .tilted ? pitch : 0)
+    }
 }

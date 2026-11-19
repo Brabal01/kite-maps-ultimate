@@ -92,6 +92,9 @@ struct SettingsView: View {
         if DemoScript.step == "wazesettings" {
             // Straight into the Waze screen, for the build's screenshot of it.
             NavigationView { WazeSettingsView(settings: settings) }.navigationViewStyle(.stack)
+        } else if DemoScript.step == "mapsettings" {
+            // Straight into Map & display, for the screenshot of the map zoom setting.
+            NavigationView { mapPage }.navigationViewStyle(.stack)
         } else {
             main
         }
@@ -111,7 +114,7 @@ struct SettingsView: View {
                     }
                     menuRow("Live cameras", detail: "Road camera photos and scenic webcams", value: settings.liveCams ? "On" : "Off",
                             icon: "web.camera.fill", color: 0x0284C7) { liveCamsPage }
-                    menuRow("Map & display", detail: "Theme, units, parking button", icon: "circle.lefthalf.filled", color: 0x334155) { mapPage }
+                    menuRow("Map & display", detail: "Theme, units, map zoom, parking button", icon: "circle.lefthalf.filled", color: 0x334155) { mapPage }
                     menuRow("My places", detail: "Home and work", icon: "house.fill", color: 0x16A34A) { placesPage }
                     menuRow("Privacy", detail: "Use Kite without Google", value: settings.noGoogle ? "On" : nil,
                             icon: "lock.fill", color: 0x475569) { privacyPage }
@@ -243,6 +246,21 @@ struct SettingsView: View {
                     ForEach(UnitsMode.allCases) { Text($0.label).tag($0) }
                 } label: { SettingLabel("Distance units", icon: "ruler.fill", color: 0x0891B2) }
                 Toggle(isOn: $settings.parkingButton) { SettingLabel("Parking button on the map", icon: "parkingsign", color: 0x2563EB) }
+            }
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    SettingLabel("Map zoom while driving", icon: "plus.magnifyingglass", color: 0x0F766E)
+                    Picker("Map zoom while driving", selection: $settings.mapZoom) {
+                        ForEach(MapZoom.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("While driving")
+            } footer: {
+                Text("Kite still zooms in for turns and out on long roads. Closer shows the streets bigger; Wider shows more road ahead. Normal is how Kite has always been.")
             }
         }
         .kiteList()

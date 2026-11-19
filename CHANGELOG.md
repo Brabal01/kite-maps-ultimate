@@ -3,6 +3,26 @@
 Every version of Kite Maps, newest first. The small number goes up for fixes and polish, and
 the middle number for big milestones.
 
+## 0.7.16 (iPhone and Android)
+
+Four ideas from a Kite user on GitHub, picked by Matteo:
+
+- **The next speed limit, before you get there:** when the limit is about to drop (say a 60 down
+  to a 30), a small sign with the distance appears above your speed sign, about 15 seconds ahead.
+  It counts down and goes once the new limit starts. It sits in the same column as the speed sign,
+  so it never covers the arrow. It only uses the map's own limits: no limit in the map, no sign.
+- **Faster route details:** the "Faster route" card now also says when the new way is longer or
+  shorter (by a quarter of a mile or more), and if it adds a pay-later charge like the Dartford
+  Crossing. A route that's just faster looks the same as before.
+- **3D, 2D or north up in one tap:** a round button on the driving screen, above the speaker. Each
+  tap goes to the next: tilted (as before), flat facing the way you go, and flat with north at the
+  top (the car moves up to the middle). Directions carry on, and Kite remembers your choice. The
+  same button is on the map when you're not on a route, where it replaces the compass: 3D and 2D
+  follow you round, north up is the map as before. Dragging the map stops following; Centre on me
+  picks it up again.
+- **Map zoom while driving:** Settings, Map & display has Closer, Normal and Wider. Kite still zooms
+  in for turns and out on long roads; this moves the whole thing in or out. Normal is unchanged.
+
 ## 0.7.15 (iPhone and Android)
 
 A clearer map while you drive, picked by Matteo from six ideas (1 to 4):

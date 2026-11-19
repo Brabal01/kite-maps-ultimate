@@ -18,8 +18,9 @@ struct NavigationOverlay: View {
         return "On my way to \(nav.destination.name), arriving around \(Fmt.arrival(left)) (\(Fmt.duration(left)) away).\(link)"
     }
 
-    /** The voice choice just picked, shown by the speaker button for a moment. */
-    @State private var voiceNote: VoiceMode?
+    /** The voice or map view just picked, shown by its button for a moment. */
+    @State private var buttonNote: ButtonNote?
+    @ObservedObject private var settings = AppSettings.shared
     /** The warning shown for a few seconds after tapping the "also ahead" pill. */
     @State private var peek: NavAlert?
 
@@ -160,12 +161,12 @@ struct NavigationOverlay: View {
                     // Only worth a look while driving when it isn't low; it would otherwise sit by the road name.
                     // On a short phone (SE) a warning card plus lanes leaves no room: the chip gives way to the card.
                     if showRiskChip, !(mainAlert != nil && Self.shortScreen), let risk = nav.policeRisk { PoliceRiskChip(score: risk) }
-                    SpeedBadge(mps: nav.speedMps, limitKmh: nav.speedLimitKmh)
+                    SpeedBadge(mps: nav.speedMps, limitKmh: nav.speedLimitKmh, coming: nav.limitDropAhead)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 10) {
-                    if let note = voiceNote {
-                        // Says which of the three the speaker is on now, for a moment.
+                    if let note = buttonNote {
+                        // Says which of the three the speaker (or the map view) is on now, for a moment.
                         VStack(alignment: .leading, spacing: 2) {
                             Text(note.title).font(.system(size: 18, weight: .bold)).foregroundColor(Vela.accentText(.dark))
                             Text(note.detail).font(.system(size: 15, weight: .medium)).foregroundColor(.white)
@@ -175,17 +176,24 @@ struct NavigationOverlay: View {
                         .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
                         .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomTrailing)))
                     }
+                    // 3D, 2D or north up: one tap each, and the drive carries on.
+                    MapLookButton(look: settings.driveLook, size: 52) {
+                        model.cycleDriveLook()
+                        let look = settings.driveLook
+                        withAnimation(.easeOut(duration: 0.2)) { buttonNote = ButtonNote(title: look.title, detail: look.detail) }
+                    }
                     MapFab(icon: nav.voiceMode.icon, tint: nav.voiceMode == .alerts ? Vela.accentText(scheme) : .primary, size: 52) {
                         nav.voiceMode = nav.voiceMode.next
-                        withAnimation(.easeOut(duration: 0.2)) { voiceNote = nav.voiceMode }
+                        let v = nav.voiceMode
+                        withAnimation(.easeOut(duration: 0.2)) { buttonNote = ButtonNote(title: v.title, detail: v.detail) }
                     }
                     .accessibilityLabel("Voice: \(nav.voiceMode.title)")
                     .accessibilityHint("Switches between voice on, alerts only and voice off")
                 }
-                .task(id: voiceNote) {
-                    guard voiceNote != nil else { return }
+                .task(id: buttonNote) {
+                    guard buttonNote != nil else { return }
                     try? await Task.sleep(nanoseconds: 2_500_000_000)
-                    withAnimation(.easeIn(duration: 0.25)) { voiceNote = nil }
+                    withAnimation(.easeIn(duration: 0.25)) { buttonNote = nil }
                 }
             }
             .padding(.horizontal, 16)
@@ -246,7 +254,7 @@ struct NavigationOverlay: View {
                         .glass(Capsule())
                         // Between the speed sign and the mute button, which sit level with it now the car is lower.
                         .frame(maxWidth: panel > 0 ? g.size.width - panel - 80 : g.size.width - 240)
-                        .position(x: panel + (g.size.width - panel) / 2, y: roadPillY(g.size.height))
+                        .position(x: panel + (g.size.width - panel) / 2, y: roadPillY(g.size.height, north: settings.driveLook == .north))
                 }
             }
             .ignoresSafeArea()
@@ -500,6 +508,8 @@ enum LaneGuide {
 struct SpeedBadge: View {
     let mps: Double
     var limitKmh: Double?
+    /** A lower limit coming up, shown small above the sign. */
+    var coming: LimitDrop?
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -520,16 +530,44 @@ struct SpeedBadge: View {
         Group {
             if let limitKmh {
                 VStack(spacing: 6) {
+                    // The next limit sits in the same column as the signs, never out toward the arrow.
+                    if let coming {
+                        NextLimitTile(drop: coming)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                     SpeedLimitSign(kmh: limitKmh, size: 66)
                     speed
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(v) \(metric ? "kilometres" : "miles") an hour" + (over ? ", over the limit" : ""))
+                .accessibilityLabel("\(v) \(metric ? "kilometres" : "miles") an hour" + (over ? ", over the limit" : "")
+                                    + (coming.map { ", limit drops to \(SpeedLimitSign.number($0.kmh)) in \(Fmt.distance($0.meters))" } ?? ""))
             } else {
                 speed
             }
         }
         .animation(.easeOut(duration: 0.25), value: over)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: coming != nil)
+    }
+}
+
+/**
+ The next lower limit, a little sign with how far to go under it, in a small tile the width of the
+ speed tile below. It counts down, and goes once the new limit starts and takes the big sign's place.
+ */
+struct NextLimitTile: View {
+    let drop: LimitDrop
+
+    var body: some View {
+        VStack(spacing: 3) {
+            SpeedLimitSign(kmh: drop.kmh, size: 40)
+            Text(Fmt.distance(drop.meters))
+                .font(.system(size: 13, weight: .bold)).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .foregroundColor(.primary)
+        }
+        .padding(.top, 8).padding(.bottom, 6)
+        .frame(width: 68)
+        .glass(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
 
@@ -537,6 +575,9 @@ struct SpeedBadge: View {
 struct SpeedLimitSign: View {
     let kmh: Double
     var size: CGFloat = 56
+
+    /** The number on the sign. */
+    static func number(_ kmh: Double) -> Int { Fmt.metric ? Int(kmh.rounded()) : Fmt.postedMph(kmh) }
 
     var body: some View {
         if Fmt.metric || Fmt.yards {
@@ -607,9 +648,15 @@ struct EndTripCard: View {
  * Where the road-name pill sits: just under the car, but on a phone with little height (iPhone mini)
  * that touches the trip bar, so it's kept 8 pt above the bar (64 tall, 4 off the bottom).
  */
-private func roadPillY(_ height: CGFloat) -> CGFloat {
+private func roadPillY(_ height: CGFloat, north: Bool = false) -> CGFloat {
     let safeBottom = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first?.safeAreaInsets.bottom ?? 0
-    return min(NavGlide.carY(height) + 46, height - safeBottom - 68 - 8 - 15)
+    return min(NavGlide.carY(height, north: north) + 46, height - safeBottom - 68 - 8 - 15)
+}
+
+/** A word by a map button for a moment after a tap: what it's on now. */
+struct ButtonNote: Equatable {
+    var title: String
+    var detail: String
 }
 
 struct TripBar: View {
@@ -703,6 +750,25 @@ struct TripBar: View {
 
 /** A faster route found on the way, in place of the trip bar: keep yours or take it. Left alone, it's taken. */
 struct FasterRouteCard: View {
+    /** The chips under the title: further or shorter, and any charge it adds. */
+    struct Fact: Hashable {
+        var text: String
+        var icon: String
+        var warn: Bool
+    }
+
+    static func facts(_ o: FasterOffer) -> [Fact] {
+        var out: [Fact] = []
+        // Under a quarter of a mile either way isn't worth a word.
+        if abs(o.extraMeters) >= 400 {
+            let d = Fmt.distance(abs(o.extraMeters))
+            out.append(o.extraMeters > 0 ? Fact(text: "\(d) longer", icon: "arrow.left.and.right", warn: true)
+                                         : Fact(text: "\(d) shorter", icon: "arrow.left.and.right", warn: false))
+        }
+        for c in o.newCharges { out.append(Fact(text: c, icon: "sterlingsign.circle.fill", warn: true)) }
+        return out
+    }
+
     let offer: FasterOffer
     let onKeep: () -> Void
     let onTake: () -> Void
@@ -717,6 +783,19 @@ struct FasterRouteCard: View {
                     .lineLimit(1).minimumScaleFactor(0.7)
                 Text((offer.via.map { "via \($0) · " } ?? "") + "taking it in a few seconds").font(.system(size: 16, weight: .medium))
                     .foregroundColor(Vela.muted(scheme)).lineLimit(1).minimumScaleFactor(0.75)
+            }
+            // What else changes: only shown when something does, so a plain faster way looks as before.
+            if !Self.facts(offer).isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(Self.facts(offer), id: \.self) { f in
+                        Label(f.text, systemImage: f.icon)
+                            .font(.system(size: 15, weight: .bold))
+                            .lineLimit(1).minimumScaleFactor(0.75)
+                            .padding(.horizontal, 10).frame(height: 32)
+                            .foregroundColor(f.warn ? Vela.warnText(scheme) : .primary)
+                            .background(Capsule().fill(f.warn ? Vela.warnFill(scheme) : Vela.chip(scheme)))
+                    }
+                }
             }
             Capsule().fill(Vela.accent(scheme)).frame(height: 4)
                 .scaleEffect(x: left, y: 1, anchor: .leading)

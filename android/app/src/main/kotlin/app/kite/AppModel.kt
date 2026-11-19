@@ -131,6 +131,13 @@ class AppModel {
     var mapTick by mutableIntStateOf(0)
     /** Which way the map faces, for the compass button. */
     var mapHeading by mutableStateOf(0.0)
+    /**
+     * The browse map's 3D, 2D or north-up button. North up is the map as it always was; 3D and 2D
+     * follow you round like the driving map, without a route. Starts north up each time Kite opens.
+     */
+    var browseLook by mutableStateOf(MapLook.NORTH)
+    /** Whether the browse map is following you in 3D or 2D; dragging the map stops it. */
+    var browseFollowing by mutableStateOf(false)
     /** Street View opened from a place. */
     var streetView by mutableStateOf<StreetViewRequest?>(null)
 
@@ -338,6 +345,8 @@ class AppModel {
         detent = SheetDetent.HALF
         if (!focus) return
         val m = map ?: return
+        browseFollowing = false
+        browseLook = MapLook.NORTH
         val zoom = max(MapCam.zoomFor(900.0, p.location.lat, mapWidthDp), min(m.cameraPosition.zoom, 18.0).let { if (it > 16) it else 0.0 })
         MapCam.animate(m, CameraPosition.Builder().target(p.location.ml()).zoom(zoom).tilt(0.0).bearing(0.0).build(),
             padding = intArrayOf(0, 120, 0, (mapHeightDp * 0.45f).toInt()), ms = 600)
@@ -680,6 +689,8 @@ class AppModel {
         DriveService.stop(KiteApp.app)
         directions = null
         showSteps = false
+        browseLook = MapLook.NORTH
+        browseFollowing = false
         resetCamera()
         mapTick++
     }
@@ -700,7 +711,7 @@ class AppModel {
 
     private fun locationChanged(f: Fix) {
         if (location.reducedAccuracy || f.accuracy > 200) areaRisk = null
-        val n = nav ?: return
+        val n = nav ?: run { followBrowse(f, entering = false); return }
         n.handle(f)
         followCamera(n, f, animated = true)
         tripCheck(n)
@@ -731,8 +742,59 @@ class AppModel {
     private fun followCamera(n: Navigator, f: Fix, animated: Boolean) {
         val p = n.progress
         // Further out on long stretches, closer in and flatter just before a turn (see NavZoom).
+        // Then the zoom setting (Closer, Normal, Wider) and the 3D, 2D or north-up button.
         val view = NavZoom.view(f.speed, p?.distanceToNext, n.nextManeuver?.type, n.route.mode == TravelMode.DRIVE)
+            .applying(settings.mapZoom, settings.driveLook)
+        glide.look = settings.driveLook
         glide.fix(n, f, view.across, view.pitch, jump = !animated)
+    }
+
+    /** The map button while driving: 3D, then 2D, then north up. Kept for the next drive. */
+    fun cycleDriveLook() {
+        settings.driveLook = settings.driveLook.next
+        val n = nav ?: return
+        n.following = true
+        location.last?.let { followCamera(n, it, animated = true) }
+    }
+
+    /**
+     * The map button off a route. North up with the map turned by hand: face north first, like the
+     * compass it replaces. Otherwise on to the next of 3D, 2D and north up.
+     */
+    fun cycleBrowseLook(ctx: android.content.Context) {
+        if (browseLook == MapLook.NORTH && mapHeading != 0.0) {
+            map?.let { m -> MapCam.animate(m, CameraPosition.Builder(m.cameraPosition).bearing(0.0).build(), ms = 300) }
+            return
+        }
+        browseLook = browseLook.next
+        if (browseLook == MapLook.NORTH) {
+            browseFollowing = false
+            resetCamera()
+            return
+        }
+        val loc = location.last
+        if (loc == null) {
+            if (location.denied) LocationService.openSettings(ctx) else location.start()
+            return
+        }
+        browseFollowing = true
+        followBrowse(loc, entering = true)
+    }
+
+    /**
+     * In 3D or 2D off a route, keeps you in the middle with the map facing the way you're going, as you
+     * move. Pinching to zoom is kept; dragging the map, or opening a place, stops it until Centre on me.
+     */
+    private fun followBrowse(f: Fix, entering: Boolean) {
+        val m = map ?: return
+        if (!browseFollowing || browseLook == MapLook.NORTH || nav != null) return
+        if (!entering && (selected != null || results.isNotEmpty() || directions != null)) return
+        val course = if (f.courseKnown && f.speed > 2) f.course else m.cameraPosition.bearing
+        val tilted = browseLook == MapLook.TILTED
+        val zoom = if (entering) MapCam.zoomFor(if (tilted) 700.0 else 900.0, f.lat, mapWidthDp) else m.cameraPosition.zoom
+        val tilt = if (tilted) (if (entering) 50.0 else max(m.cameraPosition.tilt, 30.0)) else 0.0
+        val pos = CameraPosition.Builder().target(f.coord.ml()).zoom(zoom).tilt(tilt).bearing(course).build()
+        MapCam.animate(m, pos, ms = if (entering) 600 else 900)
     }
 
     // Map
@@ -742,6 +804,12 @@ class AppModel {
         val loc = location.last
         if (m == null || loc == null) {
             if (location.denied) LocationService.openSettings(ctx) else location.start()
+            return
+        }
+        // In 3D or 2D, Centre on me picks up following again.
+        if (browseLook != MapLook.NORTH && nav == null) {
+            browseFollowing = true
+            followBrowse(loc, entering = true)
             return
         }
         MapCam.animate(m, CameraPosition.Builder().target(loc.coord.ml()).zoom(MapCam.zoomFor(1200.0, loc.lat, mapWidthDp))
@@ -758,6 +826,9 @@ class AppModel {
     fun frame(points: List<LatLng>, bottomFraction: Float = 0.45f, top: Int = 130) {
         val m = map ?: return
         if (points.isEmpty()) return
+        // Showing a place or a route: stop following, or the next fix would pull the map away.
+        browseFollowing = false
+        if (nav == null) browseLook = MapLook.NORTH
         if (points.size == 1) {
             MapCam.animate(m, CameraPosition.Builder().target(points[0].ml()).zoom(MapCam.zoomFor(1200.0, points[0].lat, mapWidthDp))
                 .tilt(0.0).bearing(0.0).build(), ms = 300)

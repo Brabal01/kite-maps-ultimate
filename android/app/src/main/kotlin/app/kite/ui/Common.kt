@@ -330,6 +330,31 @@ fun CompassNeedle(heading: Double, onClick: () -> Unit) {
     }
 }
 
+/**
+ * The map's view button: "3D", "2D", or a compass needle for north up. It shows the view the map is in
+ * now, and a tap goes on to the next one. The needle turns with the map, so it always points north.
+ */
+@Composable
+fun MapLookButton(look: MapLook, heading: Double = 0.0, size: Dp = 52.dp, onClick: () -> Unit) {
+    val gray = secondaryText
+    Box(Modifier.size(size).glass(CircleShape).clickable(onClick = onClick)
+        .semantics { contentDescription = "Map view: ${look.title}" }, contentAlignment = Alignment.Center) {
+        when (look) {
+            MapLook.TILTED, MapLook.FLAT -> Text(if (look == MapLook.TILTED) "3D" else "2D", fontSize = (size.value * 0.34f).sp,
+                fontWeight = FontWeight.Black, color = primaryText)
+            MapLook.NORTH -> Box(Modifier.size(size).rotate(-heading.toFloat()), contentAlignment = Alignment.Center) {
+                Canvas(Modifier.size(9.dp, 25.dp)) {
+                    val w = this.size.width; val h = this.size.height
+                    drawPath(Path().apply { moveTo(w / 2, 0f); lineTo(w, h / 2); lineTo(0f, h / 2); close() }, Color(0xFFEA4335))
+                    drawPath(Path().apply { moveTo(0f, h / 2); lineTo(w, h / 2); lineTo(w / 2, h); close() }, gray)
+                }
+                Text("N", fontSize = (size.value * 0.2f).sp, fontWeight = FontWeight.Black, color = Color(0xFFEA4335),
+                    modifier = Modifier.offset(y = -size * 0.33f))
+            }
+        }
+    }
+}
+
 /** Home or Work: one tap for directions, or to set it. */
 @Composable
 fun PlaceTile(model: AppModel, icon: ImageVector, color: Color, title: String, place: Place?, modifier: Modifier = Modifier,

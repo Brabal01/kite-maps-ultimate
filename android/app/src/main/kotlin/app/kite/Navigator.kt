@@ -13,7 +13,16 @@ data class CameraAlert(val kind: RoadCamera.Kind, val meters: Double, val startM
 data class WazeAhead(val alert: WazeAlert, val meters: Double, val startMeters: Double)
 data class AverageCheck(val limitKmh: Double?, val averageKmh: Double, val metersLeft: Double)
 /** A faster way found mid-drive: how much it saves, which road it takes, and when it's taken by itself if nothing is tapped. */
-class FasterOffer(val minutes: Int, val via: String?, val untilMillis: Long)
+class FasterOffer(
+    val minutes: Int, val via: String?, val untilMillis: Long,
+    /** How much further the new way is than what's left of yours (less than 0 when it's shorter). */
+    val extraMeters: Double = 0.0,
+    /** Pay-later road charges on the new way that yours didn't have, like the Dartford Crossing. */
+    val newCharges: List<String> = emptyList(),
+)
+
+/** A lower speed limit coming up: what it is, and how far. */
+data class LimitDrop(val kmh: Double, val meters: Double)
 
 /** How long the faster route card waits before taking the route by itself. */
 const val FASTER_WAIT_MS = 10_000L
@@ -228,6 +237,21 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
 
     /** The posted limit where the user is now, in km/h. */
     val speedLimitKmh: Double? get() = demoLimitKmh ?: route.speedLimit(progress?.alongMeters ?: 0.0)
+
+    /**
+     * A lower limit coming up, about 15 seconds ahead at your speed: shown small above the speed sign
+     * so there's time to ease off. Only from the map's own limits, never guessed; gone once it starts.
+     */
+    val limitDropAhead: LimitDrop?
+        get() {
+            demoLimitDrop?.let { return it }
+            val p = progress ?: return null
+            if (route.mode != TravelMode.DRIVE || arrived || p.offRoute) return null
+            val next = route.nextLimitDrop(p.alongMeters, NavZoom.limitHeadsUp(speedMps)) ?: return null
+            val kmh = next.kmh ?: return null
+            val meters = next.startMeters - p.alongMeters
+            return if (meters > 15) LimitDrop(kmh, meters) else null
+        }
 
     val nextManeuver: Maneuver?
         get() {
@@ -693,6 +717,13 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
     // For the build's screenshots only: made-up warnings, so every run shows the same thing.
     private var demoAlerts = false
     private var demoLimitKmh: Double? = null
+    private var demoLimitDrop: LimitDrop? = null
+
+    /** For the build's screenshots: 60 now, dropping to 30 in 300 yards. */
+    fun showDemoLimitDrop() {
+        demoLimitDrop = LimitDrop(48.3, 274.0)
+        showDemoSpeed(96.6, 52.0)
+    }
     var demoManeuver by mutableStateOf<Maneuver?>(null); private set
 
     fun showDemoRoundabout() {
@@ -799,7 +830,8 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
             val saving = current - fresh.durationSeconds
             val sameWay = abs(fresh.distanceMeters - nowP.remainingMeters) < max(300.0, nowP.remainingMeters * 0.03)
             if (!sameWay && saving > max(300.0, current * 0.1)) {
-                offerFaster(fresh, saving)
+                val left = Geo.slice(route.polyline, nowP.alongMeters, Geo.length(route.polyline))
+                offerFaster(fresh, saving, nowP.remainingMeters, left)
             } else if (sameWay) {
                 trafficScale = min(3.0, max(0.5, fresh.durationSeconds / planned))
             }
@@ -810,9 +842,12 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
      * A faster way is offered on a card with two big buttons, like Waze, rather than the line on the
      * map just changing. Left alone, it's taken after a few seconds, so ignoring it works as before.
      */
-    private fun offerFaster(fresh: Route, saving: Double) {
+    private fun offerFaster(fresh: Route, saving: Double, remainingMeters: Double, remainingLine: List<LatLng>) {
         val minutes = max(1, (saving / 60).roundToInt())
-        val offer = FasterOffer(minutes, fresh.summary, now() + FASTER_WAIT_MS)
+        // What else changes, so it's an easy call: longer or shorter, and any pay-later charge it adds.
+        val had = RoadCharges.on(remainingLine).map { it.name }.toSet()
+        val charges = RoadCharges.on(fresh.polyline).map { it.name }.filter { it !in had }
+        val offer = FasterOffer(minutes, fresh.summary, now() + FASTER_WAIT_MS, fresh.distanceMeters - remainingMeters, charges)
         fasterRoute = fresh
         fasterOffer = offer
         speak("Found a faster route. It saves $minutes minutes.")
@@ -840,7 +875,7 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
 
     /** For the build's screenshots: the faster route card. */
     fun showDemoFaster() {
-        fasterOffer = FasterOffer(6, "A3024", now() + 3600_000)
+        fasterOffer = FasterOffer(6, "A3024", now() + 3600_000, 3400.0, listOf("Dartford Crossing"))
     }
 
     private fun justPassed(p: RouteTracker.Progress): Boolean {

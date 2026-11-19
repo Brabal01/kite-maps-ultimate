@@ -137,6 +137,13 @@ final class AppModel: ObservableObject {
     @Published var mapTick = 0
     /** Which way the map faces, for the compass button. */
     @Published var mapHeading: Double = 0
+    /**
+     The browse map's 3D, 2D or north-up button. North up is the map as it always was; 3D and 2D
+     follow you round like the driving map, without a route. Starts north up each time Kite opens.
+     */
+    @Published var browseLook: MapLook = .north
+    /** Whether the browse map is following you in 3D or 2D; dragging the map stops it. */
+    @Published var browseFollowing = false
 
     weak var map: MLNMapView? { didSet { glide.map = map } }
     /** How wide the side panel is on a big screen (the open iPhone Duo), so the map centres
@@ -355,6 +362,8 @@ final class AppModel: ObservableObject {
         selected = p
         detent = .half
         guard focus, let map else { return }
+        browseFollowing = false
+        browseLook = .north
         let target = CLLocationCoordinate2D(latitude: p.location.lat, longitude: p.location.lng)
         let pad = sideInset > 0 ? UIEdgeInsets(top: 0, left: sideInset, bottom: 0, right: 0)
                                 : UIEdgeInsets(top: 120, left: 0, bottom: map.bounds.height * 0.45, right: 0)
@@ -739,7 +748,54 @@ final class AppModel: ObservableObject {
         map?.showsUserLocation = true
         directions = nil
         showSteps = false
+        browseLook = .north
+        browseFollowing = false
         resetCamera()
+    }
+
+    /**
+     The map button off a route. North up with the map turned by hand: face north first, like the
+     compass it replaces. Otherwise on to the next of 3D, 2D and north up.
+     */
+    func cycleBrowseLook() {
+        if browseLook == .north, mapHeading != 0 {
+            map?.setDirection(0, animated: true)
+            return
+        }
+        browseLook = browseLook.next
+        if browseLook == .north {
+            browseFollowing = false
+            resetCamera()
+            return
+        }
+        guard let loc = location.last else {
+            if location.denied { LocationService.openSettings() } else { location.start() }
+            return
+        }
+        browseFollowing = true
+        followBrowse(loc, entering: true)
+    }
+
+    /**
+     In 3D or 2D off a route, keeps you in the middle with the map facing the way you're going, as you
+     move. Pinching to zoom is kept; dragging the map, or opening a place, stops it until Centre on me.
+     */
+    private func followBrowse(_ loc: CLLocation, entering: Bool) {
+        guard browseFollowing, browseLook != .north, nav == nil, let map else { return }
+        guard entering || (selected == nil && results.isEmpty && directions == nil) else { return }
+        let course = loc.course >= 0 && loc.speed > 2 ? loc.course : map.direction
+        let cam: MLNMapCamera
+        if entering {
+            cam = MLNMapCamera(lookingAtCenter: loc.coordinate, acrossDistance: browseLook == .tilted ? 700 : 900,
+                               pitch: browseLook == .tilted ? 50 : 0, heading: course)
+        } else {
+            cam = map.camera
+            cam.centerCoordinate = loc.coordinate
+            cam.heading = course
+            cam.pitch = browseLook == .tilted ? max(cam.pitch, 30) : 0
+        }
+        map.setCamera(cam, withDuration: entering ? 0.6 : 0.9, animationTimingFunction: CAMediaTimingFunction(name: entering ? .easeInEaseOut : .linear),
+                      edgePadding: UIEdgeInsets(top: 0, left: sideInset, bottom: 0, right: 0), completionHandler: nil)
     }
 
     func recenterNav() {
@@ -758,7 +814,10 @@ final class AppModel: ObservableObject {
 
     private func locationChanged(_ loc: CLLocation) {
         if location.reducedAccuracy || loc.horizontalAccuracy > 200 { areaRisk = nil }
-        guard let n = nav else { return }
+        guard let n = nav else {
+            followBrowse(loc, entering: false)
+            return
+        }
         n.handle(loc)
         followCamera(n, loc, animated: true)
         mapTick += 1
@@ -777,8 +836,19 @@ final class AppModel: ObservableObject {
     private func followCamera(_ n: Navigator, _ loc: CLLocation, animated: Bool) {
         let p = n.progress
         // Further out on long stretches, closer in and flatter just before a turn (see NavZoom).
+        // Then the zoom setting (Closer, Normal, Wider) and the 3D, 2D or north-up button.
         let view = NavZoom.view(speed: loc.speed, toNext: p?.distanceToNext, next: n.nextManeuver?.type, driving: n.route.mode == .drive)
+            .applying(settings.mapZoom, settings.driveLook)
+        glide.look = settings.driveLook
         glide.fix(n, loc, across: view.across, pitch: view.pitch, jump: !animated)
+    }
+
+    /** The map button while driving: 3D, then 2D, then north up. Kept for the next drive. */
+    func cycleDriveLook() {
+        settings.driveLook = settings.driveLook.next
+        guard let n = nav else { return }
+        n.following = true
+        if let loc = location.last { followCamera(n, loc, animated: true) }
     }
 
     // MARK: Map
@@ -786,6 +856,12 @@ final class AppModel: ObservableObject {
     func centerOnUser() {
         guard let map, let loc = location.last ?? map.userLocation?.location else {
             if location.denied { LocationService.openSettings() } else { location.start() }
+            return
+        }
+        // In 3D or 2D, Centre on me picks up following again.
+        if browseLook != .north, nav == nil {
+            browseFollowing = true
+            followBrowse(loc, entering: true)
             return
         }
         let cam = MLNMapCamera(lookingAtCenter: loc.coordinate, acrossDistance: 1200, pitch: 0, heading: 0)
@@ -803,6 +879,9 @@ final class AppModel: ObservableObject {
 
     func frame(_ points: [LatLng], bottomFraction: CGFloat = 0.45, top: CGFloat = 130) {
         guard let map, !points.isEmpty else { return }
+        // Showing a place or a route: stop following, or the next fix would pull the map away.
+        browseFollowing = false
+        if nav == nil { browseLook = .north }
         if points.count == 1 {
             let c = CLLocationCoordinate2D(latitude: points[0].lat, longitude: points[0].lng)
             map.setCamera(MLNMapCamera(lookingAtCenter: c, acrossDistance: 1200, pitch: 0, heading: 0), withDuration: 0.3,

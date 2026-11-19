@@ -247,6 +247,18 @@ public struct Route: Identifiable, Hashable, Sendable {
         speedLimits.last { $0.startMeters <= meters }?.kmh
     }
 
+    /**
+     The next lower limit within [within] meters ahead of [meters], for a heads-up before it starts.
+     Only a known drop from a known limit counts: an unmapped stretch, or a limit that goes up first,
+     shows nothing, so nothing is ever guessed. Drops of under 5 km/h (map noise) don't count either.
+     */
+    public func nextLimitDrop(at meters: Double, within: Double) -> SpeedLimit? {
+        guard let now = speedLimit(at: meters) else { return nil }
+        guard let next = speedLimits.first(where: { $0.startMeters > meters }),
+              next.startMeters - meters <= within, let kmh = next.kmh, kmh < now - 5 else { return nil }
+        return next
+    }
+
     /** How much slower than usual, 0 when free-flowing: 0 green, 1 amber, 2 red. */
     public var delayLevel: Int {
         guard let t = trafficSeconds, typicalSeconds > 0 else { return 0 }

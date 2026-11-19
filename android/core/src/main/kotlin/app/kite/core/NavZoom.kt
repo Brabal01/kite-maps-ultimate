@@ -45,4 +45,34 @@ object NavZoom {
         }
         return View(across, pitch)
     }
+
+    /** How far ahead the next lower limit shows: about 15 seconds at your speed, 200 to 600 m. */
+    fun limitHeadsUp(speed: Double): Double = min(600.0, max(200.0, max(0.0, speed) * 15))
 }
+
+/** How close the driving map sits, picked in Settings. Normal is the zoom Kite always had. */
+enum class MapZoom(val title: String, val scale: Double) {
+    CLOSER("Closer", 0.7), NORMAL("Normal", 1.0), WIDER("Wider", 1.4);
+
+    companion object {
+        fun of(name: String?): MapZoom = entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: NORMAL
+    }
+}
+
+/** Which way the map looks: tilted toward the road ahead, flat facing ahead, or flat with north up. */
+enum class MapLook(val title: String, val detail: String) {
+    TILTED("3D view", "Tilted toward the road ahead"),
+    FLAT("2D view", "Flat, facing the way you go"),
+    NORTH("North up", "Flat, with north at the top");
+
+    /** The next one for the map button: 3D, then 2D, then north up, then round again. */
+    val next: MapLook get() = when (this) { TILTED -> FLAT; FLAT -> NORTH; NORTH -> TILTED }
+
+    companion object {
+        fun of(name: String?): MapLook = entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: TILTED
+    }
+}
+
+/** This view with the zoom setting and the map button's choice applied. */
+fun NavZoom.View.applying(zoom: MapZoom, look: MapLook): NavZoom.View =
+    NavZoom.View(across * zoom.scale, if (look == MapLook.TILTED) pitch else 0.0)

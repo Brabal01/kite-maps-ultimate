@@ -62,6 +62,10 @@ object AppSettings {
     var cameraWarnings by bool("cameraWarnings") { !camerasRestricted }
     /** Say so when driving over the posted limit. Off by default, like Vela. */
     var speedingAlert by bool("speedingAlert")
+    /** How close the driving map sits: Closer, Normal (as Kite always was) or Wider. */
+    var mapZoom: MapZoom by Pref("mapZoom", { p -> MapZoom.of(p.getString("mapZoom", null)) }, { e, v -> e.putString("mapZoom", v.name) })
+    /** The driving map's 3D, 2D or north-up choice from the map button, kept for the next drive. */
+    var driveLook: MapLook by Pref("driveLook", { p -> MapLook.of(p.getString("driveLook", null)) }, { e, v -> e.putString("driveLook", v.name) })
     /** Live reports from Waze drivers. Off until the person says yes on the Waze screen. */
     var waze by bool("waze")
     var wazeAsked by bool("wazeAsked")

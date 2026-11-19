@@ -118,6 +118,21 @@ class KiteMap(private val model: AppModel, private val context: Context) {
             m.addOnCameraMoveStartedListener { reason ->
                 if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) model.nav?.let { if (it.following) it.following = false }
             }
+            // Off a route in 3D or 2D, dragging or turning the map stops following; zooming doesn't.
+            m.addOnMoveListener(object : MapLibreMap.OnMoveListener {
+                override fun onMoveBegin(detector: org.maplibre.android.gestures.MoveGestureDetector) {
+                    if (model.nav == null && model.browseFollowing) model.browseFollowing = false
+                }
+                override fun onMove(detector: org.maplibre.android.gestures.MoveGestureDetector) {}
+                override fun onMoveEnd(detector: org.maplibre.android.gestures.MoveGestureDetector) {}
+            })
+            m.addOnRotateListener(object : MapLibreMap.OnRotateListener {
+                override fun onRotateBegin(detector: org.maplibre.android.gestures.RotateGestureDetector) {
+                    if (model.nav == null && model.browseFollowing) model.browseFollowing = false
+                }
+                override fun onRotate(detector: org.maplibre.android.gestures.RotateGestureDetector) {}
+                override fun onRotateEnd(detector: org.maplibre.android.gestures.RotateGestureDetector) {}
+            })
             m.addOnCameraIdleListener {
                 loadCameras(m); loadWazeCameras(m); loadSurveillance(m); loadWaze(m); loadLiveCams(m); render(); updateHeat(m); loadRail(m); noteHeading(m)
             }

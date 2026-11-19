@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -100,9 +101,10 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
     LaunchedEffect(peek) { if (peek != null) { delay(4000); peek = null } }
     val mainAlert = peek?.takeIf { it in alertsUp } ?: alertsUp.firstOrNull()
     val others = alertsUp.filter { it != mainAlert }
-    // The voice choice just picked, shown by the speaker button for a moment.
-    var voiceNote by remember { mutableStateOf<VoiceMode?>(null) }
-    LaunchedEffect(voiceNote) { if (voiceNote != null) { delay(2500); voiceNote = null } }
+    // The voice or map view just picked, shown by its button for a moment.
+    var buttonNote by remember { mutableStateOf<Pair<String, String>?>(null) }
+    LaunchedEffect(buttonNote) { if (buttonNote != null) { delay(2500); buttonNote = null } }
+    val north = AppSettings.driveLook == MapLook.NORTH
     val risk = nav.policeRisk
     val showRiskChip = risk != null && !nav.arrived && PoliceRisk.level(risk) != PoliceRisk.Level.LOW
     val chipShowing = showRiskChip
@@ -117,10 +119,17 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
         val w = maxWidth
         // The car, while the camera follows it: always at the same spot, pointing up the screen and
         // lying flat on the tilted map.
+        // In 2D it lies round, and north up it moves up to the middle and turns the way you're going.
         if (model.glide.carOnScreen) {
             val puck = remember(dark) { MapIcons.puck(dark).asImageBitmap() }
-            Box(Modifier.fillMaxWidth().offset(y = NavGlide.carY(h.value).dp - 38.dp), contentAlignment = Alignment.TopCenter) {
-                Image(puck, null, Modifier.size(76.dp).graphicsLayer { scaleY = 0.64f })
+            val density = LocalDensity.current
+            Box(Modifier.fillMaxWidth().offset {
+                IntOffset(0, with(density) { (NavGlide.carY(h.value, model.glide.carNorth).dp - 38.dp).roundToPx() })
+            }, contentAlignment = Alignment.TopCenter) {
+                Image(puck, null, Modifier.size(76.dp).graphicsLayer {
+                    scaleY = model.glide.carSquash
+                    rotationZ = model.glide.carTurn
+                })
             }
         }
         // The road you're on, just under the arrow.
@@ -128,7 +137,7 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
         if (nav.following && !nav.arrived && !chipShowing && road != null) {
             // On a short phone (360 x 800) that spot is behind the trip bar: keep it just above the bar instead.
             val barTop = h - WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() - 68.dp
-            val pillTop = minOf(NavGlide.carY(h.value).dp + 46.dp - 15.dp, barTop - 30.dp - 8.dp)
+            val pillTop = minOf(NavGlide.carY(h.value, if (north) 1f else 0f).dp + 46.dp - 15.dp, barTop - 30.dp - 8.dp)
             Box(Modifier.fillMaxWidth().offset(y = pillTop), contentAlignment = Alignment.TopCenter) {
                 Text(road, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.widthIn(max = w - 240.dp).height(30.dp).glass(CircleShape)
@@ -197,17 +206,23 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
                     // A Waze police card already says it louder; the chip comes back when it's gone.
                     // On a short phone a warning card plus lanes leaves no room: the chip gives way to the card.
                     if (showRiskChip && risk != null && !(mainAlert != null && h < 700.dp)) PoliceRiskChip(risk)
-                    SpeedBadge(nav.speedMps, nav.speedLimitKmh)
+                    SpeedBadge(nav.speedMps, nav.speedLimitKmh, nav.limitDropAhead)
                 }
                 Spacer(Modifier.weight(1f))
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    voiceNote?.let { note ->
-                        // Says which of the three the speaker is on now, for a moment.
+                    buttonNote?.let { (title, detail) ->
+                        // Says which of the three the speaker (or the map view) is on now, for a moment.
                         Column(Modifier.shadow(6.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).background(hex(0x0F172A).copy(alpha = 0.95f))
                             .padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(note.title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Vela.accentText(true))
-                            Text(note.detail, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Color.White)
+                            Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Vela.accentText(true))
+                            Text(detail, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Color.White)
                         }
+                    }
+                    // 3D, 2D or north up: one tap each, and the drive carries on.
+                    MapLookButton(AppSettings.driveLook, size = 52.dp) {
+                        model.cycleDriveLook()
+                        val look = AppSettings.driveLook
+                        buttonNote = look.title to look.detail
                     }
                     val icon = when (nav.voiceMode) {
                         VoiceMode.ALL -> Icons.AutoMirrored.Filled.VolumeUp
@@ -217,7 +232,7 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
                     MapFab(icon, tint = if (nav.voiceMode == VoiceMode.ALERTS) Vela.accentText(dark) else null, size = 52.dp,
                         modifier = Modifier.semantics { contentDescription = "Voice: ${nav.voiceMode.title}" }) {
                         nav.voiceMode = nav.voiceMode.next
-                        voiceNote = nav.voiceMode
+                        buttonNote = nav.voiceMode.title to nav.voiceMode.detail
                     }
                 }
             }
@@ -402,7 +417,7 @@ private fun ThenView(nav: Navigator) {
  * when you're over, so that's the only loud thing about it.
  */
 @Composable
-fun SpeedBadge(mps: Double, limitKmh: Double?) {
+fun SpeedBadge(mps: Double, limitKmh: Double?, coming: LimitDrop? = null) {
     val dark = LocalDark.current
     val metric = Fmt.metric
     val v = (mps * (if (metric) 3.6 else 2.23694)).roundToInt()
@@ -410,6 +425,12 @@ fun SpeedBadge(mps: Double, limitKmh: Double?) {
     val over = limitKmh?.let { mps * 3.6 > it + 5 } ?: false
     val tile = RoundedCornerShape(20.dp)
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // The next limit sits in the same column as the signs, never out toward the arrow.
+        AnimatedVisibility(limitKmh != null && coming != null, enter = slideInVertically { it / 2 } + fadeIn(), exit = fadeOut()) {
+            var last by remember { mutableStateOf(coming) }
+            if (coming != null) last = coming
+            last?.let { NextLimitTile(it) }
+        }
         if (limitKmh != null) SpeedLimitSign(limitKmh, 66.dp)
         Column(Modifier.size(68.dp, 62.dp).glass(tile).background(if (over) Vela.closed else Color.Transparent),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -417,6 +438,20 @@ fun SpeedBadge(mps: Double, limitKmh: Double?) {
             Text(if (metric) "km/h" else "mph", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                 color = if (over) Color.White.copy(alpha = 0.85f) else Vela.muted(dark), lineHeight = 13.sp)
         }
+    }
+}
+
+/**
+ * The next lower limit, a little sign with how far to go under it, in a small tile the width of the
+ * speed tile below. It counts down, and goes once the new limit starts and takes the big sign's place.
+ */
+@Composable
+fun NextLimitTile(drop: LimitDrop) {
+    Column(Modifier.width(68.dp).glass(RoundedCornerShape(18.dp)).padding(top = 8.dp, bottom = 6.dp)
+        .semantics { contentDescription = "Limit drops to ${if (Fmt.metric) drop.kmh.roundToInt() else Fmt.postedMph(drop.kmh)} in ${Fmt.distance(drop.meters)}" },
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        SpeedLimitSign(drop.kmh, 40.dp)
+        Text(Fmt.distance(drop.meters), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = primaryText, maxLines = 1)
     }
 }
 
@@ -442,6 +477,18 @@ fun SpeedLimitSign(kmh: Double, size: Dp = 56.dp) {
     }
 }
 
+/** The chips under the faster route's title: further or shorter, and any charge it adds (text, and whether it's amber). */
+fun fasterFacts(o: FasterOffer): List<Pair<String, Boolean>> {
+    val out = mutableListOf<Pair<String, Boolean>>()
+    // Under a quarter of a mile either way isn't worth a word.
+    if (abs(o.extraMeters) >= 400) {
+        val d = Fmt.distance(abs(o.extraMeters))
+        out += if (o.extraMeters > 0) "$d longer" to true else "$d shorter" to false
+    }
+    o.newCharges.forEach { out += it to true }
+    return out
+}
+
 /** A faster route found on the way, in place of the trip bar: keep yours or take it. Left alone, it's taken. */
 @Composable
 fun FasterRouteCard(offer: FasterOffer, onKeep: () -> Unit, onTake: () -> Unit) {
@@ -459,6 +506,21 @@ fun FasterRouteCard(offer: FasterOffer, onKeep: () -> Unit, onTake: () -> Unit) 
                 overflow = TextOverflow.Ellipsis)
             Text((offer.via?.let { "via $it · " } ?: "") + "taking it in a few seconds", fontSize = 16.sp, fontWeight = FontWeight.Medium,
                 color = Vela.muted(dark), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        // What else changes: only shown when something does, so a plain faster way looks as before.
+        val facts = fasterFacts(offer)
+        if (facts.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                facts.forEach { (text, warn) ->
+                    Row(Modifier.height(32.dp).clip(CircleShape).background(if (warn) Vela.warnFill(dark) else Vela.chip(dark)).padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        val c = if (warn) Vela.warnText(dark) else primaryText
+                        Icon(if (text.endsWith("longer") || text.endsWith("shorter")) Icons.Filled.SwapHoriz else Icons.Filled.CurrencyPound, null,
+                            tint = c, modifier = Modifier.size(17.dp))
+                        Text(text, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = c, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
         }
         Box(Modifier.fillMaxWidth().height(4.dp)) {
             Box(Modifier.fillMaxWidth(left.value).fillMaxHeight().clip(CircleShape).background(Vela.accent(dark)))

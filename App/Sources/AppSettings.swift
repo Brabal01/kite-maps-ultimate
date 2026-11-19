@@ -58,6 +58,10 @@ final class AppSettings: ObservableObject {
     @Published var cameraWarnings: Bool { didSet { d.set(cameraWarnings, forKey: "cameraWarnings") } }
     /** Say so when driving over the posted limit. Off by default, like Vela. */
     @Published var speedingAlert: Bool { didSet { d.set(speedingAlert, forKey: "speedingAlert") } }
+    /** How close the driving map sits: Closer, Normal (as Kite always was) or Wider. */
+    @Published var mapZoom: MapZoom { didSet { d.set(mapZoom.rawValue, forKey: "mapZoom") } }
+    /** The driving map's 3D, 2D or north-up choice from the map button, kept for the next drive. */
+    @Published var driveLook: MapLook { didSet { d.set(driveLook.rawValue, forKey: "driveLook") } }
     /** Live reports from Waze drivers (police, crashes, hazards…): on the map, and warned about while driving. */
     @Published var waze: Bool { didSet { d.set(waze, forKey: "waze"); if !waze { Task { @MainActor in WazeWeb.shared.shutDown() } } } }
     /** The "Waze alerts (beta)" question has been answered, on first launch or after updating. */
@@ -118,6 +122,8 @@ final class AppSettings: ObservableObject {
         // On for new users, except where warning of cameras is against the law.
         cameraWarnings = d.object(forKey: "cameraWarnings") as? Bool ?? !Self.camerasRestricted
         speedingAlert = d.bool(forKey: "speedingAlert")
+        mapZoom = MapZoom(rawValue: d.string(forKey: "mapZoom") ?? "") ?? .normal
+        driveLook = MapLook(rawValue: d.string(forKey: "driveLook") ?? "") ?? .tilted
         parkingButton = d.object(forKey: "parkingButton") as? Bool ?? true
         liveCams = d.object(forKey: "liveCams") as? Bool ?? true
         liveRoadCams = d.object(forKey: "liveRoadCams") as? Bool ?? true

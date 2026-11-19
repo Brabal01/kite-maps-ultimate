@@ -30,6 +30,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -172,6 +176,7 @@ fun SettingsPage(model: AppModel) {
     var screen by rememberSaveable { mutableStateOf(when (DemoScript.step) {
         "wazesettings" -> SettingsScreen.WAZE
         "diagnostics" -> SettingsScreen.DIAGNOSTICS
+        "mapsettings" -> SettingsScreen.MAP
         else -> SettingsScreen.MENU
     }) }
     Box(Modifier.fillMaxSize().background(Vela.ground(dark))) {
@@ -291,7 +296,7 @@ private fun SettingsMenu(open: (SettingsScreen) -> Unit) {
         item(SettingsScreen.WAZE, if (WazeAlert.Kind.POLICE in Waze.shares) "Police, crashes, closures" else "Closures, police aircraft",
             if (s.wazeOn) "On" else "Off", Icons.Filled.Warning, 0x7C3AED)
         item(SettingsScreen.LIVECAMS, "Road camera photos and scenic webcams", if (s.liveCams) "On" else "Off", Icons.Filled.Videocam, 0x0284C7)
-        item(SettingsScreen.MAP, "Theme, units, parking button", null, Icons.Filled.Contrast, 0x334155)
+        item(SettingsScreen.MAP, "Theme, units, map zoom, parking button", null, Icons.Filled.Contrast, 0x334155)
         item(SettingsScreen.PLACES, "Home and work", null, Icons.Filled.Home, 0x16A34A)
         item(SettingsScreen.PRIVACY, "Use Kite without Google", if (s.noGoogle) "On" else null, Icons.Filled.Lock, 0x475569)
         item(SettingsScreen.ABOUT, "Version ${BuildConfig.VERSION_NAME}", null, Icons.Filled.Info, 0x64748B, last = true)
@@ -370,6 +375,30 @@ private fun MapSettings() {
         PickRow("Distance units", Icons.Filled.Straighten, 0x0891B2, s.units, UnitsMode.entries.toList(), { it.label }) { s.units = it }
         RowDivider()
         ToggleRow("Parking button on the map", Icons.Filled.LocalParking, 0x2563EB, s.parkingButton) { s.parkingButton = it }
+    }
+    SettingsGroup(header = "While driving",
+        footer = "Kite still zooms in for turns and out on long roads. Closer shows the streets bigger; Wider shows more road ahead. Normal is how Kite has always been.") {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SettingLabel("Map zoom while driving", Icons.Filled.ZoomIn, 0x0F766E)
+            Segmented(MapZoom.entries.toList(), s.mapZoom, { it.title }) { s.mapZoom = it }
+        }
+    }
+}
+
+/** A row of choices like the iPhone's segmented control: the picked one lifted on a white tile. */
+@Composable
+fun <T> Segmented(options: List<T>, value: T, label: (T) -> String, set: (T) -> Unit) {
+    val dark = LocalDark.current
+    Row(Modifier.fillMaxWidth().height(36.dp).clip(RoundedCornerShape(10.dp)).background(Vela.chip(dark)).padding(2.dp)) {
+        options.forEach { o ->
+            val on = o == value
+            Box(Modifier.weight(1f).fillMaxHeight().then(if (on) Modifier.shadow(1.dp, RoundedCornerShape(8.dp)) else Modifier)
+                .clip(RoundedCornerShape(8.dp)).background(if (on) Vela.surface(dark) else Color.Transparent).tap { set(o) }
+                .semantics { selected = on; contentDescription = label(o) },
+                contentAlignment = Alignment.Center) {
+                Text(label(o), fontSize = 15.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, color = primaryText)
+            }
+        }
     }
 }
 

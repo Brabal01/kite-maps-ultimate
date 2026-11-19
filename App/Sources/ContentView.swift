@@ -166,16 +166,10 @@ struct BrowseOverlay: View {
                                     if let p = settings.parking { model.select(p) } else { model.saveParking() }
                                 }
                             }
-                            if model.mapHeading > 1 && model.mapHeading < 359 {
-                                Button { model.map?.setDirection(0, animated: true) } label: {
-                                    CompassNeedle()
-                                        .rotationEffect(.degrees(-model.mapHeading))
-                                        .frame(width: 48, height: 48)
-                                        .glass(Circle())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Face north")
-                                .transition(.scale.combined(with: .opacity))
+                            // 3D, 2D or north up, always there. On north up with the map turned by hand,
+                            // the needle shows which way north is and a tap faces north again.
+                            MapLookButton(look: model.browseLook, heading: model.mapHeading, size: 48) {
+                                withAnimation(.easeOut(duration: 0.2)) { model.cycleBrowseLook() }
                             }
                         }
                     }
@@ -517,8 +511,18 @@ enum DemoScript {
         guard let i = args.firstIndex(of: "-demo"), i + 1 < args.count else { return }
         let step = args[i + 1]
         func wait(_ s: Double) async { try? await Task.sleep(nanoseconds: UInt64(s * 1e9)) }
+        // The map button's choice and the zoom setting are kept between runs: start each shot from the usual view.
+        model.settings.driveLook = .tilted
+        model.settings.mapZoom = .normal
         await wait(6)
         if step == "browse" { return }
+        if step == "browse3d" || step == "browse2d" {
+            // Off a route: the map button follows you in 3D (one tap) or 2D (two taps).
+            model.cycleBrowseLook()
+            if step == "browse2d" { await wait(2); model.cycleBrowseLook() }
+            return
+        }
+        if step == "mapsettings" { model.tab = .settings; return }
         if step == "cameras" {
             // Central Munich, where many fixed speed cameras are mapped.
             model.map?.setCenter(CLLocationCoordinate2D(latitude: 48.137, longitude: 11.575), zoomLevel: 12.5, animated: false)
@@ -776,6 +780,23 @@ enum DemoScript {
             await wait(5)
             model.nav?.showDemoRoundabout()
             model.nav?.showDemoAlerts()
+            return
+        }
+        if ["nextlimit", "flat", "northup", "closer", "wider"].contains(step) {
+            // On the A9 in miles: a 30 coming up in a 60, the 2D and north-up views, and the zoom setting.
+            model.settings.units = .yards
+            if step == "closer" { model.settings.mapZoom = .closer }
+            if step == "wider" { model.settings.mapZoom = .wider }
+            let to = Place(id: "demo-pitlochry", name: "Pitlochry", location: LatLng(56.7030, -3.7340), source: "demo")
+            model.select(to)
+            await wait(2)
+            model.openDirections(to: to)
+            await wait(10)
+            model.startNavigation()
+            await wait(5)
+            if step == "nextlimit" { model.nav?.showDemoLimitDrop() } else { model.nav?.showDemoSpeed(limitKmh: 96.6, mph: 57) }
+            if step == "flat" { model.cycleDriveLook() }
+            if step == "northup" { model.cycleDriveLook(); model.cycleDriveLook() }
             return
         }
         if step == "uk" {

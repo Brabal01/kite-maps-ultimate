@@ -31,6 +31,9 @@ object DemoScript {
         if (s != "welcome" && s != "wazeintro") { st.welcomed = true; st.wazeAsked = true }
         // Settings stay between runs: only the trains step has its layers on.
         if (s != "rail") { st.terrain = false; st.transitLines = false }
+        // The map button's choice and the zoom setting are kept too: start each shot from the usual view.
+        st.driveLook = MapLook.TILTED
+        st.mapZoom = if (s == "closer") MapZoom.CLOSER else if (s == "wider") MapZoom.WIDER else MapZoom.NORMAL
         model.scope.launch { run(model, s) }
     }
 
@@ -101,6 +104,14 @@ object DemoScript {
         delay(6000)
         when (step) {
             "browse", "icons" -> return
+            "browse3d", "browse2d" -> {
+                // Off a route: the map button follows you in 3D (one tap) or 2D (two taps).
+                val ctx = KiteApp.app
+                model.cycleBrowseLook(ctx)
+                if (step == "browse2d") { delay(2000); model.cycleBrowseLook(ctx) }
+                return
+            }
+            "mapsettings" -> { model.tab = AppTab.SETTINGS; return }
             "puckflat", "puckpitch" -> {
                 // The car arrow alone on the map, to check it draws the same flat and tilted.
                 val m = model.map ?: return
@@ -252,7 +263,7 @@ object DemoScript {
                 st.home = Place("demo-home", "Home", LatLng(51.4600, -0.9750), "demo", address = "Home")
                 model.tab = AppTab.SAVED; return
             }
-            "roundabout", "uk" -> {
+            "roundabout", "uk", "nextlimit", "flat", "northup", "closer", "wider" -> {
                 st.units = UnitsMode.YARDS
                 val to = Place("demo-pitlochry", "Pitlochry", LatLng(56.7030, -3.7340), "demo")
                 model.select(to); delay(2000)
@@ -262,8 +273,13 @@ object DemoScript {
                 delay(1000)
                 model.startNavigation(); delay(5000)
                 if (step == "roundabout") model.nav?.showDemoRoundabout()
-                model.nav?.showDemoAlerts()
+                if (step == "roundabout" || step == "uk") model.nav?.showDemoAlerts()
                 if (step == "uk") model.nav?.showDemoSpeed(96.6, 57.0)
+                // A 30 coming up in a 60, the 2D and north-up views, and the zoom setting.
+                if (step == "nextlimit") model.nav?.showDemoLimitDrop()
+                if (step in setOf("flat", "northup", "closer", "wider")) model.nav?.showDemoSpeed(96.6, 57.0)
+                if (step == "flat") model.cycleDriveLook()
+                if (step == "northup") { model.cycleDriveLook(); model.cycleDriveLook() }
                 return
             }
         }

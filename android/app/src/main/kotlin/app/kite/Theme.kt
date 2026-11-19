@@ -63,6 +63,9 @@ object Vela {
     fun surface(dark: Boolean) = if (dark) Color(0xFF1A2638) else Color.White
     fun ground(dark: Boolean) = if (dark) Color(0xFF0E1726) else Color(0xFFF2F5F9)
     fun chip(dark: Boolean) = if (dark) Color(0xFF243349) else Color(0xFFEDF1F6)
+    /** A soft amber for "worth knowing" chips, like a longer route or a road charge. */
+    fun warnFill(dark: Boolean) = if (dark) Color(0xFF3A2A10) else Color(0xFFFDEFD9)
+    fun warnText(dark: Boolean) = if (dark) Color(0xFFFBBF24) else Color(0xFF9A4A08)
     fun tonal(dark: Boolean) = if (dark) Color(0xFF12403C) else Color(0xFFCCFBF1)
     fun onTonal(dark: Boolean) = if (dark) Color(0xFF99F6E4) else Color(0xFF134E4A)
     fun muted(dark: Boolean) = if (dark) Color(0xFF94A3B8) else Color(0xFF64748B)

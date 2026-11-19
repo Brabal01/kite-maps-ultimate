@@ -1173,6 +1173,11 @@ struct VelaMapView: UIViewRepresentable {
             guard !reason.intersection(gesture).isEmpty else { return }
             Task { @MainActor in
                 if let n = self.model.nav, n.following { n.following = false }
+                // Off a route in 3D or 2D, dragging or turning the map stops following; zooming doesn't.
+                let moved: MLNCameraChangeReason = [.gesturePan, .gestureRotate]
+                if self.model.nav == nil, self.model.browseFollowing, !reason.intersection(moved).isEmpty {
+                    self.model.browseFollowing = false
+                }
             }
         }
 

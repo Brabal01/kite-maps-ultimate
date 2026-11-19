@@ -20,7 +20,9 @@ final class NavGlide: NSObject {
     nonisolated static let topFraction: CGFloat = 0.7
     nonisolated static let bottomInset: CGFloat = 170
     /** The car's height on a screen [height] tall, for things drawn next to it. */
-    nonisolated static func carY(_ height: CGFloat) -> CGFloat { (topInset(height) + height - bottomInset) / 2 }
+    nonisolated static func carY(_ height: CGFloat, north: Bool = false) -> CGFloat {
+        ((north ? 0 : topInset(height)) + height - bottomInset) / 2
+    }
     /**
      * How much of the top the car stays below. On a short (landscape) screen 70% would push the car
      * onto the trip bar, so there it stays 100 pt above it instead.
@@ -46,6 +48,10 @@ final class NavGlide: NSObject {
     private var cum: [Double] = []
     private var targetAcross: Double = 600
     private var targetPitch: Double = 50
+    /** 3D, 2D or north up, from the map button. */
+    var look: MapLook = .tilted
+    /** 0 facing the way you go, 1 north up; eased so a tap turns the map rather than jumping. */
+    private var northBlend: Double = 0
 
     // What is on screen now.
     private var shownAlong: Double?
@@ -79,6 +85,7 @@ final class NavGlide: NSObject {
             shownBearing = fixBearing
             shownAcross = across
             shownPitch = pitch
+            northBlend = look == .north ? 1 : 0
         }
         start()
         if jump { step(dt: 0) }
@@ -157,9 +164,18 @@ final class NavGlide: NSObject {
             f.attributes = ["bearing": shownBearing]
             src.shape = f
         }
+        let northTarget: Double = look == .north ? 1 : 0
+        northBlend += (northTarget - northBlend) * (dt == 0 ? 1 : 1 - exp(-dt / 0.3))
+        if abs(northTarget - northBlend) < 0.001 { northBlend = northTarget }
         if n.following {
-            let cam = MLNMapCamera(lookingAtCenter: coordNow, acrossDistance: shownAcross, pitch: shownPitch, heading: shownBearing)
-            let pad = UIEdgeInsets(top: Self.topInset(map.bounds.height), left: leftInset, bottom: Self.bottomInset, right: 0)
+            // North up: the map turns to face north and the car moves up to the middle, as the road
+            // ahead can be any way round. Otherwise it faces the way you go with the car low down.
+            var toNorth = (-shownBearing).truncatingRemainder(dividingBy: 360)
+            if toNorth > 180 { toNorth -= 360 } else if toNorth < -180 { toNorth += 360 }
+            let heading = (shownBearing + toNorth * northBlend + 360).truncatingRemainder(dividingBy: 360)
+            let cam = MLNMapCamera(lookingAtCenter: coordNow, acrossDistance: shownAcross, pitch: shownPitch, heading: heading)
+            let top = Self.topInset(map.bounds.height) * (1 - northBlend)
+            let pad = UIEdgeInsets(top: top, left: leftInset, bottom: Self.bottomInset, right: 0)
             map.setCamera(cam, withDuration: 0, animationTimingFunction: nil, edgePadding: pad, completionHandler: nil)
         }
     }

@@ -210,6 +210,19 @@ final class Navigator: ObservableObject {
         demoLimitKmh ?? route.speedLimit(at: progress?.alongMeters ?? 0)
     }
 
+    /**
+     A lower limit coming up, about 15 seconds ahead at your speed: shown small above the speed sign
+     so there's time to ease off. Only from the map's own limits, never guessed; gone once it starts.
+     */
+    var limitDropAhead: LimitDrop? {
+        if let demoLimitDrop { return demoLimitDrop }
+        guard route.mode == .drive, !arrived, let p = progress, !p.offRoute,
+              let next = route.nextLimitDrop(at: p.alongMeters, within: NavZoom.limitHeadsUp(speed: speedMps)),
+              let kmh = next.kmh else { return nil }
+        let meters = next.startMeters - p.alongMeters
+        return meters > 15 ? LimitDrop(kmh: kmh, meters: meters) : nil
+    }
+
     var nextManeuver: Maneuver? {
         if let demoManeuver { return demoManeuver }
         guard let i = progress?.nextIndex, i < route.maneuvers.count else { return route.maneuvers.first }
@@ -759,6 +772,7 @@ final class Navigator: ObservableObject {
     /** For the build's screenshots: the next turn swapped for a made-up one. */
     private(set) var demoManeuver: Maneuver?
     private var demoLimitKmh: Double?
+    private var demoLimitDrop: LimitDrop?
 
     /** For the build's screenshots: the M27 roundabout at Park Gate, 6th exit, with its seven roads. */
     func showDemoRoundabout() {
@@ -777,6 +791,12 @@ final class Navigator: ObservableObject {
         averageCheck = AverageCheck(limitKmh: 80.5, averageKmh: 77, metersLeft: 2400)
         // 38 in a 30, so the screenshots show the speed sign gone red.
         showDemoSpeed(limitKmh: 48.3, mph: 38)
+    }
+
+    /** For the build's screenshots: 60 now, dropping to 30 in 300 yards. */
+    func showDemoLimitDrop() {
+        demoLimitDrop = LimitDrop(kmh: 48.3, meters: 274)
+        showDemoSpeed(limitKmh: 96.6, mph: 52)
     }
 
     /** For the build's screenshots: a made-up speed and limit. */
@@ -888,7 +908,8 @@ final class Navigator: ObservableObject {
             // The same way, more or less: just a better arrival time.
             let sameWay = abs(fresh.distanceMeters - now.remainingMeters) < max(300, now.remainingMeters * 0.03)
             if !sameWay, saving > max(300, current * 0.1) {
-                self.offerFaster(fresh, saving: saving)
+                let left = Geo.slice(self.route.polyline, from: now.alongMeters, to: Geo.length(self.route.polyline))
+                self.offerFaster(fresh, saving: saving, remainingMeters: now.remainingMeters, remainingLine: left)
             } else if sameWay {
                 self.trafficScale = min(3, max(0.5, fresh.durationSeconds / planned))
             }
@@ -899,9 +920,13 @@ final class Navigator: ObservableObject {
      * A faster way is offered on a card with two big buttons, like Waze, rather than the line on the
      * map just changing. Left alone, it's taken after a few seconds, so ignoring it works as before.
      */
-    private func offerFaster(_ fresh: Route, saving: Double) {
+    private func offerFaster(_ fresh: Route, saving: Double, remainingMeters: Double, remainingLine: [LatLng]) {
         let minutes = max(1, Int((saving / 60).rounded()))
-        let offer = FasterOffer(minutes: minutes, via: fresh.summary, until: Date().addingTimeInterval(Self.fasterWait))
+        // What else changes, so it's an easy call: longer or shorter, and any pay-later charge it adds.
+        let had = Set(RoadCharges.on(remainingLine).map(\.name))
+        let charges = RoadCharges.on(fresh.polyline).map(\.name).filter { !had.contains($0) }
+        let offer = FasterOffer(minutes: minutes, via: fresh.summary, until: Date().addingTimeInterval(Self.fasterWait),
+                                extraMeters: fresh.distanceMeters - remainingMeters, newCharges: charges)
         fasterRoute = fresh
         fasterOffer = offer
         speak("Found a faster route. It saves \(minutes) minutes.")
@@ -929,7 +954,8 @@ final class Navigator: ObservableObject {
 
     /** For the build's screenshots: the faster route card. */
     func showDemoFaster() {
-        fasterOffer = FasterOffer(minutes: 6, via: "A3024", until: Date().addingTimeInterval(3600))
+        fasterOffer = FasterOffer(minutes: 6, via: "A3024", until: Date().addingTimeInterval(3600),
+                                  extraMeters: 3400, newCharges: ["Dartford Crossing"])
     }
 
     /** Just past a step the driver was told about (or the start), so "continue" follows on from it. */
@@ -1142,6 +1168,16 @@ struct FasterOffer: Equatable {
     var via: String?
     /** When it's taken by itself if nothing is tapped. */
     var until: Date
+    /** How much further the new way is than what's left of yours (less than 0 when it's shorter). */
+    var extraMeters: Double = 0
+    /** Pay-later road charges on the new way that yours didn't have, like the Dartford Crossing. */
+    var newCharges: [String] = []
+}
+
+/** A lower speed limit coming up: what it is, and how far. */
+struct LimitDrop: Equatable {
+    var kmh: Double
+    var meters: Double
 }
 
 struct CameraAlert: Equatable {

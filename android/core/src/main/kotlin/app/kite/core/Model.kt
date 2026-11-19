@@ -130,6 +130,19 @@ data class Route(
     /** The limit at [meters] along the route. */
     fun speedLimit(meters: Double): Double? = speedLimits.lastOrNull { it.startMeters <= meters }?.kmh
 
+    /**
+     * The next lower limit within [within] meters ahead of [meters], for a heads-up before it starts.
+     * Only a known drop from a known limit counts: an unmapped stretch, or a limit that goes up first,
+     * shows nothing, so nothing is ever guessed. Drops of under 5 km/h (map noise) don't count either.
+     * Same as the iPhone's.
+     */
+    fun nextLimitDrop(meters: Double, within: Double): SpeedLimit? {
+        val now = speedLimit(meters) ?: return null
+        val next = speedLimits.firstOrNull { it.startMeters > meters } ?: return null
+        val kmh = next.kmh ?: return null
+        return if (next.startMeters - meters <= within && kmh < now - 5) next else null
+    }
+
     /** How much slower than usual: 0 green, 1 amber, 2 red. */
     val delayLevel: Int
         get() {
