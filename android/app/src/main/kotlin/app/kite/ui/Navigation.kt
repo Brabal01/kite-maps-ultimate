@@ -205,8 +205,10 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     // A Waze police card already says it louder; the chip comes back when it's gone.
                     // On a short phone a warning card plus lanes leaves no room: the chip gives way to the card.
-                    if (showRiskChip && risk != null && !(mainAlert != null && h < 700.dp)) PoliceRiskChip(risk)
-                    SpeedBadge(nav.speedMps, nav.speedLimitKmh, nav.limitDropAhead)
+                    // The same when the next speed limit is up: on a short phone the column would reach the cards.
+                    val limitDrop = nav.limitDropAhead
+                    if (showRiskChip && risk != null && !((mainAlert != null || limitDrop != null) && h < 700.dp)) PoliceRiskChip(risk)
+                    SpeedBadge(nav.speedMps, nav.speedLimitKmh, limitDrop)
                 }
                 Spacer(Modifier.weight(1f))
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {

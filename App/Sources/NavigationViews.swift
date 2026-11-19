@@ -160,7 +160,8 @@ struct NavigationOverlay: View {
                     // A Waze police card already says it louder; the chip comes back when it's gone.
                     // Only worth a look while driving when it isn't low; it would otherwise sit by the road name.
                     // On a short phone (SE) a warning card plus lanes leaves no room: the chip gives way to the card.
-                    if showRiskChip, !(mainAlert != nil && Self.shortScreen), let risk = nav.policeRisk { PoliceRiskChip(score: risk) }
+                    // The same when the next speed limit is up: on a short phone the column would reach the cards.
+                    if showRiskChip, !((mainAlert != nil || nav.limitDropAhead != nil) && Self.shortScreen), let risk = nav.policeRisk { PoliceRiskChip(score: risk) }
                     SpeedBadge(mps: nav.speedMps, limitKmh: nav.speedLimitKmh, coming: nav.limitDropAhead)
                 }
                 Spacer()
