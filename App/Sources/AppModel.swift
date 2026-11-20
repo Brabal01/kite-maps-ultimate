@@ -144,6 +144,14 @@ final class AppModel: ObservableObject {
     @Published var browseLook: MapLook = .north
     /** Whether the browse map is following you in 3D or 2D; dragging the map stops it. */
     @Published var browseFollowing = false
+    /** The driving view with no route, switched to by itself when you set off (nil when not driving). */
+    @Published var cruise: Cruise?
+    private var cruiseSub: AnyCancellable?
+    /** When fast driving with no route began, for switching to the driving view after a few seconds. */
+    private var movingSince: Date?
+    /** Closed with the ✕: stays closed until the car next stops for a while. */
+    private var cruiseClosed = false
+    private var cruiseClosedStill: Date?
 
     weak var map: MLNMapView? { didSet { glide.map = map } }
     /** How wide the side panel is on a big screen (the open iPhone Duo), so the map centres
@@ -717,6 +725,7 @@ final class AppModel: ObservableObject {
 
     func startNavigation() {
         guard let d = directions, let route = d.route, !d.reversed else { return }
+        endCruise()
         let n = Navigator(route: route, destination: d.destination, stops: d.stops, settings: settings)
         nav = n
         navSub = n.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
@@ -815,6 +824,7 @@ final class AppModel: ObservableObject {
     private func locationChanged(_ loc: CLLocation) {
         if location.reducedAccuracy || loc.horizontalAccuracy > 200 { areaRisk = nil }
         guard let n = nav else {
+            cruiseCheck(loc)
             followBrowse(loc, entering: false)
             return
         }
@@ -822,6 +832,68 @@ final class AppModel: ObservableObject {
         followCamera(n, loc, animated: true)
         mapTick += 1
         tripCheck(n)
+    }
+
+    /**
+     Driving with no route: after a few seconds above about 15 mph with nothing open, switch to the
+     driving view (speed, limit, cameras, road name). Opening a place or a route, or parking, ends it.
+     */
+    private func cruiseCheck(_ loc: CLLocation) {
+        if let c = cruise {
+            if directions != nil || selected != nil || !results.isEmpty { endCruise(); return }
+            c.handle(loc)
+            mapTick += 1
+            return
+        }
+        // After the ✕, wait until the car has stood still a minute before offering it again.
+        if cruiseClosed {
+            if loc.speed >= 0 && loc.speed < 1.5 {
+                if cruiseClosedStill == nil { cruiseClosedStill = loc.timestamp }
+                if let t = cruiseClosedStill, loc.timestamp.timeIntervalSince(t) > 60 { cruiseClosed = false }
+            } else {
+                cruiseClosedStill = nil
+            }
+            return
+        }
+        guard settings.autoDrive, tab == .map, directions == nil, selected == nil, results.isEmpty, picking == nil,
+              Cruise.shouldStart(loc, movingSince: &movingSince) else { return }
+        startCruise(loc)
+    }
+
+    private func startCruise(_ loc: CLLocation) {
+        let c = Cruise()
+        cruise = c
+        cruiseSub = c.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+        c.onParked = { [weak self] in self?.endCruise() }
+        movingSince = nil
+        location.setNavigating(true)
+        browseLook = .tilted
+        browseFollowing = true
+        showLayers = false
+        c.handle(loc)
+        followBrowse(loc, entering: true)
+    }
+
+    func recenterCruise() {
+        guard cruise != nil, let loc = location.last else { return }
+        browseFollowing = true
+        followBrowse(loc, entering: true)
+    }
+
+    /** Back to the map; [closed] is the ✕, which keeps it away until the next stop. */
+    func endCruise(closed: Bool = false) {
+        guard let c = cruise else { return }
+        c.stop()
+        cruise = nil
+        cruiseSub = nil
+        movingSince = nil
+        if closed { cruiseClosed = true; cruiseClosedStill = nil }
+        location.setNavigating(false)
+        if nav == nil {
+            browseLook = .north
+            browseFollowing = false
+            if directions == nil && selected == nil { resetCamera() }
+        }
     }
 
     /** Keeps the saved trip fresh while driving, and on arriving forgets it. */

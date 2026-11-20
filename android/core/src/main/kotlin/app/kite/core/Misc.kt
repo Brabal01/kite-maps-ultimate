@@ -443,20 +443,82 @@ object Valhalla {
         return out
     }
 
-    private suspend fun fetch(shape: List<LatLng>): ByteArray? {
+    private val limitAttributes = listOf("edge.speed_limit", "edge.way_id", "edge.names", "edge.length", "edge.begin_shape_index",
+        "edge.end_shape_index", "edge.lane_count", "edge.roundabout", "shape")
+
+    private suspend fun fetch(shape: List<LatLng>, attributes: List<String> = limitAttributes): ByteArray? {
         val body = mapOf(
             "shape" to shape.map { mapOf("lat" to it.lat, "lon" to it.lng) },
             "costing" to "auto",
             "shape_match" to "map_snap",
-            "filters" to mapOf(
-                "attributes" to listOf("edge.speed_limit", "edge.way_id", "edge.names", "edge.length", "edge.begin_shape_index", "edge.end_shape_index", "edge.lane_count", "edge.roundabout", "shape"),
-                "action" to "include",
-            ),
+            "filters" to mapOf("attributes" to attributes, "action" to "include"),
         )
         return try {
             val r = Http.post(endpoint, Json.write(body).toByteArray(), "application/json", mapOf("User-Agent" to OSRM.userAgent), client)
             if (r.code == 200) r.body else null
         } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+    }
+
+    /**
+     * The toll roads a route drives, by name ("M6 Toll", "Dartford Crossing"), from the road map's own
+     * toll marks. Empty when there are none; null when the server didn't answer.
+     */
+    suspend fun tolls(line: List<LatLng>): List<String>? {
+        if (line.size < 2) return emptyList()
+        val cum = Geo.cumulative(line)
+        val total = cum.last()
+        val names = mutableListOf<String>()
+        var start = 0.0
+        while (start < total) {
+            val end = min(total, start + 25_000)
+            val data = fetch(thin(Geo.slice(line, start, end, cum)), listOf("edge.toll", "edge.names", "edge.length")) ?: return null
+            for (n in parseTolls(data)) if (n !in names) names.add(n)
+            start = end
+        }
+        return names
+    }
+
+    /** Each run of toll roads in a matcher answer, by its first name (or "A toll road"). */
+    fun parseTolls(data: ByteArray): List<String> {
+        val edges = Json.obj(data)?.get("edges").asMaps() ?: return emptyList()
+        val out = mutableListOf<String>()
+        var inToll = false
+        var meters = 0.0
+        var name: String? = null
+        fun close() {
+            // A few metres of toll mark at a junction's edge isn't driving the toll road.
+            if (inToll && meters >= 50) { val n = name ?: "A toll road"; if (n !in out) out.add(n) }
+            inToll = false; meters = 0.0; name = null
+        }
+        for (e in edges) {
+            if (e["toll"] == true) {
+                inToll = true
+                meters += (e["length"].num() ?: 0.0) * 1000
+                if (name == null) name = e["names"].asList()?.mapNotNull { it as? String }?.firstOrNull { it.isNotEmpty() }
+            } else close()
+        }
+        close()
+        return out
+    }
+
+    /** The road you're on now and its posted limit, matched from your last few hundred metres of GPS. */
+    data class Here(val road: String?, val ref: String?, val kmh: Double?)
+
+    private val refPattern = Regex("^[ABM]\\d{1,4}(\\(M\\))?$")
+
+    /** Where you are on the map, for driving without a route: the road under the newest fix of [trace] (oldest first). */
+    suspend fun here(trace: List<LatLng>): Here? {
+        if (trace.size < 2) return null
+        val data = fetch(thin(trace), listOf("edge.names", "edge.speed_limit", "edge.length", "edge.road_class")) ?: return null
+        return parseHere(data, trace.last())
+    }
+
+    fun parseHere(data: ByteArray, at: LatLng): Here? {
+        val e = Json.obj(data)?.get("edges").asMaps()?.lastOrNull() ?: return null
+        val names = e["names"].asList()?.mapNotNull { it as? String }?.filter { it.isNotEmpty() } ?: emptyList()
+        val raw = e["speed_limit"].num()
+        val kmh = Overpass.britishLimit(raw?.takeIf { it in 1.0..200.0 }, at)
+        return Here(names.firstOrNull { !refPattern.matches(it) }, names.firstOrNull { refPattern.matches(it) }, kmh)
     }
 
     /** Limit changes along the matched roads, the roads themselves, and their length. */

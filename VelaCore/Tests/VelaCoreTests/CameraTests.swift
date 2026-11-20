@@ -21,7 +21,15 @@ final class CameraTests: XCTestCase {
         XCTAssertEqual(lights.count, 4)
         let line = [LatLng(0, 0), LatLng(0.01, 0)]
         let on = Overpass.signalsOnRoute(lights, line: line)
-        XCTAssertEqual(on, [LatLng(0.0050, 0.0001), LatLng(0.0095, 0)])
+        // The first light of the junction, put on the route itself; the one 220 m off to the side is left out.
+        XCTAssertEqual(on.count, 2)
+        XCTAssertEqual(on[0].lat, 0.0050, accuracy: 1e-6)
+        XCTAssertEqual(on[0].lng, 0, accuracy: 1e-9)
+        XCTAssertEqual(on[1].lat, 0.0095, accuracy: 1e-6)
+        // The oncoming side's light just past the junction (45 m on) is the same junction.
+        let pair = Overpass.signalsOnRoute([LatLng(0.0020, 0.00005), LatLng(0.0024, -0.00005)], line: line)
+        XCTAssertEqual(pair.count, 1)
+        XCTAssertEqual(pair[0].lat, 0.0020, accuracy: 1e-6)
     }
 
     func testQuery() {

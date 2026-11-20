@@ -387,6 +387,7 @@ struct TripBody: View {
                 Text(r.delayLevel == 0 ? "Traffic is light" : "\(Fmt.duration(r.durationSeconds - r.typicalSeconds)) slower than usual")
                     .font(.system(size: 17, weight: .semibold)).foregroundColor(delayColor(r))
             }
+            if r.mode == .drive { RouteTolls(route: r).padding(.top, 2) }
             if r.mode == .drive { RouteWazeSummary(route: r).padding(.top, 4) }
             if r.mode == .drive { RouteLiveCams(model: model, route: r).padding(.top, 6) }
         }
@@ -430,6 +431,50 @@ struct TripBody: View {
                 }
             }
         }
+    }
+}
+
+/**
+ With "Avoid tolls" on: a quiet "No tolls" when the route is clear, or a plain warning naming the toll
+ road when there was no way round it (or the open router, which can't avoid tolls, had to stand in).
+ Checked against the road map's own toll marks. Nothing at all when the map server doesn't answer.
+ */
+struct RouteTolls: View {
+    let route: Route
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var tolls: [String]?
+    @Environment(\.colorScheme) private var scheme
+    /** For the build's screenshots. */
+    static var demo: [String]?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if settings.avoidTolls, let tolls = Self.demo ?? tolls {
+                if tolls.isEmpty {
+                    Label("No tolls on this route", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 16, weight: .semibold)).foregroundColor(Vela.open)
+                } else {
+                    Label {
+                        Text("No toll-free way found. This route uses \(Self.list(tolls)).")
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                    }
+                    .font(.system(size: 16, weight: .semibold)).foregroundColor(Color(hex: 0xE37400))
+                }
+            }
+        }
+        .task(id: "\(route.id)-\(settings.avoidTolls)") {
+            tolls = nil
+            guard settings.avoidTolls, route.mode == .drive else { return }
+            tolls = await Valhalla.tolls(along: route.polyline)
+        }
+    }
+
+    /** "the M6 Toll", "the M6 Toll and the Dartford Crossing". */
+    static func list(_ names: [String]) -> String {
+        let n = names.prefix(3).map { $0 == "A toll road" ? "a toll road" : "the \($0)" }
+        return n.count <= 1 ? (n.first ?? "a toll road") : n.dropLast().joined(separator: ", ") + " and " + n.last!
     }
 }
 

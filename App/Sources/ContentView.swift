@@ -23,6 +23,8 @@ struct ContentView: View {
                 .ignoresSafeArea()
             if let nav = model.nav {
                 NavigationOverlay(model: model, nav: nav)
+            } else if let cruise = model.cruise {
+                CruiseOverlay(model: model, cruise: cruise)
             } else if model.directions != nil {
                 DirectionsOverlay(model: model).inSidePanel(panel)
             } else {

@@ -411,6 +411,8 @@ private fun ThenView(nav: Navigator) {
                 Text("$n", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
             }
         }
+        // How soon after this turn it comes, so there's time to pick the lane for it.
+        nav.thenGap?.let { Text("after ${Fmt.distance(it)}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = primaryText, maxLines = 1, softWrap = false) }
     }
 }
 

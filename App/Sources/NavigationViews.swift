@@ -72,9 +72,6 @@ struct NavigationOverlay: View {
         (UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first?.bounds.height ?? 800) < 700
     }
 
-    /** A chip above the speed badge sits where the road name goes, so the name steps aside for it. */
-    private var chipShowing: Bool { showRiskChip }
-
     var body: some View {
         // One column, so however many warnings are up, they push the map buttons down rather than cover them.
         VStack(spacing: 10) {
@@ -243,23 +240,6 @@ struct NavigationOverlay: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .background(
-            // The road you're on, just under the arrow (the map keeps the arrow at this height while following).
-            GeometryReader { g in
-                if nav.following, !nav.arrived, !chipShowing, let road = nav.currentRoad {
-                    Text(road)
-                        .font(.system(size: 15, weight: .semibold))
-                        .lineLimit(1).minimumScaleFactor(0.7)
-                        .padding(.horizontal, 12).frame(height: 30)
-                        .foregroundColor(.primary)
-                        .glass(Capsule())
-                        // Between the speed sign and the mute button, which sit level with it now the car is lower.
-                        .frame(maxWidth: panel > 0 ? g.size.width - panel - 80 : g.size.width - 240)
-                        .position(x: panel + (g.size.width - panel) / 2, y: roadPillY(g.size.height, north: settings.driveLook == .north))
-                }
-            }
-            .ignoresSafeArea()
-        )
         .task {
             // Screenshot run: the end trip question.
             if DemoScript.step == "endtrip" {
@@ -431,6 +411,10 @@ struct InstructionBanner: View {
                     // Which exit, so the next roundabout is known before the banner changes.
                     Text("\(n)").font(.system(size: 14, weight: .heavy)).foregroundColor(.white)
                         .frame(minWidth: 22, minHeight: 22).background(Circle().fill(Color(hex: 0x0F766E)))
+                }
+                // How soon after this turn it comes, so there's time to pick the lane for it.
+                if let gap = nav.thenGap {
+                    Text("after \(Fmt.distance(gap))").font(.system(size: 14, weight: .bold)).lineLimit(1).fixedSize()
                 }
             }
         }
@@ -643,15 +627,6 @@ struct EndTripCard: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
     }
-}
-
-/**
- * Where the road-name pill sits: just under the car, but on a phone with little height (iPhone mini)
- * that touches the trip bar, so it's kept 8 pt above the bar (64 tall, 4 off the bottom).
- */
-private func roadPillY(_ height: CGFloat, north: Bool = false) -> CGFloat {
-    let safeBottom = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first?.safeAreaInsets.bottom ?? 0
-    return min(NavGlide.carY(height, north: north) + 46, height - safeBottom - 68 - 8 - 15)
 }
 
 /** A word by a map button for a moment after a tap: what it's on now. */

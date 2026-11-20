@@ -373,6 +373,14 @@ public enum Geo {
         return (atan2(y, x) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
     }
 
+    /** The point [meters] from [p] towards [bearing] (degrees from north); fine for a few km. */
+    public static func destination(_ p: LatLng, bearing: Double, meters: Double) -> LatLng {
+        let b = bearing * .pi / 180
+        let dLat = meters * cos(b) / 110_540
+        let dLng = meters * sin(b) / (111_320 * max(cos(p.lat * .pi / 180), 0.01))
+        return LatLng(p.lat + dLat, p.lng + dLng)
+    }
+
     /** Decode an encoded polyline (precision 5 or 6). */
     public static func decodePolyline(_ s: String, precision: Double = 1e6) -> [LatLng] {
         var out: [LatLng] = []

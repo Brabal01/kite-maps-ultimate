@@ -132,6 +132,14 @@ object Geo {
     }
 
     /** Compass bearing from a to b, degrees. */
+    /** The point [meters] from [p] towards [bearing] (degrees from north); fine for a few km. */
+    fun destination(p: LatLng, bearing: Double, meters: Double): LatLng {
+        val b = bearing * PI / 180
+        val dLat = meters * cos(b) / 110_540
+        val dLng = meters * sin(b) / (111_320 * kotlin.math.max(cos(p.lat * PI / 180), 0.01))
+        return LatLng(p.lat + dLat, p.lng + dLng)
+    }
+
     fun bearing(a: LatLng, b: LatLng): Double {
         val p1 = a.lat * PI / 180
         val p2 = b.lat * PI / 180

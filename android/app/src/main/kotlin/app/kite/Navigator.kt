@@ -294,6 +294,15 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
             return if (b.alongMeters - a.alongMeters < 300) b else null
         }
 
+    /** How far after the next turn the "Then" one comes, for "Then ↰ after 40 yds". */
+    val thenGap: Double?
+        get() {
+            val b = thenManeuver ?: return null
+            val a = nextManeuver ?: return null
+            val gap = b.alongMeters - a.alongMeters
+            return if (gap > 0) gap else null
+        }
+
     private fun update(fix: Fix, heading: Double? = null): RouteTracker.Progress {
         val p = tracker.update(fix.coord, max(fix.accuracy, 5.0), heading)
         return p.copy(remainingSeconds = p.remainingSeconds * trafficScale)

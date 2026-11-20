@@ -261,6 +261,13 @@ final class Navigator: ObservableObject {
         return b.alongMeters - a.alongMeters < 300 ? b : nil
     }
 
+    /** How far after the next turn the "Then" one comes, for "Then ↰ after 40 yds". */
+    var thenGap: Double? {
+        guard let b = thenManeuver, let a = nextManeuver else { return nil }
+        let gap = b.alongMeters - a.alongMeters
+        return gap > 0 ? gap : nil
+    }
+
     /**
      * No fix for a few seconds while driving on the route: carry on along it at the speed the car
      * had, once a second, for up to three minutes (the longest road tunnels in Britain take about

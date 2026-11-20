@@ -323,6 +323,7 @@ fun TripBody(model: AppModel) {
                         Text(if (r.delayLevel == 0) "Traffic is light" else "${Fmt.duration(r.durationSeconds - r.typicalSeconds)} slower than usual",
                             fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = delayColor(r, dark))
                     }
+                    if (r.mode == TravelMode.DRIVE) Box(Modifier.padding(top = 2.dp)) { RouteTolls(r) }
                     if (r.mode == TravelMode.DRIVE) Box(Modifier.padding(top = 4.dp)) { RouteWazeSummary(r) }
                     if (r.mode == TravelMode.DRIVE) Box(Modifier.padding(top = 6.dp)) { RouteLiveCams(model, r) }
                 }
@@ -384,6 +385,40 @@ fun RouteCharges(route: Route) {
         }
     }
 }
+
+/**
+ * With "Avoid tolls" on: a quiet "No tolls" when the route is clear, or a plain warning naming the toll
+ * road when there was no way round it. Checked against the road map's own toll marks; nothing at all
+ * when the map server doesn't answer.
+ */
+@Composable
+fun RouteTolls(route: Route) {
+    val avoid = AppSettings.avoidTolls
+    var tolls by remember(route.id, avoid) { mutableStateOf(RouteTollsDemo.tolls) }
+    LaunchedEffect(route.id, avoid) {
+        if (RouteTollsDemo.tolls != null || !avoid || route.mode != TravelMode.DRIVE) return@LaunchedEffect
+        tolls = withContext(Dispatchers.IO) { Valhalla.tolls(route.polyline) }
+    }
+    val t = tolls ?: return
+    if (!avoid) return
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
+        if (t.isEmpty()) {
+            Icon(Icons.Filled.CheckCircle, null, tint = Vela.open, modifier = Modifier.size(18.dp))
+            Text("No tolls on this route", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Vela.open)
+        } else {
+            Icon(Icons.Filled.Warning, null, tint = Color(0xFFE37400), modifier = Modifier.size(18.dp))
+            Text("No toll-free way found. This route uses ${tollList(t)}.", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFE37400))
+        }
+    }
+}
+
+/** "the M6 Toll", "the M6 Toll and the Dartford Crossing". */
+fun tollList(names: List<String>): String {
+    val n = names.take(3).map { if (it == "A toll road") "a toll road" else "the $it" }
+    return if (n.size <= 1) n.firstOrNull() ?: "a toll road" else n.dropLast(1).joinToString(", ") + " and " + n.last()
+}
+
+object RouteTollsDemo { var tolls: List<String>? = null }
 
 /** Made-up charges for the build's screenshots. */
 object RouteChargesDemo { var charges: List<RoadCharge> = emptyList() }
