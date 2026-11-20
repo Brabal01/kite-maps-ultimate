@@ -67,6 +67,44 @@ ZONES = [("way", 770591846, "Birmingham Clean Air Zone", 40), ("relation", 15479
          ("relation", 17878642, "Aberdeen Low Emission Zone", 30), ("way", 1432941996, "Dundee Low Emission Zone", 30),
          ("relation", 16389126, "Sheffield Clean Air Zone", 40), ("way", 1338896773, "Newcastle Gateshead Clean Air Zone", 40),
          ("relation", 175342, "London ULEZ", 150)]
+
+import urllib.parse
+print("== Google reviews (listugcposts)")
+try:
+    import http.cookiejar
+    cj = http.cookiejar.CookieJar()
+    op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    hdr = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+           "Accept-Language": "en-GB,en;q=0.9", "Cookie": "SOCS=CAESHAgBEhIaAB; CONSENT=YES+"}
+    op.open(urllib.request.Request("https://www.google.com/maps?hl=en-GB&gl=gb", headers=hdr), timeout=30).read()
+    q = "https://www.google.com/search?tbm=map&authuser=0&hl=en-GB&gl=gb&q=" + urllib.parse.quote("Westquay Southampton")
+    body = op.open(urllib.request.Request(q, headers=hdr), timeout=30).read().decode("utf-8", "replace")
+    import re
+    fids = re.findall(r'"(0x[0-9a-f]+:0x[0-9a-f]+)"', body)
+    print("  feature ids:", fids[:3])
+    if fids:
+        fid = fids[0]
+        pb = (f"!1m6!1s{fid}!6m4!4m1!1e1!4m1!1e3!2m2!1i10!2s!5m2!1s!7e81"
+              "!8m5!1b1!2b1!3b1!5b1!7b1!11m6!1e3!2e1!3sen-GB!4sgb!6e1!7e1")
+        u = "https://www.google.com/maps/rpc/listugcposts?authuser=0&hl=en-GB&gl=gb&pb=" + urllib.parse.quote(pb, safe="!:")
+        r = op.open(urllib.request.Request(u, headers=hdr), timeout=30)
+        t = r.read().decode("utf-8", "replace")
+        print("  status", r.status, "len", len(t), "start", repr(t[:300]))
+        j = json.loads(t[t.index("\n") + 1:] if t.startswith(")]}'") else t)
+        revs = j[2] or []
+        print("  reviews:", len(revs), "next page:", repr(j[1])[:60])
+        def at(x, *path):
+            for i in path:
+                try: x = x[i]
+                except Exception: return "?"
+            return x
+        for x in revs[:3]:
+            print("   author", repr(at(x, 0, 1, 4, 5, 0)), "rating", repr(at(x, 0, 2, 0, 0)), "when", repr(at(x, 0, 1, 6)),
+                  "text", repr(str(at(x, 0, 2, 15, 0, 0))[:80]))
+        if revs: print("   RAW0", json.dumps(revs[0])[:3000])
+except Exception as e:
+    print("  reviews failed", repr(e))
+
 print("== Zone shapes for the app")
 for kind, oid, name, eps in ZONES:
     d = None
