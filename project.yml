@@ -17,18 +17,23 @@ targets:
     sources:
       - App/Sources
       - App/Assets.xcassets
+      - Shared
     dependencies:
       - package: MapLibre
       - package: VelaCore
+      # The next turn on the lock screen and in the Dynamic Island.
+      - target: KiteWidget
+        embed: true
     scheme: {}
     info:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Kite
-        CFBundleShortVersionString: "0.7.16"
+        CFBundleShortVersionString: "0.7.17"
         CFBundleVersion: "1"
         UILaunchScreen: {}
         ITSAppUsesNonExemptEncryption: false
+        NSSupportsLiveActivities: true
         NSLocationWhenInUseUsageDescription: Kite shows where you are on the map, finds places near you and guides you turn by turn.
         NSLocationAlwaysAndWhenInUseUsageDescription: Kite keeps guiding you with the screen off during navigation.
         NSMicrophoneUsageDescription: Kite listens when you tap the microphone to search by voice.
@@ -52,5 +57,28 @@ targets:
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        MARKETING_VERSION: "0.7.16"
+        MARKETING_VERSION: "0.7.17"
         CURRENT_PROJECT_VERSION: "1"
+  KiteWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.2"
+    sources:
+      - Widget
+      - Shared
+    info:
+      path: Widget/Info.plist
+      properties:
+        CFBundleDisplayName: Kite
+        CFBundleShortVersionString: "0.7.17"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.vela.ios.NavigationWidget
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        MARKETING_VERSION: "0.7.17"
+        CURRENT_PROJECT_VERSION: "1"
+        SKIP_INSTALL: YES

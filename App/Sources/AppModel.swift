@@ -745,9 +745,11 @@ final class AppModel: ObservableObject {
         location.setNavigating(true, mode: route.mode.rawValue)
         map?.showsUserLocation = false
         if let loc = location.last { n.handle(loc); followCamera(n, loc, animated: false) }
+        LiveTurn.shared.start(n)
     }
 
     func endNavigation() {
+        LiveTurn.shared.end()
         nav?.stop()
         glide.stop()
         nav = nil
@@ -832,6 +834,7 @@ final class AppModel: ObservableObject {
         followCamera(n, loc, animated: true)
         mapTick += 1
         tripCheck(n)
+        LiveTurn.shared.update(n)
     }
 
     /**

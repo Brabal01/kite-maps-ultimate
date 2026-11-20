@@ -174,6 +174,9 @@ jobs:
         run: |
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" \
             build/Build/Products/Release-iphoneos/Kite.app/Info.plist
+          for p in build/Build/Products/Release-iphoneos/Kite.app/PlugIns/*.appex/Info.plist; do
+            [ -e "$p" ] && /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" "$p"
+          done
       - name: Ad-hoc sign
         # An app with no signature at all is read as broken by some sideloaders. An ad-hoc
         # signature fixes that; the sideloader still re-signs with your Apple ID.
@@ -181,6 +184,10 @@ jobs:
           APP=build/Build/Products/Release-iphoneos/Kite.app
           for f in "$APP"/Frameworks/*.framework; do
             codesign --force --sign - --timestamp=none "$f"
+          done
+          # The lock-screen widget, inside the app: signed before the app that holds it.
+          for f in "$APP"/PlugIns/*.appex; do
+            [ -e "$f" ] && codesign --force --sign - --timestamp=none "$f"
           done
           codesign --force --sign - --timestamp=none "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
