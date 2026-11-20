@@ -1,0 +1,440 @@
+diff --git a/App/Sources/AppModel.swift b/App/Sources/AppModel.swift
+index bf445aa..cce8e9a 100644
+--- a/App/Sources/AppModel.swift
++++ b/App/Sources/AppModel.swift
+@@ -350,7 +350,7 @@ final class AppModel: ObservableObject {
+         let useGoogle = settings.googleSearchEnabled
+         let user = userLatLng
+         searchTask = Task {
+-            var r = await PlaceSearch.search(q, center: vp.center, spanMeters: vp.span, useGoogle: useGoogle)
++            var r = await PlaceSearch.search(q, center: vp.center, spanMeters: vp.span, useGoogle: useGoogle, language: L10n.isCzech ? "cs" : "en")
+             guard !Task.isCancelled else { return }
+             // Distances read from you, not from the middle of the map.
+             if let user {
+@@ -368,7 +368,7 @@ final class AppModel: ObservableObject {
+                 select(r.places[0])
+             } else {
+                 detent = .half
+-                frame(r.places.map(\.location))
++                frame(PlaceSearch.mapFocus(query: q, places: r.places, category: title != nil))
+             }
+         }
+     }
+@@ -385,7 +385,7 @@ final class AppModel: ObservableObject {
+             guard !Task.isCancelled else { return }
+             var r = SuggestParser.Result()
+             if useGoogle {
+-                r = (try? await GoogleClient.shared.suggest(q, near: vp.center, spanMeters: vp.span ?? 20_000)) ?? r
++                r = (try? await GoogleClient.shared.suggest(q, near: vp.center, spanMeters: vp.span ?? 20_000, language: L10n.isCzech ? "cs" : "en")) ?? r
+             }
+             if r.places.isEmpty && r.queries.isEmpty, let pc = await Postcodes.lookup(q) {
+                 // A UK postcode, like the Set home box finds: the open geocoder often misses them.
+@@ -502,7 +502,7 @@ final class AppModel: ObservableObject {
+         let q = [name, placeholder.address].compactMap { $0 }.joined(separator: " ")
+         let pid = placeholder.id
+         Task {
+-            let found = (try? await GoogleClient.shared.search(q, center: point, spanMeters: 1_000, pages: 1)) ?? []
++            let found = (try? await GoogleClient.shared.search(q, center: point, spanMeters: 1_000, pages: 1, language: L10n.isCzech ? "cs" : "en")) ?? []
+             guard selected?.id == pid else { return }
+             // The same place by name too, not just the nearest: a café next door mustn't take its place.
+             if let best = found.filter({ $0.location.distance(to: point) < 150 && Self.similarNames($0.name, name) })
+@@ -529,7 +529,7 @@ final class AppModel: ObservableObject {
+         guard !settings.noGoogle else { return }
+         let q = [p.name, p.address].compactMap { $0 }.joined(separator: " ")
+         Task {
+-            let found = (try? await GoogleClient.shared.search(q, center: p.location, spanMeters: 1_000, pages: 1)) ?? []
++            let found = (try? await GoogleClient.shared.search(q, center: p.location, spanMeters: 1_000, pages: 1, language: L10n.isCzech ? "cs" : "en")) ?? []
+             guard selected?.id == p.id, let fresh = found.first(where: {
+                 $0.location.distance(to: p.location) < 150 && Self.similarNames($0.name, p.name)
+             }) else { return }
+diff --git a/App/Sources/CustomJourneyViews.swift b/App/Sources/CustomJourneyViews.swift
+index 9917f36..8ca2461 100644
+--- a/App/Sources/CustomJourneyViews.swift
++++ b/App/Sources/CustomJourneyViews.swift
+@@ -38,7 +38,7 @@ struct RouteEndpointPicker: View {
+                 guard !Task.isCancelled else { return }
+                 let viewport = model.viewport
+                 let response = await PlaceSearch.search(term, center: model.userLatLng ?? viewport.center,
+-                                                       spanMeters: viewport.span, useGoogle: model.settings.googleSearchEnabled)
++                                                       spanMeters: viewport.span, useGoogle: model.settings.googleSearchEnabled, language: L10n.isCzech ? "cs" : "en")
+                 guard !Task.isCancelled else { return }
+                 results = response.places
+                 searching = false
+diff --git a/App/Sources/DirectionsViews.swift b/App/Sources/DirectionsViews.swift
+index 25b40a8..77bd5ae 100644
+--- a/App/Sources/DirectionsViews.swift
++++ b/App/Sources/DirectionsViews.swift
+@@ -993,26 +993,7 @@ struct TransitSteps: View {
+                 .font(.caption).foregroundStyle(.secondary)
+             if let exit = passage?.exit { portal(exit, title: "Metro exit %@", icon: "arrow.up.right.square") }
+             if let entrance = passage?.entrance { portal(entrance, title: "Metro entrance %@", icon: "arrow.down.right.square") }
+-            if !leg.walkSteps.isEmpty {
+-                DisclosureGroup(L10n.text("Walking instructions")) {
+-                    ForEach(Array(leg.walkSteps.enumerated()), id: \.offset) { _, step in
+-                        HStack(alignment: .firstTextBaseline) {
+-                            VStack(alignment: .leading, spacing: 2) {
+-                                Text(L10n.text(direction(step.direction)))
+-                                if let street = step.street { Text(street).foregroundStyle(.secondary) }
+-                                if let from = step.fromLevel, let to = step.toLevel, from != to {
+-                                    Text(L10n.format("Level %@ → %@", from.formatted(), to.formatted()))
+-                                        .foregroundStyle(.secondary)
+-                                }
+-                            }
+-                            Spacer()
+-                            if step.distance >= 1 { Text(Fmt.distance(step.distance)).monospacedDigit() }
+-                        }
+-                        .font(.caption).padding(.vertical, 3)
+-                    }
+-                }
+-                .font(.subheadline)
+-            }
++
+         }
+     }
+ 
+@@ -1027,21 +1008,7 @@ struct TransitSteps: View {
+         }
+     }
+ 
+-    private func direction(_ raw: String) -> String {
+-        switch raw {
+-        case "DEPART": return "Start walking"
+-        case "HARD_LEFT", "LEFT": return "Turn left"
+-        case "SLIGHTLY_LEFT": return "Bear left"
+-        case "HARD_RIGHT", "RIGHT": return "Turn right"
+-        case "SLIGHTLY_RIGHT": return "Bear right"
+-        case "STAIRS": return "Take the stairs"
+-        case "ELEVATOR": return "Take the lift"
+-        case "CIRCLE_CLOCKWISE": return "Go around to the right"
+-        case "CIRCLE_COUNTERCLOCKWISE": return "Go around to the left"
+-        case "UTURN_LEFT", "UTURN_RIGHT": return "Turn back"
+-        default: return "Continue on foot"
+-        }
+-    }
++
+ }
+ 
+ struct TransitCallRow: View {
+@@ -1155,7 +1122,7 @@ struct StopPicker: View {
+         let span = max(a.distance(to: b) * 1.2, 5_000)
+         let useGoogle = settings.googleSearchEnabled
+         Task {
+-            let r = await PlaceSearch.search(q, center: mid, spanMeters: span, useGoogle: useGoogle)
++            let r = await PlaceSearch.search(q, center: mid, spanMeters: span, useGoogle: useGoogle, language: L10n.isCzech ? "cs" : "en")
+             found = Array(r.places.prefix(30))
+             searching = false
+         }
+diff --git a/App/Sources/KitePages.swift b/App/Sources/KitePages.swift
+index 618edb4..3ab8c86 100644
+--- a/App/Sources/KitePages.swift
++++ b/App/Sources/KitePages.swift
+@@ -381,11 +381,11 @@ struct PlacePicker: View {
+             guard !Task.isCancelled else { return }
+             var places: [Place] = []
+             if full {
+-                places = await PlaceSearch.search(q, center: center, spanMeters: 50_000, useGoogle: useGoogle).places
++                places = await PlaceSearch.search(q, center: center, spanMeters: 50_000, useGoogle: useGoogle, language: L10n.isCzech ? "cs" : "en").places
+             } else {
+                 if let pc = await Postcodes.lookup(q) { places = [pc] }
+                 if places.isEmpty, useGoogle {
+-                    places = (try? await GoogleClient.shared.suggest(q, near: center, spanMeters: 50_000))?.places ?? []
++                    places = (try? await GoogleClient.shared.suggest(q, near: center, spanMeters: 50_000, language: L10n.isCzech ? "cs" : "en"))?.places ?? []
+                 }
+                 if places.isEmpty { places = (try? await Photon.search(q, near: center, limit: 10)) ?? [] }
+             }
+diff --git a/App/Sources/MapView.swift b/App/Sources/MapView.swift
+index f4f6a96..baaf75f 100644
+--- a/App/Sources/MapView.swift
++++ b/App/Sources/MapView.swift
+@@ -721,8 +721,11 @@ struct VelaMapView: UIViewRepresentable {
+         }
+ 
+         private func renderSignals() {
+-            let controls = model.nav?.routeControls ?? (model.nav == nil && model.hasActiveJourney
++            let routeControls = model.nav?.routeControls ?? (model.nav == nil && model.hasActiveJourney
+                 ? model.nearbyControls.filter { !model.justDrive || $0.kind.showsDuringDriving } : (model.nav == nil ? model.previewCoverage?.events.map(\.control) : nil))
++            let walking = model.nav?.route.mode == .walk ||
++                (model.nav == nil && (model.directions?.route?.mode == .walk || model.transitJourney?.leg.isWalk == true))
++            let controls = walking ? routeControls?.filter { $0.kind != .crossing && $0.kind != .oneWay } : routeControls
+             let signals = controls?.isEmpty != false ? model.nav?.routeSignals ?? [] : []
+             guard controls != drawnControls || signals != drawnSignals else { return }
+             drawnControls = controls
+diff --git a/App/Sources/NavigationViews.swift b/App/Sources/NavigationViews.swift
+index 05f6405..c69296d 100644
+--- a/App/Sources/NavigationViews.swift
++++ b/App/Sources/NavigationViews.swift
+@@ -1627,7 +1627,7 @@ struct AlongRouteSheet: View {
+         let span = max(end - here, 3_000)
+         let useGoogle = settings.googleSearchEnabled
+         task = Task {
+-            let r = await PlaceSearch.search(query, center: mid, spanMeters: span, useGoogle: useGoogle)
++            let r = await PlaceSearch.search(query, center: mid, spanMeters: span, useGoogle: useGoogle, language: L10n.isCzech ? "cs" : "en")
+             guard !Task.isCancelled else { return }
+             var out: [(Place, Double)] = []
+             for p in r.places {
+diff --git a/App/Sources/ResultsViews.swift b/App/Sources/ResultsViews.swift
+index 9a6c263..f7dad60 100644
+--- a/App/Sources/ResultsViews.swift
++++ b/App/Sources/ResultsViews.swift
+@@ -5,12 +5,21 @@ struct ResultsHeader: View {
+     @ObservedObject var model: AppModel
+     @Environment(\.colorScheme) private var scheme
+ 
++    private var provider: String? {
++        guard let source = model.results.first?.source, model.results.allSatisfy({ $0.source == source }) else { return nil }
++        switch source {
++        case "google": return "Google Maps"
++        case "osm": return "OpenStreetMap"
++        default: return nil
++        }
++    }
++
+     var body: some View {
+         VStack(alignment: .leading, spacing: 10) {
+             HStack(alignment: .top) {
+                 VStack(alignment: .leading, spacing: 2) {
+                     Text(L10n.text(model.resultsTitle.capitalizedFirst)).font(.system(size: 24, weight: .heavy))
+-                    Text(L10n.format("%@ results", String(describing: model.visibleResults.count))).font(.subheadline).foregroundColor(.secondary)
++                    Text([L10n.format("%@ results", String(describing: model.visibleResults.count)), provider].compactMap { $0 }.joined(separator: " · ")).font(.subheadline).foregroundColor(.secondary)
+                 }
+                 Spacer()
+                 CircleIconButton(icon: model.detent == .full ? "chevron.down" : "chevron.up") {
+diff --git a/VelaCore/Sources/VelaCore/GoogleClient.swift b/VelaCore/Sources/VelaCore/GoogleClient.swift
+index 99ee294..174d0ca 100644
+--- a/VelaCore/Sources/VelaCore/GoogleClient.swift
++++ b/VelaCore/Sources/VelaCore/GoogleClient.swift
+@@ -11,9 +11,9 @@ public actor GoogleClient {
+     static let userAgent =
+         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
+     static let secChUa = #""Not:A-Brand";v="8", "Chromium";v="156", "Google Chrome";v="156""#
+-    static let searchEndpoint = "https://www.google.com/search?tbm=map&authuser=0&hl=en-GB&gl=gb"
++    static let searchEndpoint = "https://www.google.com/search?tbm=map&authuser=0"
+     static let directionsEndpoint = "https://www.google.com/maps/preview/directions?authuser=0&hl=en-GB&gl=gb"
+-    static let suggestEndpoint = "https://www.google.com/s?tbm=map&gs_ri=maps&suggest=p&authuser=0&hl=en-GB&gl=gb"
++    static let suggestEndpoint = "https://www.google.com/s?tbm=map&gs_ri=maps&suggest=p&authuser=0"
+     static let suggestPb = "!2i5!4m12!1m3!1d{SPAN}!2d{LNG}!3d{LAT}!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1"
+         + "!7i20!10b1!12m6!1m2!18b1!30b1!2m2!1i203!2i100!19m4!1m3!1i1!2i1!3i1!20m1!1e1"
+     static let sessionWarmUrl = "https://www.google.com/maps?hl=en-GB&gl=gb"
+@@ -37,14 +37,14 @@ public actor GoogleClient {
+ 
+     /** Search Google around [center]. [spanMeters] is how wide the visible map is. A full first
+      *  page (a category like "restaurants") fetches pages two and three too, as Vela does. */
+-    public func search(_ query: String, center: LatLng, spanMeters: Double?, pages: Int = 3) async throws -> [Place] {
++    public func search(_ query: String, center: LatLng, spanMeters: Double?, pages: Int = 3, language: String = "en") async throws -> [Place] {
+         try await warm()
+-        let first = try await page(query, center: center, spanMeters: spanMeters, offset: 0)
++        let first = try await page(query, center: center, spanMeters: spanMeters, offset: 0, language: language)
+         guard pages > 1, first.count >= 18 else { return first }
+         var more: [Int: [Place]] = [:]
+         await withTaskGroup(of: (Int, [Place]).self) { group in
+             for i in 1..<pages {
+-                group.addTask { (i, (try? await self.page(query, center: center, spanMeters: spanMeters, offset: 20 * i)) ?? []) }
++                group.addTask { (i, (try? await self.page(query, center: center, spanMeters: spanMeters, offset: 20 * i, language: language)) ?? []) }
+             }
+             for await (i, p) in group { more[i] = p }
+         }
+@@ -54,25 +54,25 @@ public actor GoogleClient {
+         return first + extra
+     }
+ 
+-    private func page(_ query: String, center: LatLng, spanMeters: Double?, offset: Int) async throws -> [Place] {
++    private func page(_ query: String, center: LatLng, spanMeters: Double?, offset: Int, language: String) async throws -> [Place] {
+         let pb = SearchPb.build(query: query, center: center, spanMeters: spanMeters, offset: offset)
+-        let url = URL(string: Self.searchEndpoint + "&q=" + enc(query) + "&pb=" + enc(pb))!
++        let url = URL(string: Self.searchEndpoint + "&hl=" + enc(language) + "&q=" + enc(query) + "&pb=" + enc(pb))!
+         let body = try await get(url, referer: "https://www.google.com/", xhr: true)
+         guard let root = GoogleJSON.parse(body) else { throw VelaError.unexpectedResponse(String(body.prefix(200))) }
+-        return SearchParser.parse(root: root, near: center)
++        return SearchParser.parse(root: root, near: center, query: query)
+     }
+ 
+     private var ech = 0
+ 
+     /** Google's autocomplete while typing: places with a position, and suggested searches. */
+-    public func suggest(_ query: String, near: LatLng, spanMeters: Double = 20_000) async throws -> SuggestParser.Result {
++    public func suggest(_ query: String, near: LatLng, spanMeters: Double = 20_000, language: String = "en") async throws -> SuggestParser.Result {
+         try await warm()
+         ech += 1
+         let span = min(max(spanMeters, 2_000), 500_000)
+         let pb = Self.suggestPb.replacingOccurrences(of: "{SPAN}", with: String(span))
+             .replacingOccurrences(of: "{LNG}", with: near.lng.plain)
+             .replacingOccurrences(of: "{LAT}", with: near.lat.plain)
+-        let url = URL(string: Self.suggestEndpoint + "&pb=" + enc(pb) + "&q=" + enc(query) + "&tch=1&ech=\(ech)")!
++        let url = URL(string: Self.suggestEndpoint + "&hl=" + enc(language) + "&pb=" + enc(pb) + "&q=" + enc(query) + "&tch=1&ech=\(ech)")!
+         let body = try await get(url, referer: "https://www.google.com/", xhr: true)
+         return SuggestParser.parse(body, near: near)
+     }
+@@ -107,7 +107,8 @@ public actor GoogleClient {
+         r.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+         r.setValue(xhr ? "*/*" : "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                    forHTTPHeaderField: "Accept")
+-        r.setValue(Self.acceptLanguage, forHTTPHeaderField: "Accept-Language")
++        let language = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "hl" }?.value
++        r.setValue(language ?? Self.acceptLanguage, forHTTPHeaderField: "Accept-Language")
+         r.setValue(Self.secChUa, forHTTPHeaderField: "Sec-CH-UA")
+         r.setValue("?0", forHTTPHeaderField: "Sec-CH-UA-Mobile")
+         r.setValue("\"Windows\"", forHTTPHeaderField: "Sec-CH-UA-Platform")
+diff --git a/VelaCore/Sources/VelaCore/PlaceSearch.swift b/VelaCore/Sources/VelaCore/PlaceSearch.swift
+index 3df8bad..51815e2 100644
+--- a/VelaCore/Sources/VelaCore/PlaceSearch.swift
++++ b/VelaCore/Sources/VelaCore/PlaceSearch.swift
+@@ -12,26 +12,38 @@ public enum PlaceSearch {
+         }
+     }
+ 
+-    public static func search(_ query: String, center: LatLng, spanMeters: Double?, useGoogle: Bool = true) async -> Result {
++    public static func search(_ query: String, center: LatLng, spanMeters: Double?, useGoogle: Bool = true, language: String = "en") async -> Result {
+         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+         guard !q.isEmpty else { return Result(places: []) }
+         var googleError: String?
+         if useGoogle { do {
+-            var places = try await GoogleClient.shared.search(q, center: center, spanMeters: spanMeters)
++            let places = try await GoogleClient.shared.search(q, center: center, spanMeters: spanMeters, language: language)
+             if !places.isEmpty {
+-                // Google sometimes puts a far-off namesake first ("Covent Garden Market" in Ontario,
+-                // "Museo Británico" for the British Museum): one nearby goes ahead of it.
+-                places = nearFirst(places, center: center)
+                 return Result(places: places)
+             }
+         } catch {
+             googleError = error.localizedDescription
+         } }
++        if useGoogle, !Task.isCancelled {
++            let suggestions = try? await GoogleClient.shared.suggest(q, near: center, spanMeters: spanMeters ?? 20_000,
++                                                                      language: language)
++            if let places = suggestions?.places, !places.isEmpty { return Result(places: places) }
++        }
++        guard !Task.isCancelled else { return Result(places: []) }
+         if let pc = await Postcodes.lookup(q) { return Result(places: [pc], googleError: googleError) }
+         let osm = (try? await Photon.search(q, near: center)) ?? []
+         return Result(places: osm, googleError: googleError)
+     }
+ 
++    public static func mapFocus(query: String, places: [Place], category: Bool) -> [LatLng] {
++        let terms = SuggestParser.words(query)
++        let named = !category && !terms.isEmpty && places.filter { place in
++            let name = Set(SuggestParser.words(place.name))
++            return terms.allSatisfy(name.contains)
++        }.count * 5 >= places.count * 3
++        return places.prefix(named ? 1 : 3).map(\.location)
++    }
++
+     static let nearMeters = 100_000.0, farMeters = 300_000.0
+ 
+     /** Results within 100 km keep Google's order but go ahead of any more than 300 km away. */
+diff --git a/VelaCore/Sources/VelaCore/SearchParser.swift b/VelaCore/Sources/VelaCore/SearchParser.swift
+index 3bd898e..9bbed3a 100644
+--- a/VelaCore/Sources/VelaCore/SearchParser.swift
++++ b/VelaCore/Sources/VelaCore/SearchParser.swift
+@@ -35,15 +35,29 @@ enum SearchParser {
+         "closedFlag": [1, 23],
+     ]
+ 
+-    static func parse(root: Any, near: LatLng?) -> [Place] {
+-        let entries: [Any] =
+-            nonEmpty(arr(at(root, paths["results"]!)))
++    static func parse(root: Any, near: LatLng?, query: String = "") -> [Place] {
++        let list = nonEmpty(arr(at(root, paths["results"]!)))
++        let entries: [Any] = list
+             ?? atThisPlaceEntries(root)
+             ?? singleEntry(root)
+-            ?? []
++            ?? (arr(root) ?? []).compactMap(arr).filter { group in
++                guard let first = group.first else { return false }
++                return str(field(first, "name")) != nil && dbl(field(first, "lat")) != nil
++            }.max(by: { $0.count < $1.count }) ?? []
+         // Google's own order (its best match first), as Google Maps lists them; the Sort menu has Distance.
+         var seen = Set<String>()
+-        return entries.compactMap { toPlace($0, near: near) }.filter { seen.insert($0.featureId ?? $0.id).inserted }
++        var places = entries.compactMap { toPlace($0, near: near) }.filter { seen.insert($0.id).inserted }
++        let words = SuggestParser.words(query)
++        if list == nil, places.count == 1, let focus = places.first, words.joined().count >= 3,
++           let related = arr(at(root, 0, 1, 0, 14, 99, 0, 0, 1)) {
++            for row in related {
++                guard let place = toPlace(row, near: near), place.location.distance(to: focus.location) > 30 else { continue }
++                let name = Set(SuggestParser.words(place.name))
++                guard words.allSatisfy(name.contains), seen.insert(place.id).inserted else { continue }
++                places.append(place)
++            }
++        }
++        return places
+     }
+ 
+     private static func nonEmpty(_ a: [Any]?) -> [Any]? {
+@@ -76,7 +90,7 @@ enum SearchParser {
+     static func toPlace(_ entry: Any, near: LatLng?) -> Place? {
+         guard let name = str(field(entry, "name")),
+               let lat = dbl(field(entry, "lat")),
+-              let lng = dbl(field(entry, "lng")) else { return nil }
++              let lng = dbl(field(entry, "lng")), (-90...90).contains(lat), (-180...180).contains(lng) else { return nil }
+         let loc = LatLng(lat, lng)
+         var p = Place(id: "g:\(str(field(entry, "featureId")) ?? "\(name)|\(Int(lat * 1e4))|\(Int(lng * 1e4))")",
+                       name: name, location: loc, source: "google")
+@@ -96,7 +110,7 @@ enum SearchParser {
+         p.statusText = status
+         p.openNow = openNow(status)
+         p.permanentlyClosed = int(field(entry, "closedFlag")) == 1
+-            || [rich, s118, str(field(entry, "openStatus"))].contains { $0?.localizedCaseInsensitiveContains("Permanently") == true }
++            || [rich, s118, str(field(entry, "openStatus"))].contains { $0?.localizedCaseInsensitiveContains("Permanently") == true || $0?.localizedCaseInsensitiveContains("Trvale uzavřeno") == true }
+         // Hours from the same block the status came from, so the two never disagree.
+         let h203 = readHours(field(entry, "hours203"))
+         let h118 = readHours(field(entry, "hours118"))
+@@ -130,8 +144,8 @@ enum SearchParser {
+      *  Closed words are tested first: "Opens 5 AM" starts like "Open" but means closed. */
+     static func openNow(_ status: String?) -> Bool? {
+         guard let s = status?.trimmingCharacters(in: .whitespaces), !s.isEmpty else { return nil }
+-        if ["Closed", "Opens", "Opening", "Temporarily", "Permanently"].contains(where: { s.hasPrefix($0) }) { return false }
+-        if ["Open", "Closes", "Closing"].contains(where: { s.hasPrefix($0) }) { return true }
++        if ["Closed", "Opens", "Opening", "Temporarily", "Permanently", "Zavřeno", "Otevírá", "Dočasně", "Trvale"].contains(where: { s.hasPrefix($0) }) { return false }
++        if ["Open", "Closes", "Closing", "Otevřeno", "Zavírá"].contains(where: { s.hasPrefix($0) }) { return true }
+         return nil
+     }
+ 
+diff --git a/VelaCore/Tests/VelaCoreTests/SearchParserTests.swift b/VelaCore/Tests/VelaCoreTests/SearchParserTests.swift
+index 6d28604..5dd2473 100644
+--- a/VelaCore/Tests/VelaCoreTests/SearchParserTests.swift
++++ b/VelaCore/Tests/VelaCoreTests/SearchParserTests.swift
+@@ -42,6 +42,43 @@ final class SearchParserTests: XCTestCase {
+         XCTAssertEqual(places[0].openNow, false)
+     }
+ 
++    func testSearchFindsRelocatedListAndCzechHours() {
++        let first = entry(name: "Kavárna Most", lat: 50, lng: 14, status: "Otevřeno · Zavírá v 18:00")
++        let second = entry(name: "Kavárna u parku", lat: 50.02, lng: 14, status: "Zavřeno")
++        let places = SearchParser.parse(root: [NSNull(), [first, second]] as [Any], near: nil)
++        XCTAssertEqual(places.map(\.name), ["Kavárna Most", "Kavárna u parku"])
++        XCTAssertEqual(places.map(\.openNow), [true, false])
++        XCTAssertEqual(PlaceSearch.mapFocus(query: "kavarna", places: places, category: true).count, 2)
++        XCTAssertEqual(PlaceSearch.mapFocus(query: "kavarna", places: places, category: false).count, 1)
++    }
++
++    func testGoogleFocusedResultOnlyAddsMatchingBranches() {
++        func nested(_ value: Any, _ indices: [Int]) -> Any {
++            indices.reversed().reduce(value) { child, index in
++                var row = [Any](repeating: NSNull(), count: index + 1)
++                row[index] = child
++                return row
++            }
++        }
++        var focus = entry(name: "Cafe Atlas", lat: 50, lng: 14, status: nil)[1] as! [Any]
++        let branch = entry(name: "Cafe Atlas Centrum", lat: 50.02, lng: 14, status: nil)
++        let other = entry(name: "Atlas Books", lat: 50.03, lng: 14, status: nil)
++        focus[99] = nested([branch, other, branch], [0, 0, 1])
++        let places = SearchParser.parse(root: nested(focus, [0, 1, 0, 14]), near: nil, query: "cafe atlas")
++        XCTAssertEqual(places.map(\.name), ["Cafe Atlas", "Cafe Atlas Centrum"])
++    }
++
++    func testLivePlaceSearchWhenRequested() async throws {
++        guard ProcessInfo.processInfo.environment["KITE_VERIFY_GOOGLE"] == "1" else {
++            throw XCTSkip("Live search is opt-in")
++        }
++        let response = await PlaceSearch.search("Eiffel Tower", center: LatLng(48.858, 2.294),
++                                                spanMeters: 10_000, language: "en")
++        guard response.places.contains(where: { $0.source == "google" && $0.name.lowercased().contains("eiffel") }) else {
++            throw XCTSkip("Google did not return a verifiable Eiffel Tower result from this runner")
++        }
++    }
++
+     func testOpensIsClosed() {
+         XCTAssertEqual(SearchParser.openNow("Opens 5 AM"), false)
+         XCTAssertEqual(SearchParser.openNow("Open 24 hours"), true)

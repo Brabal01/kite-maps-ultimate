@@ -1,0 +1,842 @@
+diff --git a/App/Sources/AppModel.swift b/App/Sources/AppModel.swift
+index 61b11aa..2f596ac 100644
+--- a/App/Sources/AppModel.swift
++++ b/App/Sources/AppModel.swift
+@@ -1250,8 +1250,21 @@ final class AppModel: ObservableObject {
+                       edgePadding: UIEdgeInsets(top: 0, left: sideInset, bottom: 0, right: 0), completionHandler: nil)
+     }
+ 
++    func adjustNavZoom(wider: Bool) {
++        guard let n = nav, let map else { return }
++        let factor = wider ? 1.5 : 1 / 1.5
++        if n.following, location.last != nil {
++            glide.adjustZoom(by: factor)
++        } else {
++            let cam = map.camera
++            cam.altitude = min(20_000_000, max(20, cam.altitude * factor))
++            map.setCamera(cam, withDuration: 0.25, animationTimingFunction: nil)
++        }
++    }
++
+     func recenterNav() {
+         guard let n = nav else { return }
++        glide.resetZoom()
+         n.showingOverview = false
+         n.following = true
+         if let loc = location.last { followCamera(n, loc, animated: true) }
+diff --git a/App/Sources/AppleMapView.swift b/App/Sources/AppleMapView.swift
+index d717eee..dfd9102 100644
+--- a/App/Sources/AppleMapView.swift
++++ b/App/Sources/AppleMapView.swift
+@@ -72,11 +72,21 @@ final class AppleMapSurface: UIView, KiteMapSurface, MKMapViewDelegate, UIGestur
+         native.frame = bounds
+         native.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+         native.showsCompass = false
++        if #available(iOS 17.0, *) {
++            native.traitOverrides.preferredContentSizeCategory = .medium
++        }
+         native.layoutMargins.bottom = 108
+         native.setCenter(Self.start, animated: false)
+         native.selectableMapFeatures = [.pointsOfInterest, .physicalFeatures, .territories]
+         native.delegate = self
+ 
++        // Observe the touch itself. MapKit's region callback can arrive before its pinch
++        // recognizer becomes active, while the navigation display link is still moving the camera.
++        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
++        pinch.cancelsTouchesInView = false
++        pinch.delegate = self
++        native.addGestureRecognizer(pinch)
++
+         let press = UILongPressGestureRecognizer(target: self, action: #selector(pressed(_:)))
+         let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+         for gesture in allGestures(in: native) {
+@@ -220,7 +230,7 @@ final class AppleMapSurface: UIView, KiteMapSurface, MKMapViewDelegate, UIGestur
+             if settings.satellite {
+                 native.preferredConfiguration = MKHybridMapConfiguration(elevationStyle: elevation)
+             } else {
+-                native.preferredConfiguration = MKStandardMapConfiguration(elevationStyle: elevation)
++                native.preferredConfiguration = MKStandardMapConfiguration(elevationStyle: elevation, emphasisStyle: .muted)
+             }
+         }
+         let showBuildings = !settings.satellite && (!navigating || settings.navBuildings)
+@@ -490,6 +500,11 @@ final class AppleMapSurface: UIView, KiteMapSurface, MKMapViewDelegate, UIGestur
+         }
+     }
+ 
++    @objc private func pinched(_ recognizer: UIPinchGestureRecognizer) {
++        guard recognizer.state == .began || recognizer.state == .changed else { return }
++        coordinator?.userMovedCamera(panOrRotate: false)
++    }
++
+     @objc private func pressed(_ recognizer: UILongPressGestureRecognizer) {
+         guard recognizer.state == .began else { return }
+         coordinator?.dropAt(native.convert(recognizer.location(in: native), toCoordinateFrom: native))
+diff --git a/App/Sources/CustomJourneyViews.swift b/App/Sources/CustomJourneyViews.swift
+index 20ca154..1264e7b 100644
+--- a/App/Sources/CustomJourneyViews.swift
++++ b/App/Sources/CustomJourneyViews.swift
+@@ -112,14 +112,17 @@ struct ActiveTransitView: View {
+                 }
+                 Text(L10n.format("Leg %@ of %@", String(journey.index + 1), String(journey.trip.legs.count)))
+                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+-                if let direction = journey.leg.headsign, !direction.isEmpty { Text(direction).font(.headline) }
++                if let direction = journey.leg.headsign { Text(L10n.format("Direction: %@", direction)).font(.headline) }
+                 if journey.leg.isWalk {
+                     Text(journey.leg.toName)
+                     if journey.loadingWalk { ProgressView("Loading walking guidance…") }
+                 } else {
+-                    if !journey.leg.fromName.isEmpty { Text(L10n.format("Board at %@", journey.leg.fromName)) }
+-                    if let departure = journey.leg.depart { Text(departure, style: .time).font(.subheadline) }
+-                    if !journey.leg.toName.isEmpty { Text(L10n.format("Get off at %@", journey.leg.toName)) }
++                    if !journey.boarded {
++                        TransitCallRow(role: "Board at %@", name: journey.leg.fromName, stop: journey.leg.boardStop,
++                                       time: journey.leg.depart, delay: journey.leg.delayMinutes)
++                    }
++                    TransitCallRow(role: "Get off at %@", name: journey.leg.toName, stop: journey.leg.exitStop,
++                                   time: journey.leg.arrive, delay: journey.leg.arrivalDelayMinutes)
+                 }
+                 if !journey.leg.isWalk && !journey.boarded {
+                     PillButton(title: "I'm on board", icon: "checkmark", filled: true) { model.boardTransit() }
+diff --git a/App/Sources/DirectionsViews.swift b/App/Sources/DirectionsViews.swift
+index faec356..34435dd 100644
+--- a/App/Sources/DirectionsViews.swift
++++ b/App/Sources/DirectionsViews.swift
+@@ -661,6 +661,7 @@ struct TransitBody: View {
+ 
+     @State private var kind = 0
+     @State private var when = Date()
++    @State private var expanded: UUID?
+ 
+     var body: some View {
+         VStack(alignment: .leading, spacing: 8) {
+@@ -689,15 +690,28 @@ struct TransitBody: View {
+         if let trips = state.trips, !trips.isEmpty {
+             VStack(alignment: .leading, spacing: 0) {
+                 ForEach(Array(trips.enumerated()), id: \.element.id) { i, t in
+-                    Button { model.selectTrip(i) } label: { TripRow(trip: t, picked: t.id == state.pickedTrip?.id) }
+-                        .buttonStyle(.plain)
++                    let open = expanded == t.id
++                    Button {
++                        model.selectTrip(i)
++                        expanded = open ? nil : t.id
++                    } label: {
++                        HStack(spacing: 3) {
++                            TripRow(trip: t, picked: t.id == state.pickedTrip?.id)
++                            Image(systemName: open ? "chevron.up" : "chevron.down")
++                                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
++                                .padding(.trailing, 8)
++                        }
++                    }
++                    .buttonStyle(.plain)
++                    .accessibilityHint(open ? Text("Hide trip details") : Text("Show trip details"))
++                    if open {
++                        TransitSteps(trip: t).padding(.horizontal, 8)
++                    }
+                     Divider()
+                 }
+             }
+             if let t = state.pickedTrip {
+                 TransitStartButton { model.startTransit(t) }
+-                Text("Steps").font(.headline).padding(.top, 6)
+-                TransitSteps(trip: t)
+             }
+             Text("Timetables from Transitous").font(.caption).foregroundColor(.secondary).padding(.top, 4)
+         } else if state.trips == nil {
+@@ -894,41 +908,173 @@ func vehicleSymbol(_ v: TransitLeg.Vehicle) -> String {
+ 
+ struct TransitSteps: View {
+     let trip: TransitTrip
++    @State private var passages: [Int: TransitStationAccess.Passage] = [:]
+ 
+     var body: some View {
+         VStack(alignment: .leading, spacing: 0) {
+-            ForEach(Array(trip.legs.enumerated()), id: \.offset) { _, leg in
+-                HStack(alignment: .top, spacing: 14) {
++            ForEach(Array(trip.legs.enumerated()), id: \.offset) { index, leg in
++                HStack(alignment: .top, spacing: 12) {
+                     Image(systemName: vehicleSymbol(leg.vehicle))
+                         .font(.system(size: 17, weight: .semibold))
+                         .foregroundColor(leg.isWalk ? .secondary : (leg.color.map { Color(hex: $0) } ?? Vela.routeBlue))
+-                        .frame(width: 26)
+-                    VStack(alignment: .leading, spacing: 3) {
+-                        if leg.isWalk {
+-                            Text(leg.toName.isEmpty || leg.toName == "END" ? "Walk to the destination" : "Walk to \(leg.toName)").font(.subheadline)
+-                            Text("\(Fmt.duration(leg.durationSeconds)) · \(Fmt.distance(leg.distanceMeters))").font(.caption).foregroundColor(.secondary)
+-                        } else {
+-                            HStack(spacing: 6) {
+-                                LineChip(leg: leg)
+-                                if let h = leg.headsign { Text(L10n.format("to %@", String(describing: h))).font(.subheadline).lineLimit(1) }
++                        .frame(width: 24)
++                        .accessibilityHidden(true)
++                    VStack(alignment: .leading, spacing: 6) {
++                        if leg.isWalk { walk(leg, passage: passages[index], transfer: index > 0 && index < trip.legs.count - 1) }
++                        else { ride(leg) }
++                    }
++                    .frame(maxWidth: .infinity, alignment: .leading)
++                }
++                .padding(.vertical, 10)
++                Divider().padding(.leading, 36)
++            }
++        }
++        .task(id: trip.id) {
++            passages = [:]
++            guard trip.hasMetroAccessNodes else { return }
++            let result = await TransitStationAccess.resolve(trip)
++            if !Task.isCancelled { passages = result }
++        }
++    }
++
++    private func ride(_ leg: TransitLeg) -> some View {
++        Group {
++            HStack(alignment: .firstTextBaseline, spacing: 6) {
++                LineChip(leg: leg)
++                if let direction = leg.headsign {
++                    Text(L10n.format("Direction: %@", direction)).font(.subheadline.weight(.semibold))
++                }
++            }
++            let operatorDetails = [leg.agency, leg.serviceNumber].compactMap { $0 }.joined(separator: " · ")
++            if !operatorDetails.isEmpty { Text(operatorDetails).font(.caption).foregroundStyle(.secondary) }
++            TransitCallRow(role: "Board at %@", name: leg.fromName, stop: leg.boardStop, time: leg.depart,
++                           delay: leg.delayMinutes)
++            if !leg.intermediateStops.isEmpty {
++                DisclosureGroup(L10n.text("Stops along the way")) {
++                    ForEach(Array(leg.intermediateStops.enumerated()), id: \.offset) { _, stop in
++                        HStack {
++                            Text(stop.name).strikethrough(stop.skipped)
++                            if stop.skipped {
++                                Text("Skipped stop").foregroundStyle(.secondary)
+                             }
+-                            Text(times(leg.depart, leg.fromName)).font(.subheadline)
+-                            Text(L10n.format("Ride %@ stop%@ · %@", String(describing: leg.stops), String(describing: leg.stops == 1 || L10n.isCzech ? "" : "s"), String(describing: Fmt.duration(leg.durationSeconds))))
+-                                .font(.caption).foregroundColor(.secondary)
+-                            Text(times(leg.arrive, "Get off at \(leg.toName)")).font(.caption).foregroundColor(.secondary)
++                            Spacer()
++                            if let time = stop.arrival ?? stop.departure { Text(transitClock(time, stop: stop)).monospacedDigit() }
+                         }
++                        .font(.caption).padding(.vertical, 3)
+                     }
+-                    Spacer()
+                 }
+-                .padding(.vertical, 9)
+-                Divider().padding(.leading, 40)
++                .font(.subheadline)
++            }
++            TransitCallRow(role: "Get off at %@", name: leg.toName, stop: leg.exitStop, time: leg.arrive,
++                           delay: leg.arrivalDelayMinutes)
++            ForEach(leg.serviceAlerts, id: \.self) { message in
++                Label(message, systemImage: "exclamationmark.triangle")
++                    .font(.caption).foregroundStyle(.secondary)
+             }
+         }
+     }
+ 
+-    private func times(_ d: Date?, _ text: String) -> String {
+-        d.map { "\(clock.string(from: $0))  \(text)" } ?? text
++    private func walk(_ leg: TransitLeg, passage: TransitStationAccess.Passage?, transfer: Bool) -> some View {
++        Group {
++            if leg.toName.isEmpty || leg.toName == "END" {
++                Text("Walk to the destination").font(.subheadline.weight(.semibold))
++            } else {
++                Text(L10n.format(transfer ? "Transfer on foot to %@" : "Walk to %@", leg.toName))
++                    .font(.subheadline.weight(.semibold))
++            }
++            Text("\(Fmt.duration(leg.durationSeconds)) · \(Fmt.distance(leg.distanceMeters))")
++                .font(.caption).foregroundStyle(.secondary)
++            if let exit = passage?.exit { portal(exit, title: "Metro exit %@", icon: "arrow.up.right.square") }
++            if let entrance = passage?.entrance { portal(entrance, title: "Metro entrance %@", icon: "arrow.down.right.square") }
++            if !leg.walkSteps.isEmpty {
++                DisclosureGroup(L10n.text("Walking instructions")) {
++                    ForEach(Array(leg.walkSteps.enumerated()), id: \.offset) { _, step in
++                        HStack(alignment: .firstTextBaseline) {
++                            VStack(alignment: .leading, spacing: 2) {
++                                Text(L10n.text(direction(step.direction)))
++                                if let street = step.street { Text(street).foregroundStyle(.secondary) }
++                                if let from = step.fromLevel, let to = step.toLevel, from != to {
++                                    Text(L10n.format("Level %@ → %@", from.formatted(), to.formatted()))
++                                        .foregroundStyle(.secondary)
++                                }
++                            }
++                            Spacer()
++                            if step.distance >= 1 { Text(Fmt.distance(step.distance)).monospacedDigit() }
++                        }
++                        .font(.caption).padding(.vertical, 3)
++                    }
++                }
++                .font(.subheadline)
++            }
++        }
+     }
++
++    private func portal(_ portal: TransitStationAccess.Portal, title: String, icon: String) -> some View {
++        let details = [portal.reference, portal.name == portal.reference ? nil : portal.name].compactMap { $0 }.joined(separator: " · ")
++        return VStack(alignment: .leading, spacing: 2) {
++            Label(L10n.format(title, details.isEmpty ? portal.destination ?? "" : details), systemImage: icon)
++                .font(.subheadline.weight(.semibold))
++            if let destination = portal.destination, !details.isEmpty {
++                Text(L10n.format("Follow signs toward %@", destination)).font(.caption).foregroundStyle(.secondary)
++            }
++        }
++    }
++
++    private func direction(_ raw: String) -> String {
++        switch raw {
++        case "DEPART": return "Start walking"
++        case "HARD_LEFT", "LEFT": return "Turn left"
++        case "SLIGHTLY_LEFT": return "Bear left"
++        case "HARD_RIGHT", "RIGHT": return "Turn right"
++        case "SLIGHTLY_RIGHT": return "Bear right"
++        case "STAIRS": return "Take the stairs"
++        case "ELEVATOR": return "Take the lift"
++        case "CIRCLE_CLOCKWISE": return "Go around to the right"
++        case "CIRCLE_COUNTERCLOCKWISE": return "Go around to the left"
++        case "UTURN_LEFT", "UTURN_RIGHT": return "Turn back"
++        default: return "Continue on foot"
++        }
++    }
++}
++
++struct TransitCallRow: View {
++    let role: String
++    let name: String
++    let stop: TransitCall?
++    let time: Date?
++    var delay: Int? = nil
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: 3) {
++            HStack(alignment: .firstTextBaseline, spacing: 5) {
++                if let time { Text(transitClock(time, stop: stop)).monospacedDigit().fontWeight(.semibold) }
++                if !name.isEmpty { Text(L10n.format(role, name)) }
++            }
++            .font(.subheadline)
++            let platform = stop?.track.map { value in
++                if let scheduled = stop?.scheduledTrack, scheduled != value {
++                    return L10n.format("Platform change: %@ → %@", scheduled, value)
++                }
++                return L10n.format("Platform %@", value)
++            }
++            let code = stop?.stopCode.flatMap { $0 == stop?.track ? nil : L10n.format("Stop code %@", $0) }
++            let label = [platform, code].compactMap { $0 }.joined(separator: " · ")
++            if !label.isEmpty { Text(label).font(.caption).foregroundStyle(.secondary) }
++            if let detail = stop?.detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
++            if let delay, delay != 0 {
++                Text(L10n.format(delay > 0 ? "%@ min late" : "%@ min early", String(abs(delay))))
++                    .font(.caption).foregroundStyle(delay > 0 ? Color.orange : Color.secondary)
++            }
++        }
++    }
++}
++
++private func transitClock(_ time: Date, stop: TransitCall?) -> String {
++    guard let zone = stop?.timeZone.flatMap(TimeZone.init(identifier:)) else { return clock.string(from: time) }
++    let formatter = DateFormatter()
++    formatter.timeStyle = .short
++    formatter.timeZone = zone
++    return formatter.string(from: time)
+ }
+ 
+ /** Search for a place to stop at on the way. Home, work and saved places are one tap. */
+diff --git a/App/Sources/MapStyler.swift b/App/Sources/MapStyler.swift
+index afba650..3d32c1f 100644
+--- a/App/Sources/MapStyler.swift
++++ b/App/Sources/MapStyler.swift
+@@ -114,6 +114,9 @@ enum MapStyler {
+                 let textColor: UIColor
+                 if id.hasPrefix("highway-name") {
+                     textColor = p.roadLabel
++                    if id == "highway-name-major" || id == "highway-name-minor" {
++                        s.textFontSize = NSExpression(forConstantValue: id == "highway-name-major" ? 13 : 11)
++                    }
+                 } else if id.hasPrefix("water") {
+                     textColor = p.waterLabel
+                 } else if id.hasPrefix("label_village") || id.hasPrefix("label_other") || id.hasPrefix("poi_") {
+@@ -138,7 +141,6 @@ enum MapStyler {
+                 "aeroway_fill", "aeroway_runway", "aeroway_taxiway"].contains(id)
+     }
+ 
+-    private static var savedLabelSizes: [String: NSExpression] = [:]
+     private static var savedShieldSpacing: [String: NSExpression] = [:]
+     private static var savedShieldPadding: [String: NSExpression] = [:]
+     private static var savedLineOpacity: [String: NSExpression] = [:]
+@@ -148,7 +150,7 @@ enum MapStyler {
+         (id.hasPrefix("road_") || id.hasPrefix("bridge_") || id.hasPrefix("tunnel_")) && (id.contains("minor") || id.contains("service_track"))
+     }
+ 
+-    /** Strips the map to roads, water, parks and big road names while navigating, and puts it back after. */
++    /** Strips the map to roads, water, parks and road names while navigating, and puts it back after. */
+     static func drive(_ style: MLNStyle, on: Bool) {
+         for layer in style.layers where !layer.identifier.hasPrefix("vela") {
+             let id = layer.identifier
+@@ -170,10 +172,6 @@ enum MapStyler {
+                 l.lineOpacity = on ? NSExpression(forConstantValue: 0.6) : savedLineOpacity[id]!
+                 continue
+             }
+-            if let s = layer as? MLNSymbolStyleLayer, id == "highway-name-major" || id == "highway-name-minor" {
+-                if savedLabelSizes[id] == nil { savedLabelSizes[id] = s.textFontSize }
+-                s.textFontSize = on ? NSExpression(forConstantValue: id == "highway-name-major" ? 17 : 15) : savedLabelSizes[id]!
+-            }
+         }
+     }
+ }
+diff --git a/App/Sources/NavGlide.swift b/App/Sources/NavGlide.swift
+index 1bff8c6..e116a3f 100644
+--- a/App/Sources/NavGlide.swift
++++ b/App/Sources/NavGlide.swift
+@@ -47,6 +47,7 @@ final class NavGlide: NSObject {
+     private var line: [LatLng] = []
+     private var cum: [Double] = []
+     private var targetAcross: Double = 600
++    private var zoomMultiplier = 1.0
+     private var targetPitch: Double = 50
+     /** 3D, 2D or north up, from the map button. */
+     var look: MapLook = .tilted
+@@ -83,7 +84,7 @@ final class NavGlide: NSObject {
+             shownAlong = onRoute ? fixAlong : nil
+             shownCoord = onRoute ? coord(at: fixAlong) : fixCoord
+             shownBearing = fixBearing
+-            shownAcross = across
++            shownAcross = across * zoomMultiplier
+             shownPitch = pitch
+             northBlend = look == .north ? 1 : 0
+         }
+@@ -91,7 +92,16 @@ final class NavGlide: NSObject {
+         if jump { step(dt: 0) }
+     }
+ 
++    func adjustZoom(by factor: Double) {
++        let next = min(5, max(0.55, zoomMultiplier * factor))
++        shownAcross *= next / zoomMultiplier
++        zoomMultiplier = next
++    }
++
++    func resetZoom() { zoomMultiplier = 1 }
++
+     func stop() {
++        resetZoom()
+         link?.invalidate()
+         link = nil
+         nav = nil
+@@ -154,8 +164,9 @@ final class NavGlide: NSObject {
+         if turn > 180 { turn -= 360 } else if turn < -180 { turn += 360 }
+         shownBearing = (shownBearing + turn * (dt == 0 ? 1 : 1 - exp(-dt / 0.4)) + 360).truncatingRemainder(dividingBy: 360)
+         // Zooming in for a turn takes about a second; easing back out afterwards is gentler.
+-        let zoomTime = targetAcross < shownAcross ? 1.0 : 2.0
+-        shownAcross += (targetAcross - shownAcross) * (dt == 0 ? 1 : 1 - exp(-dt / zoomTime))
++        let targetZoom = targetAcross * zoomMultiplier
++        let zoomTime = targetZoom < shownAcross ? 1.0 : 2.0
++        shownAcross += (targetZoom - shownAcross) * (dt == 0 ? 1 : 1 - exp(-dt / zoomTime))
+         shownPitch += (targetPitch - shownPitch) * (dt == 0 ? 1 : 1 - exp(-dt / zoomTime))
+ 
+         map.drawPuck(at: coordNow, bearing: shownBearing)
+diff --git a/App/Sources/NavigationViews.swift b/App/Sources/NavigationViews.swift
+index b6bb1ab..b4b4398 100644
+--- a/App/Sources/NavigationViews.swift
++++ b/App/Sources/NavigationViews.swift
+@@ -230,6 +230,12 @@ struct NavigationOverlay: View {
+                             withAnimation(.easeOut(duration: 0.2)) { buttonNote = ButtonNote(title: look.title, detail: look.detail) }
+                         }
+                     }
++                    HStack(spacing: 6) {
++                        MapFab(icon: "minus", size: 44) { model.adjustNavZoom(wider: true) }
++                            .accessibilityLabel("Zoom out")
++                        MapFab(icon: "plus", size: 44) { model.adjustNavZoom(wider: false) }
++                            .accessibilityLabel("Zoom in")
++                    }
+                     MapFab(icon: nav.voiceMode.icon, tint: nav.voiceMode == .alerts ? Vela.accentText(scheme) : .primary, size: 52) {
+                         nav.voiceMode = nav.voiceMode.next
+                         let v = nav.voiceMode
+@@ -1742,6 +1748,45 @@ struct InterstateShape: InsettableShape {
+     }
+ }
+ 
++struct LaneGuidancePreview: View {
++    private var examples: [(String, ManeuverType, [Lane])] {
++        [
++            ("Motorway exit", .rampRight, [
++                Lane(indications: ["straight"], valid: false),
++                Lane(indications: ["straight", "slight right"], valid: true),
++                Lane(indications: ["slight right"], valid: true),
++            ]),
++            ("Left turn at a junction", .turnLeft, [
++                Lane(indications: ["left"], valid: true),
++                Lane(indications: ["straight"], valid: false),
++                Lane(indications: ["straight", "right"], valid: false),
++            ]),
++        ]
++    }
++
++    var body: some View {
++        List {
++            ForEach(Array(examples.enumerated()), id: \.offset) { _, sample in
++                Section(L10n.text(sample.0)) {
++                    VStack(alignment: .leading, spacing: 8) {
++                        if let lanes = LaneGuide.named(sample.2) {
++                            Text(lanes.words).font(.subheadline.weight(.bold))
++                            LaneStrip(lanes: lanes.lanes, turn: sample.1)
++                        }
++                    }
++                    .padding(.vertical, 4)
++                }
++            }
++            Section {
++                Text("During a drive, the highlighted lanes appear below the next turn as you approach it, where lane data is available.")
++                    .font(.subheadline).foregroundStyle(.secondary)
++            }
++        }
++        .kiteList()
++        .navigationTitle("Lane guidance preview")
++    }
++}
++
+ /** Which lanes to be in, the way Waze and Google draw it: the right ones lit up, the rest dim. */
+ struct LaneStrip: View {
+     let lanes: [Lane]
+diff --git a/App/Sources/SettingsViews.swift b/App/Sources/SettingsViews.swift
+index 1b3dfa5..4e8ed02 100644
+--- a/App/Sources/SettingsViews.swift
++++ b/App/Sources/SettingsViews.swift
+@@ -181,6 +181,11 @@ struct SettingsView: View {
+                 } label: { SettingLabel("Default travel mode", icon: "car.fill", color: 0x2563EB) }
+             }
+             Section("Routes") {
++                NavigationLink {
++                    LaneGuidancePreview()
++                } label: {
++                    SettingLabel("Lane guidance preview", icon: "road.lanes", color: 0x2563EB)
++                }
+                 Toggle(isOn: $settings.suggestFasterRoutes) {
+                     SettingLabel("Suggest faster routes", icon: "arrow.triangle.branch", color: 0x0F766E)
+                 }
+diff --git a/App/Sources/cs.lproj/Localizable.strings b/App/Sources/cs.lproj/Localizable.strings
+index e2c1d2a..a347503 100644
+--- a/App/Sources/cs.lproj/Localizable.strings
++++ b/App/Sources/cs.lproj/Localizable.strings
+@@ -571,3 +571,37 @@
+ "No verified toll-free route found." = "Nepodařilo se najít ověřenou trasu bez mýta.";
+ 
+ "Map background" = "Mapový podklad";
++"Zoom out" = "Oddálit mapu";
++"Zoom in" = "Přiblížit mapu";
++"Lane guidance preview" = "Ukázka řazení do pruhů";
++"Motorway exit" = "Dálniční sjezd";
++"Left turn at a junction" = "Odbočení vlevo na křižovatce";
++"During a drive, the highlighted lanes appear below the next turn as you approach it, where lane data is available." = "Za jízdy se doporučené pruhy ukážou pod pokynem před odbočkou nebo sjezdem, pokud jsou pro dané místo dostupné údaje.";
++"Hide trip details" = "Sbalit podrobnosti spoje";
++"Show trip details" = "Rozbalit podrobnosti spoje";
++"Direction: %@" = "Směr %@";
++"Stops along the way" = "Mezilehlé zastávky";
++"Skipped stop" = "Spoj zde nestaví";
++"Transfer on foot to %@" = "Přestup pěšky na %@";
++"Walk to %@" = "Pěšky na %@";
++"Metro exit %@" = "Východ z metra %@";
++"Metro entrance %@" = "Vstup do metra %@";
++"Walking instructions" = "Pěší pokyny";
++"Level %@ → %@" = "Podlaží %@ → %@";
++"Follow signs toward %@" = "Sledujte značení směrem na %@";
++"Start walking" = "Vydejte se pěšky";
++"Turn left" = "Odbočte vlevo";
++"Turn right" = "Odbočte vpravo";
++"Bear left" = "Držte se mírně vlevo";
++"Bear right" = "Držte se mírně vpravo";
++"Take the stairs" = "Použijte schody";
++"Take the lift" = "Použijte výtah";
++"Go around to the right" = "Pokračujte obloukem vpravo";
++"Go around to the left" = "Pokračujte obloukem vlevo";
++"Turn back" = "Otočte se";
++"Continue on foot" = "Pokračujte pěšky";
++"Platform change: %@ → %@" = "Změna nástupiště %@ → %@";
++"Platform %@" = "Nástupiště %@";
++"Stop code %@" = "Kód zastávky %@";
++"%@ min late" = "Zpoždění %@ min";
++"%@ min early" = "O %@ min dříve";
+diff --git a/VelaCore/Sources/VelaCore/Transit.swift b/VelaCore/Sources/VelaCore/Transit.swift
+index 51a4feb..8b2537c 100644
+--- a/VelaCore/Sources/VelaCore/Transit.swift
++++ b/VelaCore/Sources/VelaCore/Transit.swift
+@@ -21,6 +21,14 @@ public struct TransitLeg: Hashable, Sendable {
+     /** Minutes late (or early, below zero) when the agency sends live times. */
+     public var delayMinutes: Int?
+     public var path: [LatLng]
++    public var boardStop: TransitCall?
++    public var exitStop: TransitCall?
++    public var intermediateStops: [TransitCall] = []
++    public var walkSteps: [TransitWalkStep] = []
++    public var agency: String?
++    public var serviceNumber: String?
++    public var arrivalDelayMinutes: Int?
++    public var serviceAlerts: [String] = []
+     public var destinationStop: LatLng?
+     public var arrivalPoint: LatLng? { destinationStop ?? path.last }
+ 
+@@ -37,7 +45,7 @@ public struct TransitLeg: Hashable, Sendable {
+     /** What kind of vehicle, for an icon. */
+     public var vehicle: Vehicle { Vehicle(mode) }
+ 
+-    public enum Vehicle: Sendable {
++    public enum Vehicle: Equatable, Sendable {
+         case walk, bus, metro, tram, train, ferry, other
+         init(_ mode: String) {
+             switch mode {
+@@ -66,6 +74,7 @@ public struct TransitTrip: Identifiable, Hashable, Sendable {
+         self.transfers = transfers; self.legs = legs
+     }
+ 
++    public var hasMetroAccessNodes: Bool { !TransitStationAccess.segments(in: self).isEmpty }
+     public var rides: [TransitLeg] { legs.filter { !$0.isWalk } }
+     public var walkSeconds: Double { legs.filter(\.isWalk).map(\.durationSeconds).reduce(0, +) }
+     /** The whole trip's shape, for framing the map. */
+@@ -88,7 +97,7 @@ public enum Transitous {
+ 
+     public static func planURL(from: LatLng, to: LatLng, max: Int = 5, time: Date? = nil,
+                                arriveBy: Bool = false, widerAccess: Bool = false) -> URL? {
+-        var s = "\(base)/api/v1/plan?fromPlace=\(from.lat.plain),\(from.lng.plain)&toPlace=\(to.lat.plain),\(to.lng.plain)&numItineraries=\(max)"
++        var s = "\(base)/api/v2/plan?fromPlace=\(from.lat.plain),\(from.lng.plain)&toPlace=\(to.lat.plain),\(to.lng.plain)&numItineraries=\(max)&detailedTransfers=true&useRoutedTransfers=true"
+         if let time {
+             let f = ISO8601DateFormatter()
+             s += "&time=" + f.string(from: time)
+@@ -275,19 +284,65 @@ public enum Transitous {
+         }
+         if out.path.count < 2, let a = point(from), let b = point(to) { out.path = [a, b] }
+         if out.distanceMeters == 0 { out.distanceMeters = Geo.length(out.path) }
+-        guard !out.isWalk else { return out }
++        if out.isWalk {
++            out.walkSteps = (l["steps"] as? [[String: Any]] ?? []).compactMap(walkStep)
++            return out
++        }
++        out.boardStop = call(from)
++        out.exitStop = call(to)
++        out.agency = string(l["agencyName"])
++        out.serviceNumber = string(l["tripShortName"])
++        out.serviceAlerts = alerts([l, from, to])
++        let intermediate = l["intermediateStops"] as? [[String: Any]] ?? []
++        out.intermediateStops = intermediate.compactMap(call)
+         out.line = [l["routeShortName"], l["displayName"], l["routeLongName"]]
+             .compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
+         out.color = hex(l["routeColor"])
+         out.textColor = hex(l["routeTextColor"])
+-        out.headsign = (l["headsign"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+-        out.stops = ((l["intermediateStops"] as? [Any])?.count ?? 0) + 1
+-        if l["realTime"] as? Bool == true, let s = start, let sched = date(l["scheduledStartTime"]) {
+-            out.delayMinutes = Int((s.timeIntervalSince(sched) / 60).rounded())
++        out.headsign = string(l["headsign"]) ?? (l["tripTo"] as? [String: Any]).flatMap { string($0["name"]) }
++        out.stops = intermediate.count + 1
++        if l["realTime"] as? Bool == true {
++            if let start, let scheduled = date(l["scheduledStartTime"]) {
++                out.delayMinutes = Int((start.timeIntervalSince(scheduled) / 60).rounded())
++            }
++            if let end, let scheduled = date(l["scheduledEndTime"]) {
++                out.arrivalDelayMinutes = Int((end.timeIntervalSince(scheduled) / 60).rounded())
++            }
+         }
+         return out
+     }
+ 
++    private static func call(_ value: [String: Any]) -> TransitCall? {
++        guard let name = string(value["name"]) else { return nil }
++        return TransitCall(name: name, timeZone: string(value["tz"]), arrival: date(value["arrival"]),
++                           departure: date(value["departure"]), track: string(value["track"]) ?? string(value["scheduledTrack"]),
++                           scheduledTrack: string(value["scheduledTrack"]), stopCode: string(value["stopCode"]),
++                           detail: string(value["description"]), skipped: value["cancelled"] as? Bool == true)
++    }
++
++    private static func walkStep(_ value: [String: Any]) -> TransitWalkStep? {
++        guard let direction = string(value["relativeDirection"]) else { return nil }
++        return TransitWalkStep(direction: direction, street: string(value["streetName"]),
++                               distance: number(value["distance"]) ?? 0, fromLevel: number(value["fromLevel"]),
++                               toLevel: number(value["toLevel"]), fromNode: value["fromOsmNode"] as? Int64,
++                               toNode: value["toOsmNode"] as? Int64)
++    }
++
++    private static func alerts(_ sources: [[String: Any]]) -> [String] {
++        var seen = Set<String>()
++        return sources.flatMap { $0["alerts"] as? [[String: Any]] ?? [] }.compactMap { alert in
++            let header = string(alert["headerText"])
++            let detail = string(alert["descriptionText"])
++            let message = [header, detail == header ? nil : detail].compactMap { $0 }.joined(separator: "\n")
++            return !message.isEmpty && seen.insert(message).inserted ? message : nil
++        }
++    }
++
++    private static func string(_ value: Any?) -> String? {
++        guard let clean = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !clean.isEmpty else { return nil }
++        return clean
++    }
++
+     private static func path(_ l: [String: Any]) -> [LatLng] {
+         guard let g = l["legGeometry"] as? [String: Any], let pts = g["points"] as? String, !pts.isEmpty else { return [] }
+         let p = min(7, max(5, (g["precision"] as? Int) ?? 6))
+diff --git a/VelaCore/Sources/VelaCore/TransitStationAccess.swift b/VelaCore/Sources/VelaCore/TransitStationAccess.swift
+new file mode 100644
+index 0000000..c139d89
+--- /dev/null
++++ b/VelaCore/Sources/VelaCore/TransitStationAccess.swift
+@@ -0,0 +1,110 @@
++import Foundation
++
++public struct TransitCall: Hashable, Sendable {
++    public let name: String
++    public let timeZone: String?
++    public let arrival: Date?
++    public let departure: Date?
++    public let track: String?
++    public let scheduledTrack: String?
++    public let stopCode: String?
++    public let detail: String?
++    public let skipped: Bool
++}
++
++public struct TransitWalkStep: Hashable, Sendable {
++    public let direction: String
++    public let street: String?
++    public let distance: Double
++    public let fromLevel: Double?
++    public let toLevel: Double?
++    let fromNode: Int64?
++    let toNode: Int64?
++}
++
++/** Match named subway portals to the actual pedestrian path using MOTIS's OSM node IDs. */
++public enum TransitStationAccess {
++    public struct Portal: Hashable, Sendable {
++        public let reference: String?
++        public let name: String?
++        public let destination: String?
++    }
++
++    public struct Passage: Hashable, Sendable {
++        public var exit: Portal?
++        public var entrance: Portal?
++    }
++
++    struct Segment {
++        let index: Int
++        var exitNodes: [Int64]
++        var entranceNodes: [Int64]
++    }
++
++    public static func resolve(_ trip: TransitTrip) async -> [Int: Passage] {
++        let segments = segments(in: trip)
++        let nodeIDs = Set(segments.flatMap { $0.exitNodes + $0.entranceNodes }).sorted()
++        guard !nodeIDs.isEmpty else { return [:] }
++        let ids = nodeIDs.map(String.init).joined(separator: ",")
++        let query = """
++        [out:json][timeout:8];node(id:(ids))["railway"="subway_entrance"];out tags;
++        """
++        guard let data = await Overpass.firstAnswer(query, stagger: 3, valid: { elements($0) != nil }),
++              !Task.isCancelled else { return [:] }
++        return match(segments, data: data)
++    }
++
++    static func segments(in trip: TransitTrip) -> [Segment] {
++        let legs = trip.legs
++        return legs.indices.compactMap { index in
++            let walk = legs[index]
++            guard walk.isWalk, !walk.walkSteps.isEmpty else { return nil }
++            let afterMetro = index > 0 && legs[index - 1].vehicle == .metro
++            let beforeMetro = index + 1 < legs.count && legs[index + 1].vehicle == .metro
++            guard afterMetro || beforeMetro else { return nil }
++            // Bound each end geographically along the traced walk. A different station farther
++            // down the street must never become the exit from the one we just got off at.
++            func nearbyNodes(_ steps: [TransitWalkStep], reversed: Bool) -> [Int64] {
++                var nodes: [Int64] = []
++                var distance = 0.0
++                for step in steps.prefix(30) {
++                    let pair = reversed ? [step.toNode, step.fromNode] : [step.fromNode, step.toNode]
++                    if let start = pair[0], start > 0, nodes.last != start { nodes.append(start) }
++                    distance += max(0, step.distance)
++                    guard distance <= 350 else { break }
++                    if let end = pair[1], end > 0, nodes.last != end { nodes.append(end) }
++                }
++                return nodes
++            }
++            let exitNodes = afterMetro ? nearbyNodes(walk.walkSteps, reversed: false) : []
++            let entranceNodes = beforeMetro ? nearbyNodes(Array(walk.walkSteps.reversed()), reversed: true) : []
++            guard !exitNodes.isEmpty || !entranceNodes.isEmpty else { return nil }
++            return Segment(index: index, exitNodes: exitNodes, entranceNodes: entranceNodes)
++        }
++    }
++
++    static func match(_ segments: [Segment], data: Data) -> [Int: Passage] {
++        var portals: [Int64: Portal] = [:]
++        for item in elements(data) ?? [] {
++            guard let id = item["id"] as? Int64, let tags = item["tags"] as? [String: String],
++                  tags["railway"] == "subway_entrance", tags["access"] != "no", tags["access"] != "private" else { continue }
++            func clean(_ key: String) -> String? {
++                let value = tags[key]?.trimmingCharacters(in: .whitespacesAndNewlines)
++                return value?.isEmpty == false ? value : nil
++            }
++            let portal = Portal(reference: clean("ref"), name: clean("name"), destination: clean("destination") ?? clean("exit_to"))
++            if portal.reference != nil || portal.name != nil || portal.destination != nil { portals[id] = portal }
++        }
++        var result: [Int: Passage] = [:]
++        for segment in segments {
++            let exit = segment.exitNodes.lazy.compactMap { portals[$0] }.first
++            let entrance = segment.entranceNodes.lazy.compactMap { portals[$0] }.first
++            if exit != nil || entrance != nil { result[segment.index] = Passage(exit: exit, entrance: entrance) }
++        }
++        return result
++    }
++
++    private static func elements(_ data: Data) -> [[String: Any]]? {
++        (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["elements"] as? [[String: Any]]
++    }
++}
+diff --git a/VelaCore/Tests/VelaCoreTests/TransitTests.swift b/VelaCore/Tests/VelaCoreTests/TransitTests.swift
+index 6fe981c..2d6bb9a 100644
+--- a/VelaCore/Tests/VelaCoreTests/TransitTests.swift
++++ b/VelaCore/Tests/VelaCoreTests/TransitTests.swift
+@@ -9,6 +9,8 @@ final class TransitTests: XCTestCase {
+         let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+         XCTAssertEqual(query.first(where: { $0.name == "arriveBy" })?.value, "true")
+         XCTAssertEqual(query.first(where: { $0.name == "time" })?.value, ISO8601DateFormatter().string(from: date))
++        XCTAssertEqual(url.path, "/api/v2/plan")
++        XCTAssertEqual(query.first(where: { $0.name == "detailedTransfers" })?.value, "true")
+         XCTAssertEqual(query.first(where: { $0.name == "maxPreTransitTime" })?.value, "1800")
+         XCTAssertEqual(query.first(where: { $0.name == "maxPostTransitTime" })?.value, "1800")
+     }
+@@ -50,6 +52,45 @@ final class TransitTests: XCTestCase {
+         XCTAssertEqual(t.walkSeconds, 480)
+     }
+ 
++    func testTripDetailsAndMetroExitOnTheWalkedPath() throws {
++        let json = """
++        {"itineraries":[{"legs":[
++          {"mode":"SUBWAY","routeShortName":"A","tripTo":{"name":"Nemocnice Motol"},"agencyName":"DPP",
++           "from":{"name":"Muzeum","track":"2","scheduledTrack":"1","tz":"Europe/Prague"},
++           "to":{"name":"Můstek","track":"1","stopCode":"MUS"},
++           "intermediateStops":[{"name":"Example","arrival":"2026-10-23T17:12:00Z","cancelled":true}],
++           "alerts":[{"headerText":"Station notices","descriptionText":"Use the alternate exit."}]},
++          {"mode":"WALK","steps":[
++            {"relativeDirection":"STAIRS","fromLevel":-1,"toLevel":0,"distance":27,"fromOsmNode":11,"toOsmNode":22},
++            {"relativeDirection":"CONTINUE","streetName":"Jungmannovo náměstí","distance":400,"fromOsmNode":22,"toOsmNode":33}
++          ]}
++        ]}]}
++        """
++        let trip = try XCTUnwrap(Transitous.parse(Data(json.utf8)).first)
++        let train = trip.legs[0]
++        XCTAssertEqual(train.headsign, "Nemocnice Motol")
++        XCTAssertEqual(train.boardStop?.track, "2")
++        XCTAssertEqual(train.boardStop?.scheduledTrack, "1")
++        XCTAssertEqual(train.exitStop?.stopCode, "MUS")
++        XCTAssertEqual(train.intermediateStops.first?.skipped, true)
++        XCTAssertEqual(train.serviceAlerts, ["Station notices\nUse the alternate exit."])
++        XCTAssertEqual(trip.legs[1].walkSteps.first?.fromLevel, -1)
++        let nodes = """
++        {"elements":[
++          {"id":11,"tags":{"railway":"subway_entrance","ref":"A","access":"private"}},
++          {"id":22,"tags":{"railway":"subway_entrance","ref":"B","destination":"Jungmannovo náměstí"}},
++          {"id":33,"tags":{"railway":"subway_entrance","ref":"C"}},
++          {"id":44,"tags":{"railway":"subway_entrance","ref":"D"}}
++        ]}
++        """
++        let segments = TransitStationAccess.segments(in: trip)
++        XCTAssertEqual(segments.first?.exitNodes, [11, 22])
++        let exits = TransitStationAccess.match(segments, data: Data(nodes.utf8))
++        XCTAssertEqual(exits[1]?.exit?.reference, "B")
++        XCTAssertEqual(exits[1]?.exit?.destination, "Jungmannovo náměstí")
++        XCTAssertNil(exits[1]?.entrance)
++    }
++
+     func testStopTimes() {
+         let json = """
+         {"stopTimes":[

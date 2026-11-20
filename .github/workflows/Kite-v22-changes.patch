@@ -1,0 +1,639 @@
+diff --git a/App/Sources/AppModel.swift b/App/Sources/AppModel.swift
+index 6724482..8f430c6 100644
+--- a/App/Sources/AppModel.swift
++++ b/App/Sources/AppModel.swift
+@@ -1297,7 +1297,9 @@ final class AppModel: ObservableObject {
+         if let n = nav {
+             let step = n.nextManeuver
+             let progress = n.progress
+-            summary = Fmt.arrival(progress?.remainingSeconds ?? n.route.durationSeconds) + " · " + n.destination.name
++            let time = progress?.remainingSeconds ?? n.route.durationSeconds
++            let distance = progress?.remainingMeters ?? n.route.distanceMeters
++            summary = "\(Fmt.duration(time)) · \(Fmt.distance(distance)) · \(Fmt.arrival(time))"
+             if n.arrived {
+                 title = L10n.isCzech ? "Jste v cíli" : "You have arrived"
+                 detail = n.destination.name
+@@ -1338,6 +1340,23 @@ final class AppModel: ObservableObject {
+         JourneyActivity.shared.show(.init(instruction: title, detail: detail, symbol: symbol, summary: summary), cue: cue)
+     }
+ 
++    func suspendNavigationDisplay() {
++        if nav != nil { glide.suspend() }
++    }
++
++    func resumeNavigationDisplay() {
++        defer { refreshActivity() }
++        guard let n = nav, !n.arrived else { return }
++        if let fix = location.navigationFix(maximumError: navigationAccuracy(for: n.route.mode)) {
++            followCamera(n, fix, animated: false)
++        } else {
++            glide.suspend()
++            n.waitForFreshLocation()
++            location.start()
++        }
++        mapTick += 1
++    }
++
+     private func locationChanged(_ loc: CLLocation) {
+         defer { refreshActivity() }
+         if !location.reducedAccuracy { refreshNearbyControls(loc) }
+@@ -1354,8 +1373,10 @@ final class AppModel: ObservableObject {
+         }
+         guard !location.reducedAccuracy, loc.horizontalAccuracy <= navigationAccuracy(for: n.route.mode) else { return }
+         n.handle(loc)
+-        if nav === n { followCamera(n, loc, animated: true) }
+-        mapTick += 1
++        if nav === n, UIApplication.shared.applicationState == .active {
++            followCamera(n, loc, animated: true)
++            mapTick += 1
++        }
+         if transitJourney == nil, nav === n { tripCheck(n) }
+     }
+ 
+diff --git a/App/Sources/ContentView.swift b/App/Sources/ContentView.swift
+index 5d4c441..0edcf3d 100644
+--- a/App/Sources/ContentView.swift
++++ b/App/Sources/ContentView.swift
+@@ -107,6 +107,12 @@ struct ContentView: View {
+         .kiteType()
+         .preferredColorScheme(settings.colorScheme)
+         .task { await DemoScript.run(model) }
++        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
++            model.suspendNavigationDisplay()
++        }
++        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
++            model.resumeNavigationDisplay()
++        }
+         .onReceive(launch.$pending) { kind in
+             guard let kind else { return }
+             launch.pending = nil
+diff --git a/App/Sources/GooglePlaceMedia.swift b/App/Sources/GooglePlaceMedia.swift
+index 57ee0ca..5693010 100644
+--- a/App/Sources/GooglePlaceMedia.swift
++++ b/App/Sources/GooglePlaceMedia.swift
+@@ -136,7 +136,11 @@ struct PlaceMediaSheet: View {
+                     }
+                 }
+                 if place.source == "google", !AppSettings.shared.noGoogle {
+-                    Text("Google Maps").font(.caption.weight(.semibold))
++                    if let url = place.shareURL {
++                        Link(destination: url) {
++                            Label("Google Maps", systemImage: "arrow.up.right.square")
++                        }
++                    }
+                     if PlacesCredential.key.isEmpty {
+                         Section {
+                             Text(L10n.text("Add your Places API key to load more Google reviews and photos."))
+diff --git a/App/Sources/Localization.swift b/App/Sources/Localization.swift
+index fa09260..75b815c 100644
+--- a/App/Sources/Localization.swift
++++ b/App/Sources/Localization.swift
+@@ -54,13 +54,16 @@ enum CzechNavigation {
+         case .forkLeft, .keepLeft: command = "Držte se vlevo"
+         case .forkRight, .keepRight: command = "Držte se vpravo"
+         case .roundabout:
+-            command = maneuver.exit.map { "Na kruhovém objezdu použijte výjezd číslo \($0)" } ??
+-                "Pokračujte po kruhovém objezdu"
++            command = maneuver.leavesRoundabout ? "Opusťte kruhový objezd" :
++                maneuver.exit.map { "Na kruhovém objezdu použijte výjezd číslo \($0)" } ?? "Opusťte kruhový objezd"
+         case .unknown: command = "Pokračujte po trase"
+         }
+         let lead = distance.map { "Za \(spokenDistance($0)) " } ?? ""
+         let action = distance == nil ? command : command.prefix(1).lowercased() + command.dropFirst()
+         let road = maneuver.road.flatMap { $0.isEmpty ? nil : $0 }
++        if let sign = maneuver.exitSign, !sign.destinations.isEmpty {
++            return lead + action + " – směr " + sign.destinations.prefix(2).joined(separator: ", ")
++        }
+         return lead + action + (road.map { " na \($0)" } ?? "")
+     }
+ 
+diff --git a/App/Sources/LocationService.swift b/App/Sources/LocationService.swift
+index 37a59ba..4dfde63 100644
+--- a/App/Sources/LocationService.swift
++++ b/App/Sources/LocationService.swift
+@@ -1,11 +1,18 @@
+ import CoreLocation
+ import Foundation
+ import UIKit
++import VelaCore
+ 
+ /** GPS for search bias and navigation. The map draws its own blue dot; this feeds the app. */
+ @MainActor
+ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelegate {
+     @Published private var fix: CLLocation?
++    func navigationFix(maximumError: Double) -> CLLocation? {
++        guard !reducedAccuracy, let fix,
++              RouteTracker.isFreshFix(age: Date().timeIntervalSince(fix.timestamp), accuracy: fix.horizontalAccuracy, maximumError: maximumError) else { return nil }
++        return fix
++    }
++
+     var last: CLLocation? {
+         guard let fix, Date().timeIntervalSince(fix.timestamp) <= 15 else { return nil }
+         return fix
+diff --git a/App/Sources/NavGlide.swift b/App/Sources/NavGlide.swift
+index e116a3f..39d6ea2 100644
+--- a/App/Sources/NavGlide.swift
++++ b/App/Sources/NavGlide.swift
+@@ -100,8 +100,7 @@ final class NavGlide: NSObject {
+ 
+     func resetZoom() { zoomMultiplier = 1 }
+ 
+-    func stop() {
+-        resetZoom()
++    func suspend() {
+         link?.invalidate()
+         link = nil
+         nav = nil
+@@ -111,6 +110,11 @@ final class NavGlide: NSObject {
+         map?.drawPuck(at: nil, bearing: 0)
+     }
+ 
++    func stop() {
++        resetZoom()
++        suspend()
++    }
++
+     private func start() {
+         guard link == nil else { return }
+         let l = CADisplayLink(target: self, selector: #selector(frame(_:)))
+diff --git a/App/Sources/Navigator.swift b/App/Sources/Navigator.swift
+index aeb81cd..c2a2cd8 100644
+--- a/App/Sources/Navigator.swift
++++ b/App/Sources/Navigator.swift
+@@ -165,6 +165,7 @@ final class Navigator: ObservableObject {
+     @Published var exclusion: RouteExclusion?
+     /** Counts reroutes, so only the newest answer is used (adding a stop while one is loading). */
+     private var rerouteRequest = 0
++    private var rerouteTask: Task<Void, Never>?
+     /** Set once the trip is ended, so a late answer never talks or moves anything. */
+     private var stopped = false
+     private var avoidHighways: Bool
+@@ -243,6 +244,7 @@ final class Navigator: ObservableObject {
+ 
+     func stop() {
+         stopped = true
++        rerouteTask?.cancel()
+         coverage = nil
+         gpsWatch?.invalidate()
+         speech.stopSpeaking(at: .immediate)
+@@ -380,10 +382,15 @@ final class Navigator: ObservableObject {
+     }
+ 
+     /** [estimated]: a position worked out along the route while GPS is gone, not a real fix. */
++    func waitForFreshLocation() {
++        gpsLost = true
++    }
++
+     func handle(_ loc: CLLocation, estimated: Bool = false) {
+         guard !arrived else { return }
+         if !estimated {
+-            realFixAt = Date()
++            realFixAt = loc.timestamp
++            gpsLost = false
+             estimateFrom = nil
+             if estimating { estimating = false }
+         }
+@@ -393,7 +400,7 @@ final class Navigator: ObservableObject {
+         let course = heading(loc)
+         if !estimated { noteFix(loc) }
+         var p = tracker.update(LatLng(loc.coordinate.latitude, loc.coordinate.longitude),
+-                               accuracy: max(loc.horizontalAccuracy, 5), heading: course)
++                               accuracy: max(loc.horizontalAccuracy, 5), heading: course, speed: speedMps, measured: !estimated)
+         // The arrival time follows the traffic as it changes on the way, not only as it was at the start.
+         p.remainingSeconds *= trafficScale
+         progress = p
+@@ -452,7 +459,7 @@ final class Navigator: ObservableObject {
+         if p.offsetMeters < 40 { joinedRoute = true }
+         // Right by the pin at the end of the route, a new route is only a U-turn round the block: let
+         // the car park instead. Still a long way round to go, though, the driver found another way in.
+-        if p.offRoute && !estimated && !rerouting && (toPin > 150 || !nearPin) && (joinedRoute || p.offsetMeters > max(100, loc.horizontalAccuracy * 3)) && Date().timeIntervalSince(lastReroute) > 5 {
++        if p.offRoute && !estimated && !rerouting && (toPin > 150 || !nearPin) && (joinedRoute || p.offsetMeters > max(100, loc.horizontalAccuracy * 3)) && Date().timeIntervalSince(lastReroute) > 3 {
+             reroute(from: loc)
+             return
+         }
+@@ -1178,7 +1185,8 @@ final class Navigator: ObservableObject {
+         let from = latLng(fix), to = destination.location
+         let stops = self.stops.map(\.location)
+         let heading = heading(fix)
+-        Task {
++        rerouteTask?.cancel()
++        rerouteTask = Task {
+             let result = await Directions.routes(from: from, to: to, mode: .drive, avoidHighways: avoidHighways,
+                                                  avoidTolls: avoidTolls, useGoogle: !AppSettings.shared.noGoogle,
+                                                  via: stops, heading: heading, alternatives: true)
+@@ -1225,15 +1233,18 @@ final class Navigator: ObservableObject {
+         let proposedStops = adding.map { [$0] + stops } ?? stops
+         rerouteRequest += 1
+         let req = rerouteRequest
+-        Task {
++        rerouteTask?.cancel()
++        let requestedAt = ProcessInfo.processInfo.systemUptime
++        rerouteTask = Task {
+             let r = await Directions.routes(from: from, to: to, mode: mode, avoidHighways: hw, avoidTolls: tolls,
+                                             useGoogle: !AppSettings.shared.noGoogle, via: proposedStops.map(\.location),
+-                                            heading: course, alternatives: self.exclusion != nil)
+-            guard !self.stopped, req == self.rerouteRequest else { return }
++                                            heading: course, alternatives: self.exclusion != nil, fast: true)
++            guard !Task.isCancelled, !self.stopped, req == self.rerouteRequest else { return }
++            Self.trace.info("reroute providers completed in \(Int((ProcessInfo.processInfo.systemUptime - requestedAt) * 1000)) ms")
+             self.rerouting = false
+             // Parked at the destination while the new route was loading: the trip is over, keep it that way.
+             if self.arrived { return }
+-            guard let fresh = r.routes.filter({ $0.trafficSeconds != nil && (self.exclusion?.allows($0) ?? true) }).min(by: { $0.durationSeconds < $1.durationSeconds }) else {
++            guard let fresh = r.routes.filter({ self.exclusion?.allows($0) ?? true }).min(by: { $0.durationSeconds < $1.durationSeconds }) else {
+                 if let adding {
+                     self.stopFailed = true
+                     self.speakTemplate("Couldn't add a stop at %@. Carrying on to %@.", adding.name, self.stops.first?.name ?? self.destination.name)
+diff --git a/VelaCore/Sources/VelaCore/DirectionsParser.swift b/VelaCore/Sources/VelaCore/DirectionsParser.swift
+index 00157a7..f28176e 100644
+--- a/VelaCore/Sources/VelaCore/DirectionsParser.swift
++++ b/VelaCore/Sources/VelaCore/DirectionsParser.swift
+@@ -227,8 +227,10 @@ enum DirectionsParser {
+             m.type = .rampLeft
+             m.sideUnknown = true
+         }
+-        // Google says the exit only in words: keep the number too, for the roundabout picture.
+-        if m.type == .roundabout { m.exit = exitNumber(in: m.instruction) }
++        // Text ordinals do not establish which branches count on the selected route.
++        if m.type == .roundabout {
++            m.instruction = OSRM.instruction(type: "roundabout", modifier: nil, road: m.road, exit: nil, mode: .drive)
++        }
+         if m.type == .rampLeft || m.type == .rampRight,
+            let exit = text.range(of: #"\b(?:exit|junction)\s+[0-9]+[A-Z]?\b"#, options: [.regularExpression, .caseInsensitive]) {
+             let number = text[exit].split(separator: " ").last.map(String.init)
+diff --git a/VelaCore/Sources/VelaCore/OSRM.swift b/VelaCore/Sources/VelaCore/OSRM.swift
+index a66eadc..d2a2e8e 100644
+--- a/VelaCore/Sources/VelaCore/OSRM.swift
++++ b/VelaCore/Sources/VelaCore/OSRM.swift
+@@ -154,12 +154,12 @@ public enum OSRM {
+                     let signs = Signs(destinations: step["destinations"] as? String, exits: step["exits"] as? String,
+                                       from: maneuvers.last?.road)
+                     var man = Maneuver(type: mt, instruction: instruction(type: type, modifier: modifier, road: stepRoad,
+-                                                                         exit: m["exit"] as? Int, mode: mode, signs: signs),
++                                                                         exit: confirmedExit(entry: m["exit"] as? Int, leaving: nil), mode: mode, signs: signs),
+                                        location: loc, alongMeters: min(along, cum.last ?? along),
+                                        distanceMeters: dist, road: stepRoad, laneHint: nil)
+-                    if type == "off ramp" || type == "fork" { man.exitSign = signs.panel }
++                    man.exitSign = signs.panel
+                     man.lanes = lanes(step)
+-                    man.exit = m["exit"] as? Int
++                    man.exit = confirmedExit(entry: m["exit"] as? Int, leaving: nil)
+                     if type == "roundabout" || type == "rotary" {
+                         // The lanes for a roundabout are sometimes mapped on the road leading up to it.
+                         if man.lanes.isEmpty, si > 0, let last = (steps[si - 1]["intersections"] as? [[String: Any]])?.last {
+@@ -173,14 +173,39 @@ public enum OSRM {
+                         // Still going round: keep the roundabout's exit number until off it.
+                         man.leavesRoundabout = true
+                         man.lanes = []
+-                        if let prev = maneuvers.last, prev.type == .roundabout {
+-                            man.exit = man.exit ?? prev.exit
+-                            man.roundabout = prev.roundabout
++                        if let index = maneuvers.indices.last, maneuvers[index].type == .roundabout,
++                           !maneuvers[index].leavesRoundabout {
++                            let entry = maneuvers[index].exit
++                            man.exit = Self.confirmedExit(entry: entry, leaving: man.exit)
++                            if man.exit != entry {
++                                maneuvers[index].exit = man.exit
++                                maneuvers[index].instruction = instruction(type: "roundabout", modifier: nil,
++                                    road: maneuvers[index].road, exit: man.exit, mode: mode)
++                            }
++                            man.roundabout = maneuvers[index].roundabout
+                         }
+                     }
+                     if type == "merge", let modifier { mergeSides[maneuvers.count] = modifier }
+-                    if type == "new name" || type == "continue", (modifier ?? "straight") == "straight" { nameOnly.insert(maneuvers.count) }
++                    if (type == "new name" || type == "continue"), man.exitSign == nil, (modifier ?? "straight") == "straight" { nameOnly.insert(maneuvers.count) }
+                     maneuvers.append(man)
++                    if mode == .drive, mt != .roundabout,
++                       let intersections = step["intersections"] as? [[String: Any]] {
++                        for junction in intersections.dropFirst() {
++                            guard let xy = junction["location"] as? [Double], xy.count >= 2 else { continue }
++                            let mapped = throughLanes(junction)
++                            guard !mapped.isEmpty else { continue }
++                            let junctionPoint = LatLng(xy[1], xy[0])
++                            let match = Geo.project(junctionPoint, on: line, cumulative: cum)
++                            guard let previous = maneuvers.last, match.offset < 8,
++                                  match.along > previous.alongMeters + 14, match.along < along + dist - 14 else { continue }
++                            maneuvers[maneuvers.count - 1].distanceMeters = match.along - previous.alongMeters
++                            var through = Maneuver(type: .straight, instruction: instruction(type: "turn", modifier: "straight",
++                                road: stepRoad, exit: nil, mode: mode), location: junctionPoint,
++                                alongMeters: match.along, distanceMeters: along + dist - match.along, road: stepRoad)
++                            through.lanes = mapped
++                            maneuvers.append(through)
++                        }
++                    }
+                     along += dist
+                 }
+             }
+@@ -262,6 +287,24 @@ public enum OSRM {
+     }
+ 
+     /** The turn lanes at a step's maneuver point (its first intersection), left to right. */
++    static func throughLanes(_ junction: [String: Any]) -> [Lane] {
++        guard let bearings = junction["bearings"] as? [Int],
++              let incoming = junction["in"] as? Int, let outgoing = junction["out"] as? Int,
++              bearings.indices.contains(incoming), bearings.indices.contains(outgoing),
++              abs((bearings[outgoing] - bearings[incoming] + 360) % 360 - 180) < 25 else { return [] }
++        let mapped = lanes(["intersections": [junction]])
++        guard mapped.contains(where: { $0.valid && $0.indications.contains("straight") }),
++              mapped.contains(where: { !$0.valid }) else { return [] }
++        return mapped
++    }
++
++    static func confirmedExit(entry: Int?, leaving: Int?) -> Int? {
++        let a = entry.flatMap { $0 > 0 ? $0 : nil }
++        let b = leaving.flatMap { $0 > 0 ? $0 : nil }
++        if let a, let b, a != b { return nil }
++        return a ?? b
++    }
++
+     static func lanes(_ step: [String: Any]) -> [Lane] {
+         guard let first = (step["intersections"] as? [[String: Any]])?.first,
+               let raw = first["lanes"] as? [[String: Any]], raw.count > 1 else { return [] }
+@@ -429,6 +472,7 @@ public enum OSRM {
+     static func instruction(type: String, modifier: String?, road: String?, exit: Int?, mode: TravelMode,
+                             signs: Signs = Signs()) -> String {
+         let onto = road.map { " onto \($0)" } ?? ""
++        let toward = signs.toward.map { " toward \($0)" }
+         let dir = modifier ?? "straight"
+         // A slip road often carries the motorway's name: don't say "onto M27" while leaving the M27.
+         let newRoad = road.flatMap { $0 == signs.from ? nil : $0 }
+@@ -444,9 +488,9 @@ public enum OSRM {
+         case "roundabout", "rotary", "roundabout turn":
+             // A named roundabout ("Millbrook Roundabout") is where you are, not a road to go onto.
+             if let r = road, r.lowercased().contains("roundabout") {
+-                return exit.map { "At \(r), take the \(ordinal($0)) exit" } ?? "Go straight through \(r)"
++                return exit.map { "At \(r), take the \(ordinal($0)) exit" } ?? "Exit \(r)"
+             }
+-            let n = exit.map { "take the \(ordinal($0)) exit" } ?? "go straight through"
++            let n = exit.map { "take the \(ordinal($0)) exit" } ?? "take the exit"
+             return "At the roundabout, \(n)" + onto
+         case "exit roundabout", "exit rotary": return "Exit the roundabout" + onto
+         case "merge": return "Merge" + onto
+@@ -470,11 +514,12 @@ public enum OSRM {
+                 let turn = "Turn \(dir)"
+                 return turn + (type == "continue" ? stay : onto)
+             }
++            if let toward { return "Continue straight" + toward }
+             return "Continue" + (road.map { " on \($0)" } ?? "")
+         default:
+             switch dir {
+             case "uturn": return "Make a U-turn" + onto
+-            case "straight": return "Continue straight" + onto
++            case "straight": return "Continue straight" + (toward ?? onto)
+             default: return "Turn \(dir)" + onto
+             }
+         }
+@@ -504,7 +549,45 @@ public enum Directions {
+     public static func routes(from a: LatLng, to b: LatLng, mode: TravelMode,
+                               avoidHighways: Bool = false, avoidTolls: Bool = false,
+                               useGoogle: Bool = true, via: [LatLng] = [], heading: Double? = nil,
+-                              alternatives: Bool = false) async -> Result {
++                              alternatives: Bool = false, fast: Bool = false) async -> Result {
++        if fast && !alternatives && !avoidTolls && !avoidHighways {
++            let points = [a] + via + [b]
++            let quick: [Route] = await withTaskGroup(of: [Route].self) { group in
++                group.addTask {
++                    (try? await OSRM.route(from: a, to: b, mode: mode, via: via, heading: heading)) ?? []
++                }
++                if mode == .drive && useGoogle {
++                    group.addTask {
++                        (try? await GoogleClient.shared.directions(from: a, to: b, mode: mode,
++                                                                   avoidHighways: false, avoidTolls: false, via: via)) ?? []
++                    }
++                } else if mode != .drive {
++                    group.addTask { await Valhalla.activeRoutes(points, mode: mode, alternatives: false) }
++                }
++                for await reply in group {
++                    let usable = reply.filter {
++                        $0.stepsComplete && !$0.maneuvers.isEmpty && reaches($0.polyline, from: a, to: b)
++                            && (mode == .drive || Valhalla.fitsActiveRoute($0.polyline, points: points))
++                    }.filter { route in
++                        heading.map { !startsBehind(route.polyline, heading: $0) } ?? true
++                    }
++                    if let route = usable.min(by: { $0.durationSeconds < $1.durationSeconds }) {
++                        group.cancelAll()
++                        return [route]
++                    }
++                }
++                return [Route]()
++            }
++            if Task.isCancelled { return Result(routes: []) }
++            if !quick.isEmpty {
++                return Result(routes: quick.map { route in
++                    var route = route
++                    StepMerge.tidy(&route.maneuvers)
++                    if mode == .walk { route.typicalSeconds = route.distanceMeters * 3.6 / Valhalla.walkingSpeed }
++                    return Roundabouts.settle(route)
++                })
++            }
++        }
+         if mode != .drive {
+             let points = [a] + via + [b]
+             async let preferred = Valhalla.activeRoutes(points, mode: mode, alternatives: alternatives)
+@@ -589,7 +672,6 @@ public enum Directions {
+                         StepMerge.dropFalseUTurns(&steps, line: g[i].polyline)
+                         if complete {
+                             StepMerge.addGoogleLaneHints(&steps, from: g[i].maneuvers)
+-                            StepMerge.addGoogleExits(&steps, from: g[i].maneuvers)
+                             StepMerge.addGoogleKinds(&steps, from: g[i].maneuvers, line: g[i].polyline)
+                             StepMerge.addGoogleMissing(&steps, from: g[i].maneuvers, line: g[i].polyline)
+                             StepMerge.addGoogleSigns(&steps, from: g[i].maneuvers)
+@@ -605,10 +687,6 @@ public enum Directions {
+                     }
+                 }
+                 for i in g.indices {
+-                    // Whatever the steps came from, the picture's number matches the words.
+-                    for j in g[i].maneuvers.indices where g[i].maneuvers[j].type == .roundabout && g[i].maneuvers[j].exit == nil {
+-                        g[i].maneuvers[j].exit = DirectionsParser.exitNumber(in: g[i].maneuvers[j].instruction)
+-                    }
+                     StepMerge.tidy(&g[i].maneuvers)
+                     g[i] = Roundabouts.settle(g[i])
+                     // Britain and Ireland ("slip road" is British; Australia says "ramp" too).
+@@ -753,23 +831,6 @@ public enum StepMerge {
+      * Google's own lane advice ("Use the right lane to merge onto Redbridge Rd") on the step at the
+      * same place, where the open map has no lanes mapped.
+      */
+-    /**
+-     * Google's exit count for each roundabout, where the open router has none or a different one:
+-     * on 2026-10-27's drives the router said "go straight through" or "1st exit" at Millbrook and
+-     * Redbridge where Google (and the signs) say 2nd. The open router's road name is kept.
+-     */
+-    public static func addGoogleExits(_ steps: inout [Maneuver], from google: [Maneuver]) {
+-        for i in steps.indices where steps[i].type == .roundabout && !steps[i].leavesRoundabout {
+-            let near = google.filter { $0.type == .roundabout && $0.exit != nil && abs($0.alongMeters - steps[i].alongMeters) < 120 }
+-            guard let g = near.min(by: { abs($0.alongMeters - steps[i].alongMeters) < abs($1.alongMeters - steps[i].alongMeters) }),
+-                  let n = g.exit, n != steps[i].exit else { continue }
+-            steps[i].exit = n
+-            steps[i].instruction = OSRM.instruction(type: "roundabout", modifier: nil, road: steps[i].road, exit: n, mode: .drive)
+-            // The way off says the same number.
+-            if i + 1 < steps.count, steps[i + 1].leavesRoundabout { steps[i + 1].exit = n }
+-        }
+-    }
+-
+     public static func addGoogleLaneHints(_ steps: inout [Maneuver], from google: [Maneuver]) {
+         // Each of Google's hints goes to one step only, and only when they're each other's nearest:
+         // a left turn 80 m before a right one mustn't take the right turn's lanes.
+diff --git a/VelaCore/Sources/VelaCore/RouteControls.swift b/VelaCore/Sources/VelaCore/RouteControls.swift
+index 856156d..6a82d09 100644
+--- a/VelaCore/Sources/VelaCore/RouteControls.swift
++++ b/VelaCore/Sources/VelaCore/RouteControls.swift
+@@ -248,8 +248,8 @@ public enum RouteControls {
+                     return (forwardAllowed && aligned(way.before, with: point, bearing: incoming)) ||
+                            (reverseAllowed && aligned(way.after, with: point, bearing: incoming))
+                 }
+-                guard matches || (at.offset <= 4 && direction == nil && ways.allSatisfy({ $0.oneway == nil })) else { continue }
+-            } else if !walking && !crossing && (direction != nil || at.offset > 8) {
++                guard matches else { continue }
++            } else if !walking && !crossing && (direction != nil || at.offset > 4) {
+                 continue
+             }
+             candidates.append((at.along, at.offset, kind))
+diff --git a/VelaCore/Sources/VelaCore/RouteTracker.swift b/VelaCore/Sources/VelaCore/RouteTracker.swift
+index e84fda4..900bd3f 100644
+--- a/VelaCore/Sources/VelaCore/RouteTracker.swift
++++ b/VelaCore/Sources/VelaCore/RouteTracker.swift
+@@ -27,6 +27,10 @@ public final class RouteTracker {
+     private var offCount = 0
+     private var wrongWayCount = 0
+ 
++    public static func isFreshFix(age: Double, accuracy: Double, maximumError: Double) -> Bool {
++        (-2...8).contains(age) && (0...maximumError).contains(accuracy)
++    }
++
+     public init(route: Route) {
+         self.route = route
+         cum = Geo.cumulative(route.polyline)
+@@ -37,7 +41,7 @@ public final class RouteTracker {
+      * [heading] is the way the car is moving (degrees from north), only when it's moving fast enough
+      * for the phone's compass course to mean something.
+      */
+-    public func update(_ fix: LatLng, accuracy: Double = 10, heading: Double? = nil) -> Progress {
++    public func update(_ fix: LatLng, accuracy: Double = 10, heading: Double? = nil, speed: Double = 0, measured: Bool = true) -> Progress {
+         let line = route.polyline
+         // Look near the last match first (cheap, and avoids jumping to a parallel leg of the route),
+         // then the whole line if nothing near fits.
+@@ -50,9 +54,12 @@ public final class RouteTracker {
+         let along = cum[best.seg] + best.t * (cum[best.seg + 1] - cum[best.seg])
+         let snapped = LatLng(line[best.seg].lat + (line[best.seg + 1].lat - line[best.seg].lat) * best.t,
+                              line[best.seg].lng + (line[best.seg + 1].lng - line[best.seg].lng) * best.t)
+-        let limit = max(40, min(accuracy, 60) + 25)
+-        // Well clear of the route counts double, so a wrong turn is noticed in a couple of seconds.
+-        offCount = best.dist > limit * 2 ? offCount + 2 : (best.dist > limit ? offCount + 1 : 0)
++        let floor = route.mode == .drive ? 24.0 : route.mode == .bike ? 18.0 : 14.0
++        let limit = max(floor, accuracy * 1.6 + min(max(speed, 0) * 0.35, 12))
++        if measured {
++            // A precise fix well outside the corridor is enough. Near its edge require confirmation.
++            offCount = best.dist > max(limit * 2, 35) ? 3 : best.dist > limit ? min(3, offCount + 1) : 0
++        }
+         let routeBearing = Geo.bearing(line[best.seg], line[best.seg + 1])
+         // The road's way over about 30 m, so a tiny kink or doubled point in the line isn't "backwards".
+         let a = Geo.point(along: line, meters: max(0, along - 10), cumulative: cum)
+@@ -60,10 +67,10 @@ public final class RouteTracker {
+         let roadBearing = a.distance(to: b) > 5 ? Geo.bearing(a, b) : routeBearing
+         // On the route's road but driving back along it (after turning round, or snapped onto the
+         // route the wrong way): that's off the route too, or it would never reroute.
+-        if let heading, best.dist <= limit {
++        if measured, let heading, best.dist <= limit {
+             let diff = abs((heading - roadBearing + 540).truncatingRemainder(dividingBy: 360) - 180)
+             wrongWayCount = diff > 120 ? wrongWayCount + 1 : 0
+-        } else {
++        } else if measured {
+             wrongWayCount = 0
+         }
+         let next = route.maneuvers.firstIndex { !$0.silent && $0.alongMeters > along + 8 }
+diff --git a/VelaCore/Tests/VelaCoreTests/RoutingTests.swift b/VelaCore/Tests/VelaCoreTests/RoutingTests.swift
+index 0542585..76051b3 100644
+--- a/VelaCore/Tests/VelaCoreTests/RoutingTests.swift
++++ b/VelaCore/Tests/VelaCoreTests/RoutingTests.swift
+@@ -510,7 +510,7 @@ final class RoutingTests: XCTestCase {
+ 
+     func testNamedRoundaboutWording() {
+         XCTAssertEqual(OSRM.instruction(type: "roundabout", modifier: nil, road: "Millbrook Roundabout", exit: nil, mode: .drive),
+-                       "Go straight through Millbrook Roundabout")
++                       "Exit Millbrook Roundabout")
+         XCTAssertEqual(OSRM.instruction(type: "roundabout", modifier: nil, road: "Redbridge Roundabout", exit: 2, mode: .drive),
+                        "At Redbridge Roundabout, take the 2nd exit")
+         XCTAssertEqual(OSRM.instruction(type: "roundabout", modifier: nil, road: "A33", exit: 3, mode: .drive),
+@@ -576,22 +576,13 @@ final class BritishWordsTests: XCTestCase {
+ 
+ 
+ final class GoogleExitTests: XCTestCase {
+-    func testGoogleExitCountWins() {
+-        var a = Maneuver(type: .roundabout, instruction: "Go straight through Millbrook Roundabout", location: LatLng(0, 0),
+-                         alongMeters: 2662, distanceMeters: 60, road: "Millbrook Roundabout", laneHint: nil)
+-        var off = Maneuver(type: .roundabout, instruction: "Exit the roundabout onto Tebourba Way", location: LatLng(0, 0),
+-                           alongMeters: 2726, distanceMeters: 0, road: "Tebourba Way", laneHint: nil)
+-        off.leavesRoundabout = true
+-        off.exit = 1
+-        a.exit = nil
+-        var steps = [a, off]
+-        var g = Maneuver(type: .roundabout, instruction: "At the roundabout, take the 2nd exit", location: LatLng(0, 0),
+-                         alongMeters: 2660, distanceMeters: 0, road: nil, laneHint: nil)
+-        g.exit = 2
+-        StepMerge.addGoogleExits(&steps, from: [g])
+-        XCTAssertEqual(steps[0].exit, 2)
+-        XCTAssertEqual(steps[0].instruction, "At Millbrook Roundabout, take the 2nd exit")
+-        XCTAssertEqual(steps[1].exit, 2)
++    func testStructuredRoundaboutExitAgreement() {
++        XCTAssertEqual(OSRM.confirmedExit(entry: 2, leaving: 2), 2)
++        XCTAssertEqual(OSRM.confirmedExit(entry: nil, leaving: 3), 3)
++        XCTAssertNil(OSRM.confirmedExit(entry: 1, leaving: 2))
++        XCTAssertNil(OSRM.confirmedExit(entry: 0, leaving: nil))
++        XCTAssertEqual(OSRM.instruction(type: "roundabout", modifier: nil, road: nil, exit: nil, mode: .drive),
++                       "At the roundabout, take the exit")
+     }
+ }
+ 
+@@ -638,3 +629,51 @@ final class MotorwayLinkNameTests: XCTestCase {
+         XCTAssertTrue(steps.contains { $0.instruction == "Exit the roundabout onto M27" })
+     }
+ }
++
++
++final class NavigationRecoveryTests: XCTestCase {
++    func testFreshLocationAfterResume() {
++        for age in [30.0, 120.0, 600.0] {
++            XCTAssertFalse(RouteTracker.isFreshFix(age: age, accuracy: 5, maximumError: 60))
++        }
++        XCTAssertTrue(RouteTracker.isFreshFix(age: 1, accuracy: 5, maximumError: 60))
++        XCTAssertFalse(RouteTracker.isFreshFix(age: 1, accuracy: 90, maximumError: 60))
++        XCTAssertFalse(RouteTracker.isFreshFix(age: -10, accuracy: 5, maximumError: 60))
++    }
++
++    func testPreciseWrongTurnTriggersBeforeNoisyLocation() {
++        let route = Route(mode: .drive, polyline: [LatLng(0, 0), LatLng(0.01, 0)],
++                          distanceMeters: 1100, typicalSeconds: 100, maneuvers: [], source: "osm")
++        let point = LatLng(0.002, 0.0005)
++        let tracker = RouteTracker(route: route)
++        XCTAssertFalse(tracker.update(point, accuracy: 45, speed: 12).offRoute)
++        XCTAssertFalse(tracker.update(point, accuracy: 5, speed: 12, measured: false).offRoute)
++        XCTAssertTrue(tracker.update(point, accuracy: 5, speed: 12).offRoute)
++        XCTAssertFalse(tracker.update(LatLng(0.003, 0), accuracy: 5, speed: 12).offRoute)
++    }
++
++    func testCityIntersectionHighlightsOnlyMappedThroughLane() {
++        var junction: [String: Any] = [
++            "bearings": [0, 90, 180, 270], "in": 2, "out": 0,
++            "lanes": [
++                ["indications": ["left"], "valid": false],
++                ["indications": ["straight"], "valid": true],
++                ["indications": ["right"], "valid": false],
++            ],
++        ]
++        XCTAssertEqual(OSRM.throughLanes(junction).map(\.valid), [false, true, false])
++        junction["out"] = 1
++        XCTAssertTrue(OSRM.throughLanes(junction).isEmpty)
++        junction["out"] = 0
++        junction.removeValue(forKey: "lanes")
++        XCTAssertTrue(OSRM.throughLanes(junction).isEmpty)
++    }
++
++    func testStraightInstructionUsesSignedDestination() {
++        let signs = OSRM.Signs(destinations: "D35: Centrum, Olomouc")
++        XCTAssertEqual(OSRM.instruction(type: "continue", modifier: "straight", road: "XYZ",
++                                        exit: nil, mode: .drive, signs: signs),
++                       "Continue straight toward Centrum and Olomouc")
++        XCTAssertEqual(signs.panel?.references, ["D35"])
++    }
++}

@@ -1,0 +1,158 @@
+diff --git a/App/Sources/AppModel.swift b/App/Sources/AppModel.swift
+index cce8e9a..6724482 100644
+--- a/App/Sources/AppModel.swift
++++ b/App/Sources/AppModel.swift
+@@ -1008,6 +1008,7 @@ final class AppModel: ObservableObject {
+ 
+     func boardTransit() {
+         transitJourney?.boarded = true
++        refreshActivity()
+     }
+ 
+     func advanceTransit() {
+@@ -1291,20 +1292,50 @@ final class AppModel: ObservableObject {
+     private func refreshActivity() {
+         guard #available(iOS 16.2, *), hasActiveJourney else { return }
+         let title: String, detail: String, symbol: String
++        var summary: String?
++        var cue: String?
+         if let n = nav {
+-            title = n.nextManeuver.map { L10n.isCzech ? CzechNavigation.prompt($0) : $0.instruction } ?? n.destination.name
+-            detail = n.progress.map { Fmt.distance($0.distanceToNext) } ?? n.destination.name
+-            symbol = n.route.mode == .walk ? "figure.walk" : n.route.mode == .bike ? "bicycle" : "location.north.fill"
+-        } else if let leg = transitJourney?.leg {
+-            title = leg.toName
+-            detail = leg.line.isEmpty ? L10n.text(leg.isWalk ? "Walk" : "Transit") : leg.line
++            let step = n.nextManeuver
++            let progress = n.progress
++            summary = Fmt.arrival(progress?.remainingSeconds ?? n.route.durationSeconds) + " · " + n.destination.name
++            if n.arrived {
++                title = L10n.isCzech ? "Jste v cíli" : "You have arrived"
++                detail = n.destination.name
++                symbol = "flag.checkered"
++                cue = "\(n.route.id)-arrival"
++            } else if n.rerouting || progress?.offRoute == true || n.gpsLost {
++                title = n.gpsLost ? L10n.text("GPS signal lost") : L10n.text("Rerouting")
++                detail = n.destination.name
++                symbol = "location.slash"
++            } else {
++                title = step.map { L10n.isCzech ? CzechNavigation.prompt($0) : $0.instruction } ?? n.destination.name
++                detail = progress.map { Fmt.distance($0.distanceToNext) } ?? n.destination.name
++                symbol = step.map { maneuverSymbol($0.type) } ?? "location.north.fill"
++                let lead = n.route.mode == .drive ? min(450, max(90, n.speedMps * 14)) : n.route.mode == .bike ? 75.0 : 35.0
++                if let progress, let index = progress.nextIndex, let step,
++                   step.type != .depart, progress.distanceToNext >= 0, progress.distanceToNext <= lead {
++                    cue = "\(n.route.id)-\(index)"
++                }
++            }
++        } else if let journey = transitJourney {
++            let leg = journey.leg
++            if leg.isWalk {
++                title = leg.toName
++                detail = L10n.text("Walk")
++            } else {
++                let action = journey.boarded ? (L10n.isCzech ? "Vystupte" : "Get off") : (L10n.isCzech ? "Nastupte" : "Board")
++                title = action + " · " + (journey.boarded ? leg.toName : leg.fromName)
++                detail = leg.line.isEmpty ? L10n.text("Transit") : leg.line
++                summary = leg.headsign
++                if !journey.boarded { cue = "\(journey.trip.id)-board-\(journey.index)" }
++            }
+             symbol = leg.isWalk ? "figure.walk" : "tram.fill"
+         } else {
+             title = L10n.text("Just drive")
+             detail = driveRoad ?? "Kite"
+             symbol = "car.fill"
+         }
+-        JourneyActivity.shared.show(.init(instruction: title, detail: detail, symbol: symbol))
++        JourneyActivity.shared.show(.init(instruction: title, detail: detail, symbol: symbol, summary: summary), cue: cue)
+     }
+ 
+     private func locationChanged(_ loc: CLLocation) {
+diff --git a/App/Sources/JourneyActivity.swift b/App/Sources/JourneyActivity.swift
+index a40c1bf..c4d2607 100644
+--- a/App/Sources/JourneyActivity.swift
++++ b/App/Sources/JourneyActivity.swift
+@@ -1,5 +1,6 @@
+ import ActivityKit
+ import Foundation
++import UIKit
+ 
+ @available(iOS 16.2, *)
+ @MainActor
+@@ -9,16 +10,25 @@ final class JourneyActivity {
+     private var last: TripActivity.ContentState?
+     private var lastUpdate = Date.distantPast
+ 
+-    func show(_ state: TripActivity.ContentState) {
++    private var lastCue: String?
++    private var endingIDs: Set<String> = []
++
++    func show(_ state: TripActivity.ContentState, cue: String?) {
+         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+         let now = Date()
+-        guard state != last || now.timeIntervalSince(lastUpdate) > 40 else { return }
+-        guard state.instruction != last?.instruction || now.timeIntervalSince(lastUpdate) >= 3 else { return }
++        let shouldAlert = cue != nil && cue != lastCue && UIApplication.shared.applicationState == .background
++        guard shouldAlert || state != last || now.timeIntervalSince(lastUpdate) > 40 else { return }
++        guard shouldAlert || state.instruction != last?.instruction || now.timeIntervalSince(lastUpdate) >= 3 else { return }
+         let content = ActivityContent(state: state, staleDate: now.addingTimeInterval(90))
+-        if let activity = current ?? Activity<TripActivity>.activities.first {
++        let sessions = Activity<TripActivity>.activities.filter { !endingIDs.contains($0.id) && ($0.activityState == .active || $0.activityState == .stale) }
++        if let activity = sessions.first(where: { $0.id == current?.id }) ?? sessions.first {
+             current = activity
+-            Task { await activity.update(content) }
++            let alert: AlertConfiguration? = shouldAlert
++                ? AlertConfiguration(title: "\(state.instruction)", body: "\(state.detail)", sound: .default) : nil
++            if shouldAlert { lastCue = cue }
++            Task { await activity.update(content, alertConfiguration: alert) }
+         } else {
++            guard UIApplication.shared.applicationState == .active else { return }
+             current = try? Activity.request(attributes: TripActivity(), content: content)
+         }
+         if current != nil { last = state; lastUpdate = now }
+@@ -26,9 +36,16 @@ final class JourneyActivity {
+ 
+     func finish() {
+         let sessions = Activity<TripActivity>.activities
++        lastCue = nil
++        endingIDs.formUnion(sessions.map(\.id))
+         current = nil
+         last = nil
+         lastUpdate = .distantPast
+-        for activity in sessions { Task { await activity.end(nil, dismissalPolicy: .immediate) } }
++        for activity in sessions {
++            Task {
++                await activity.end(nil, dismissalPolicy: .immediate)
++                endingIDs.remove(activity.id)
++            }
++        }
+     }
+ }
+diff --git a/NavigationWidget/NavigationWidget.swift b/NavigationWidget/NavigationWidget.swift
+index 3cf259d..585cd53 100644
+--- a/NavigationWidget/NavigationWidget.swift
++++ b/NavigationWidget/NavigationWidget.swift
+@@ -9,8 +9,11 @@ struct NavigationWidget: Widget {
+             HStack(spacing: 14) {
+                 Image(systemName: context.state.symbol).font(.title).foregroundStyle(.mint)
+                 VStack(alignment: .leading) {
++                    Text(context.state.detail).font(.title2.bold()).lineLimit(1)
+                     Text(context.state.instruction).font(.headline).lineLimit(2)
+-                    Text(context.state.detail).font(.subheadline).lineLimit(1)
++                    if let summary = context.state.summary {
++                        Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
++                    }
+                 }
+                 Spacer()
+             }.padding()
+diff --git a/Shared/TripActivity.swift b/Shared/TripActivity.swift
+index d9cb3f9..fb761b8 100644
+--- a/Shared/TripActivity.swift
++++ b/Shared/TripActivity.swift
+@@ -6,5 +6,6 @@ struct TripActivity: ActivityAttributes {
+         let instruction: String
+         let detail: String
+         let symbol: String
++        var summary: String? = nil
+     }
+ }

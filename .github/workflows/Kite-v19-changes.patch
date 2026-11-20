@@ -1,0 +1,736 @@
+diff --git a/App/Sources/AppModel.swift b/App/Sources/AppModel.swift
+index 2f596ac..bf445aa 100644
+--- a/App/Sources/AppModel.swift
++++ b/App/Sources/AppModel.swift
+@@ -127,7 +127,15 @@ final class AppModel: ObservableObject {
+     @Published var openNowOnly = false
+     @Published var rating4Only = false
+     @Published var sort: SortMode = .relevance
+-    @Published var directions: DirectionsState?
++    private(set) var previewCoverage: RouteEventCoverage?
++    @Published var directions: DirectionsState? {
++        didSet {
++            let route = directions?.route
++            guard previewCoverage?.routeID != route?.id else { return }
++            previewCoverage = route.map { RouteEventCoverage($0) }
++            previewCoverage?.changed = { [weak self] in self?.objectWillChange.send() }
++        }
++    }
+     @Published var nav: Navigator?
+     @Published var showLayers = false
+     /** Which page of the dock is open. */
+@@ -339,7 +347,7 @@ final class AppModel: ObservableObject {
+         rating4Only = false
+         sort = .relevance
+         let vp = viewport
+-        let useGoogle = !settings.noGoogle
++        let useGoogle = settings.googleSearchEnabled
+         let user = userLatLng
+         searchTask = Task {
+             var r = await PlaceSearch.search(q, center: vp.center, spanMeters: vp.span, useGoogle: useGoogle)
+@@ -370,7 +378,7 @@ final class AppModel: ObservableObject {
+         let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
+         guard q.count >= 2, !MapLinks.looksLikeLink(q) else { suggestions = SuggestParser.Result(); return }
+         let vp = viewport
+-        let useGoogle = !settings.noGoogle
++        let useGoogle = settings.googleSearchEnabled
+         let user = userLatLng
+         suggestTask = Task {
+             try? await Task.sleep(nanoseconds: 250_000_000)
+@@ -897,7 +905,7 @@ final class AppModel: ObservableObject {
+     private func beginNavigation(_ route: Route, to destination: Place, stops: [Place] = [],
+                                  exclusion: RouteExclusion? = nil, resumeFreeDrive: Bool = false) {
+         selected = nil
+-        let n = Navigator(route: route, destination: destination, stops: stops, settings: settings)
++        let n = Navigator(route: route, destination: destination, stops: stops, settings: settings, coverage: previewCoverage)
+         n.exclusion = exclusion
+         nav = n
+         defer { refreshActivity() }
+diff --git a/App/Sources/AppSettings.swift b/App/Sources/AppSettings.swift
+index e55b44d..a1f615e 100644
+--- a/App/Sources/AppSettings.swift
++++ b/App/Sources/AppSettings.swift
+@@ -59,6 +59,10 @@ final class AppSettings: ObservableObject {
+     @Published var avoidTolls: Bool { didSet { d.set(avoidTolls, forKey: "avoidTolls") } }
+     @Published var avoidHighways: Bool { didSet { d.set(avoidHighways, forKey: "avoidHighways") } }
+     /** "Use Kite without Google": search and routes from open data only. */
++    @Published var preferGoogleSearch = UserDefaults.standard.object(forKey: "preferGoogleSearch") as? Bool ?? true {
++        didSet { d.set(preferGoogleSearch, forKey: "preferGoogleSearch") }
++    }
++    var googleSearchEnabled: Bool { !noGoogle && preferGoogleSearch }
+     @Published var noGoogle: Bool { didSet { d.set(noGoogle, forKey: "noGoogle"); if noGoogle { Task { @MainActor in WazeWeb.shared.shutDown() } } } }
+     /** Fixed speed cameras on the map, and plate readers (DeFlock), from OpenStreetMap. */
+     @Published var speedCameras: Bool { didSet { d.set(speedCameras, forKey: "speedCameras") } }
+diff --git a/App/Sources/AppleMapView.swift b/App/Sources/AppleMapView.swift
+index dfd9102..35f88c6 100644
+--- a/App/Sources/AppleMapView.swift
++++ b/App/Sources/AppleMapView.swift
+@@ -235,7 +235,7 @@ final class AppleMapSurface: UIView, KiteMapSurface, MKMapViewDelegate, UIGestur
+         }
+         let showBuildings = !settings.satellite && (!navigating || settings.navBuildings)
+         if native.showsBuildings != showBuildings { native.showsBuildings = showBuildings }
+-        let showTraffic = settings.traffic && !navigating && settings.welcomed
++        let showTraffic = settings.traffic && settings.welcomed
+         if native.showsTraffic != showTraffic { native.showsTraffic = showTraffic }
+         let showHeat = settings.wazeOn && settings.wazeHeatmap && settings.wazePolice
+         if showHeat && heatLayer == nil {
+diff --git a/App/Sources/CustomJourneyViews.swift b/App/Sources/CustomJourneyViews.swift
+index 1264e7b..9917f36 100644
+--- a/App/Sources/CustomJourneyViews.swift
++++ b/App/Sources/CustomJourneyViews.swift
+@@ -38,7 +38,7 @@ struct RouteEndpointPicker: View {
+                 guard !Task.isCancelled else { return }
+                 let viewport = model.viewport
+                 let response = await PlaceSearch.search(term, center: model.userLatLng ?? viewport.center,
+-                                                       spanMeters: viewport.span, useGoogle: !model.settings.noGoogle)
++                                                       spanMeters: viewport.span, useGoogle: model.settings.googleSearchEnabled)
+                 guard !Task.isCancelled else { return }
+                 results = response.places
+                 searching = false
+diff --git a/App/Sources/DirectionsViews.swift b/App/Sources/DirectionsViews.swift
+index 34435dd..25b40a8 100644
+--- a/App/Sources/DirectionsViews.swift
++++ b/App/Sources/DirectionsViews.swift
+@@ -445,6 +445,13 @@ struct TripBody: View {
+                         // More than three routes is rare; the ones past the cards stay reachable here.
+                         if d.current.count > 3 { alternates(d, picked: r) }
+                         Divider()
++                        if let coverage = model.previewCoverage, coverage.routeID == r.id {
++                            DisclosureGroup(L10n.text("Road events ahead")) {
++                                RoadEventsList(controls: coverage.events,
++                                    emptyMessage: coverage.unavailable ? "Road data temporarily unavailable" :
++                                        (coverage.complete ? "No mapped road events ahead" : "Checking the route…"))
++                            }
++                        }
+                         Text("Steps").font(.headline)
+                         StepsList(route: r)
+                         if let url = d.toPlace?.shareURL { shareButton(url).padding(.top, 6) }
+@@ -1146,7 +1153,7 @@ struct StopPicker: View {
+         let b = model.directions?.destination.location ?? a
+         let mid = LatLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2)
+         let span = max(a.distance(to: b) * 1.2, 5_000)
+-        let useGoogle = !settings.noGoogle
++        let useGoogle = settings.googleSearchEnabled
+         Task {
+             let r = await PlaceSearch.search(q, center: mid, spanMeters: span, useGoogle: useGoogle)
+             found = Array(r.places.prefix(30))
+diff --git a/App/Sources/KitePages.swift b/App/Sources/KitePages.swift
+index f87e5cd..618edb4 100644
+--- a/App/Sources/KitePages.swift
++++ b/App/Sources/KitePages.swift
+@@ -375,7 +375,7 @@ struct PlacePicker: View {
+         guard q.count >= 2 else { found = []; searching = false; return }
+         searching = true
+         let center = model.userLatLng ?? model.viewport.center
+-        let useGoogle = !settings.noGoogle
++        let useGoogle = settings.googleSearchEnabled
+         task = Task {
+             if !full { try? await Task.sleep(nanoseconds: 300_000_000) }
+             guard !Task.isCancelled else { return }
+diff --git a/App/Sources/MapIcons.swift b/App/Sources/MapIcons.swift
+index a9afb65..6f44eeb 100644
+--- a/App/Sources/MapIcons.swift
++++ b/App/Sources/MapIcons.swift
+@@ -47,6 +47,7 @@ enum MapIcons {
+         add(surveillanceCamera(), "cam-surveillance")
+         add(trafficLight(), "traffic-light")
+         add(dot("figure.walk", UIColor(hex: 0x2563EB)), "pedestrian-crossing")
++        add(dot("arrow.right", UIColor(hex: 0x2563EB)), "one-way")
+         add(dot("triangle", UIColor(hex: 0xB91C1C)), "give-way")
+         add(dot("stop.octagon.fill", UIColor(hex: 0xB91C1C)), "route-stop")
+         add(dot("train.side.front.car", UIColor(hex: 0x6D28D9)), "route-crossing")
+diff --git a/App/Sources/MapView.swift b/App/Sources/MapView.swift
+index f0e32c5..f4f6a96 100644
+--- a/App/Sources/MapView.swift
++++ b/App/Sources/MapView.swift
+@@ -335,7 +335,7 @@ struct VelaMapView: UIViewRepresentable {
+             sigs.iconAnchor = NSExpression(forConstantValue: "bottom")
+             sigs.iconScale = NSExpression(mglJSONObject: ["interpolate", ["linear"], ["zoom"], 14, 0.75, 17, 1.0])
+             sigs.iconIgnoresPlacement = NSExpression(forConstantValue: true)
+-            sigs.minimumZoomLevel = 11
++            sigs.minimumZoomLevel = 0
+             style.addLayer(sigs)
+ 
+             // Live camera photos, under the speed cameras: Windy webcams from zoom 6 (a region), road
+@@ -590,7 +590,7 @@ struct VelaMapView: UIViewRepresentable {
+             (style.layer(withIdentifier: "vela-puck") as? MLNSymbolStyleLayer)?.iconScale =
+                 NSExpression(forConstantValue: s.navArrowScale)
+             // Not before the welcome screen's choice: "Open data only" means nothing ever went to Google.
+-            style.layer(withIdentifier: "vela-traffic")?.isVisible = s.traffic && !navigating && !s.noGoogle && s.welcomed
++            style.layer(withIdentifier: "vela-traffic")?.isVisible = s.traffic && !s.noGoogle && s.welcomed
+             style.layer(withIdentifier: "vela-sat")?.isVisible = s.satellite
+             style.layer(withIdentifier: "vela-terrain")?.isVisible = s.terrain && !s.satellite
+             for id in ["vela-rail", "vela-rail-case"] { style.layer(withIdentifier: id)?.isVisible = s.transitLines || model.hasActiveJourney }
+@@ -722,7 +722,7 @@ struct VelaMapView: UIViewRepresentable {
+ 
+         private func renderSignals() {
+             let controls = model.nav?.routeControls ?? (model.nav == nil && model.hasActiveJourney
+-                ? model.nearbyControls.filter { !model.justDrive || $0.kind.showsDuringDriving } : nil)
++                ? model.nearbyControls.filter { !model.justDrive || $0.kind.showsDuringDriving } : (model.nav == nil ? model.previewCoverage?.events.map(\.control) : nil))
+             let signals = controls?.isEmpty != false ? model.nav?.routeSignals ?? [] : []
+             guard controls != drawnControls || signals != drawnSignals else { return }
+             drawnControls = controls
+diff --git a/App/Sources/NavigationViews.swift b/App/Sources/NavigationViews.swift
+index b4b4398..05f6405 100644
+--- a/App/Sources/NavigationViews.swift
++++ b/App/Sources/NavigationViews.swift
+@@ -365,7 +365,7 @@ struct NavigationOverlay: View {
+                             if showMedia { DriveMusicPanel(initiallyExpanded: true) }
+                         }
+                         tripSummary
+-                        RoadEventsList(controls: nav.upcomingControls, emptyMessage: roadEventsStatus)
++                        RoadEventsList(controls: nav.allUpcomingControls, emptyMessage: roadEventsStatus)
+                         Text("Steps").font(.headline)
+                         StepsList(route: nav.route, from: nav.progress?.nextIndex ?? 0)
+                     }
+@@ -1625,7 +1625,7 @@ struct AlongRouteSheet: View {
+         let end = min(total, here + 40_000)
+         let mid = Geo.point(along: line, meters: (here + end) / 2, cumulative: cum)
+         let span = max(end - here, 3_000)
+-        let useGoogle = !settings.noGoogle
++        let useGoogle = settings.googleSearchEnabled
+         task = Task {
+             let r = await PlaceSearch.search(query, center: mid, spanMeters: span, useGoogle: useGoogle)
+             guard !Task.isCancelled else { return }
+diff --git a/App/Sources/Navigator.swift b/App/Sources/Navigator.swift
+index 248b23b..aeb81cd 100644
+--- a/App/Sources/Navigator.swift
++++ b/App/Sources/Navigator.swift
+@@ -53,7 +53,7 @@ final class Navigator: ObservableObject {
+     @Published private(set) var fasterOffer: FasterOffer?
+     private var fasterRoute: Route?
+     /** How long the faster route card waits before taking the route by itself. */
+-    static let fasterWait: TimeInterval = 10
++    static let fasterWait: TimeInterval = 30
+     /** A camera coming up within about twelve seconds, for the warning card. */
+     @Published private(set) var cameraAhead: CameraAlert?
+     /** How far along the route the card's camera is. */
+@@ -71,9 +71,7 @@ final class Navigator: ObservableObject {
+     /** Traffic lights on the route, one per junction, drawn on the map like Waze. */
+     @Published private(set) var routeSignals: [LatLng] = []
+     @Published private(set) var routeControls: [RouteControl]?
+-    private var lastControlRequest = Date.distantPast
+-    private var controlsFrom = -10_000.0
+-    private var controlTask: Task<Void, Never>?
++    private var coverage: RouteEventCoverage?
+     @Published private(set) var controlsUnavailable = false
+     @Published private(set) var upcomingControls: [UpcomingRoadControl] = []
+     private var orderedControls: [UpcomingRoadControl] = []
+@@ -90,11 +88,20 @@ final class Navigator: ObservableObject {
+         } else {
+             events = orderedControls
+         }
+-        let next = events.filter { $0.meters >= along && $0.meters - along <= 2_000 }.prefix(6)
+-        let remaining = next.map { UpcomingRoadControl(control: $0.control, meters: (($0.meters - along) / 10).rounded() * 10) }
++        let next = events.lazy.filter { $0.meters >= along }.prefix(6)
++        let remaining = Array(next).map { UpcomingRoadControl(control: $0.control, meters: (($0.meters - along) / 10).rounded() * 10) }
+         if remaining != upcomingControls { upcomingControls = remaining }
+     }
+ 
++    var allUpcomingControls: [UpcomingRoadControl] {
++        let along = progress?.alongMeters ?? 0
++        guard !orderedControls.isEmpty else { return upcomingControls }
++        return orderedControls.compactMap { event in
++            guard event.meters >= along else { return nil }
++            return UpcomingRoadControl(control: event.control, meters: event.meters - along)
++        }
++    }
++
+     let destination: Place
+     /** Stops still ahead, in trip order; each is dropped once reached. */
+     @Published private(set) var stops: [Place]
+@@ -196,7 +203,7 @@ final class Navigator: ObservableObject {
+     private var aircraftLoading = false
+     private var spokenAircraft: Set<String> = []
+ 
+-    init(route: Route, destination: Place, stops: [Place] = [], settings: AppSettings) {
++    init(route: Route, destination: Place, stops: [Place] = [], settings: AppSettings, coverage: RouteEventCoverage? = nil) {
+         self.route = route
+         self.destination = destination
+         self.stops = stops
+@@ -208,7 +215,7 @@ final class Navigator: ObservableObject {
+         UIApplication.shared.isIdleTimerDisabled = true
+         speech.delegate = speechDone
+         let first = route.maneuvers.first { $0.type != .depart } ?? route.maneuvers.first
+-        updateControls(around: 0)
++        bindCoverage(coverage.flatMap { $0.routeID == route.id ? $0 : nil } ?? RouteEventCoverage(route))
+         loadCameras()
+         loadWaze()
+         loadRoundabouts()
+@@ -236,7 +243,7 @@ final class Navigator: ObservableObject {
+ 
+     func stop() {
+         stopped = true
+-        controlTask?.cancel()
++        coverage = nil
+         gpsWatch?.invalidate()
+         speech.stopSpeaking(at: .immediate)
+         UIApplication.shared.isIdleTimerDisabled = false
+@@ -464,7 +471,7 @@ final class Navigator: ObservableObject {
+                 } else { speak("Speed limit \(SpeedLimitSign.number(drop.kmh)) in \(Fmt.spokenDistance(drop.meters)).") }
+             }
+         }
+-        updateControls(around: p.alongMeters)
++        refreshUpcomingControls(p.alongMeters)
+         checkTraffic(p, loc)
+         checkCameras(p)
+         checkWaze(p)
+@@ -478,32 +485,17 @@ final class Navigator: ObservableObject {
+         }
+     }
+ 
+-    private func updateControls(around along: Double) {
+-        refreshUpcomingControls(along)
+-        let distance = route.mode == .drive ? 1_400.0 : 700.0
+-        guard !demoAlerts, controlTask == nil,
+-              along - controlsFrom >= distance, Date().timeIntervalSince(lastControlRequest) > 12 else { return }
+-        let id = route.id, line = route.polyline, mode = route.mode
+-        let segment = Geo.slice(line, from: max(0, along - 60), to: min(Geo.length(line), along + distance + 600))
+-        guard segment.count >= 2 else { routeControls = []; return }
+-        lastControlRequest = Date()
+-        controlTask = Task { [weak self] in
+-            let controls = await RouteControls.lookup(on: segment)
+-            let displayed = mode == .drive ? controls?.filter { $0.kind.showsDuringDriving } : controls
+-            guard let self, !Task.isCancelled, !self.stopped, self.route.id == id else { return }
+-            self.controlTask = nil
+-            self.controlsUnavailable = controls == nil
+-            if let controls = displayed {
+-                let cumulative = Geo.cumulative(segment)
+-                let start = max(0, along - 60)
+-                self.orderedControls = controls.map {
+-                    UpcomingRoadControl(control: $0, meters: start + Geo.project($0.location, on: segment, cumulative: cumulative).along)
+-                }
+-                self.controlsFrom = along
+-                self.routeControls = controls
+-                self.refreshUpcomingControls(self.progress?.alongMeters ?? along)
+-            }
++    private func bindCoverage(_ source: RouteEventCoverage) {
++        coverage = source
++        let sync = { [weak self, weak source] in
++            guard let self, let source, self.route.id == source.routeID else { return }
++            self.orderedControls = source.events
++            self.routeControls = source.complete || !source.events.isEmpty ? source.events.map(\.control) : nil
++            self.controlsUnavailable = source.unavailable
++            self.refreshUpcomingControls(self.progress?.alongMeters ?? 0)
+         }
++        source.changed = sync
++        sync()
+     }
+ 
+     /** A stop picked on the way (search along the route): go there first, then on. */
+@@ -1050,7 +1042,7 @@ final class Navigator: ObservableObject {
+      */
+     private func checkTraffic(_ p: RouteTracker.Progress, _ loc: CLLocation) {
+         guard route.mode == .drive, !AppSettings.shared.noGoogle, !rerouting, !trafficLoading, !demoAlerts, fasterOffer == nil,
+-              p.remainingMeters > 1_500, !p.offRoute, Date().timeIntervalSince(trafficAt) > 180 else { return }
++              p.remainingMeters > 1_500, !p.offRoute, Date().timeIntervalSince(trafficAt) > 90 else { return }
+         trafficLoading = true
+         trafficAt = Date()
+         let from = LatLng(loc.coordinate.latitude, loc.coordinate.longitude)
+@@ -1060,20 +1052,19 @@ final class Navigator: ObservableObject {
+             let r = await Directions.routes(from: from, to: to, mode: .drive, avoidHighways: hw, avoidTolls: tolls, via: via, heading: course)
+             self.trafficLoading = false
+             // Arrived (or ended) while asking: no new route, and no "Found a faster route" in the car park.
+-            guard !self.stopped, !self.arrived,
+-                  let fresh = r.routes.first(where: { self.exclusion?.allows($0) ?? true }), self.route.id == id, !self.rerouting, let now = self.progress,
+-                  !now.offRoute, planned > 0, fresh.trafficSeconds != nil else { return }
+-            let current = now.remainingSeconds
+-            let saving = current - fresh.durationSeconds
++            guard !self.stopped, !self.arrived, self.route.id == id, !self.rerouting,
++                  let now = self.progress, !now.offRoute, planned > 0 else { return }
+             let line = self.route.polyline
+             let length = Geo.length(line)
+             let original = Geo.slice(line, from: p.alongMeters, to: length)
+-            let sameWay = Geo.isNearRoute(fresh.polyline, reference: original)
+-            if !sameWay, AppSettings.shared.suggestFasterRoutes, saving > max(120, current * 0.12) {
++            let allowed = r.routes.filter { self.exclusion?.allows($0) ?? true }
++            let comparison = TrafficAlternatives.compare(allowed, on: original, previousETA: p.remainingSeconds)
++            if let baseline = comparison.currentETA {
++                self.trafficScale = min(3, max(0.5, baseline / planned))
++            }
++            if let alternative = comparison.alternative, AppSettings.shared.suggestFasterRoutes {
+                 let left = Geo.slice(line, from: now.alongMeters, to: length)
+-                self.offerFaster(fresh, saving: saving, remainingMeters: now.remainingMeters, remainingLine: left)
+-            } else if sameWay {
+-                self.trafficScale = min(3, max(0.5, fresh.durationSeconds / planned))
++                self.offerFaster(alternative, saving: comparison.saving, remainingMeters: now.remainingMeters, remainingLine: left)
+             }
+         }
+     }
+@@ -1242,7 +1233,7 @@ final class Navigator: ObservableObject {
+             self.rerouting = false
+             // Parked at the destination while the new route was loading: the trip is over, keep it that way.
+             if self.arrived { return }
+-            guard let fresh = r.routes.first(where: { self.exclusion?.allows($0) ?? true }) else {
++            guard let fresh = r.routes.filter({ $0.trafficSeconds != nil && (self.exclusion?.allows($0) ?? true) }).min(by: { $0.durationSeconds < $1.durationSeconds }) else {
+                 if let adding {
+                     self.stopFailed = true
+                     self.speakTemplate("Couldn't add a stop at %@. Carrying on to %@.", adding.name, self.stops.first?.name ?? self.destination.name)
+@@ -1276,13 +1267,8 @@ final class Navigator: ObservableObject {
+         route = fresh
+         spokenLimitDrop = nil
+         routeControls = nil
+-        controlsFrom = -10_000
+-        controlTask?.cancel()
+-        controlTask = nil
+-        orderedControls = []
+-        upcomingControls = []
+-        controlsUnavailable = false
+-        lastControlRequest = .distantPast
++        routeSignals = []
++        bindCoverage(RouteEventCoverage(fresh))
+         tracker = RouteTracker(route: fresh)
+         spokenStage = [:]
+         toldContinue = []
+diff --git a/App/Sources/RoadControlTimeline.swift b/App/Sources/RoadControlTimeline.swift
+index eb5ad0f..0c0cf88 100644
+--- a/App/Sources/RoadControlTimeline.swift
++++ b/App/Sources/RoadControlTimeline.swift
+@@ -98,6 +98,7 @@ private extension RouteControl.Kind {
+         case .railway: return "Railway crossing"
+         case .tram: return "Tram crossing"
+         case .crossing: return "Pedestrian crossing"
++        case .oneWay: return "One-way street (vehicles)"
+         case .yield: return "Give way"
+         }
+     }
+@@ -109,6 +110,7 @@ private extension RouteControl.Kind {
+         case .railway: return "train.side.front.car"
+         case .tram: return "tram.fill"
+         case .crossing: return "figure.walk"
++        case .oneWay: return "arrow.right"
+         case .yield: return "triangle"
+         }
+     }
+diff --git a/App/Sources/RouteEventCoverage.swift b/App/Sources/RouteEventCoverage.swift
+new file mode 100644
+index 0000000..72e3f1e
+--- /dev/null
++++ b/App/Sources/RouteEventCoverage.swift
+@@ -0,0 +1,57 @@
++import Foundation
++import VelaCore
++
++/// Shared by the planner and its navigator. Distances are relative to the selected route.
++@MainActor
++final class RouteEventCoverage {
++    let routeID: UUID
++    private(set) var events: [UpcomingRoadControl] = []
++    private(set) var complete = false
++    private(set) var unavailable = false
++    var changed: (() -> Void)?
++    private var worker: Task<Void, Never>?
++
++    init(_ route: Route) {
++        routeID = route.id
++        worker = Task { [weak self] in
++            let line = route.polyline
++            let cumulative = Geo.cumulative(line)
++            let total = cumulative.last ?? 0
++            let size = 4000.0
++            var pending = Array(0..<Int(ceil(total / size)))
++            while !pending.isEmpty, !Task.isCancelled {
++                var failed: [Int] = []
++                for index in pending {
++                    guard !Task.isCancelled else { return }
++                    let start = Double(index) * size
++                    let from = max(0, start - 40)
++                    let end = min(total, start + size)
++                    let section = Geo.slice(line, from: from, to: min(total, end + 40), cumulative: cumulative)
++                    let result = await RouteControls.lookup(on: section, walking: route.mode == .walk)
++                    guard let owner = self, !Task.isCancelled else { return }
++                    if let result {
++                        let distances = Geo.cumulative(section)
++                        let batch = result.compactMap { event -> UpcomingRoadControl? in
++                            if route.mode == .drive && !event.kind.showsDuringDriving { return nil }
++                            let at = from + Geo.project(event.location, on: section, cumulative: distances).along
++                            guard at >= start, at < end || end == total else { return nil }
++                            return UpcomingRoadControl(control: event, meters: at)
++                        }
++                        owner.events.append(contentsOf: batch)
++                        owner.events.sort { $0.meters < $1.meters }
++                    } else { failed.append(index) }
++                    owner.unavailable = !failed.isEmpty
++                    owner.changed?()
++                }
++                pending = failed
++                if !pending.isEmpty {
++                    do { try await Task.sleep(nanoseconds: 60_000_000_000) } catch { return }
++                }
++            }
++            guard !Task.isCancelled else { return }
++            self?.complete = true
++            self?.changed?()
++        }
++    }
++    deinit { worker?.cancel() }
++}
+diff --git a/App/Sources/SettingsViews.swift b/App/Sources/SettingsViews.swift
+index 4e8ed02..66c0e9a 100644
+--- a/App/Sources/SettingsViews.swift
++++ b/App/Sources/SettingsViews.swift
+@@ -256,7 +256,10 @@ struct SettingsView: View {
+     private var mapPage: some View {
+         Form {
+             if !settings.noGoogle {
+-                Section("Google Places") { PlacesKeySettings() }
++                Section("Google Places") {
++                    Toggle("Search places with Google Maps", isOn: $settings.preferGoogleSearch)
++                    PlacesKeySettings()
++                }
+             }
+             Section("Map background") {
+                 Toggle("Apple Maps", isOn: $settings.useAppleMaps)
+diff --git a/App/Sources/cs.lproj/Localizable.strings b/App/Sources/cs.lproj/Localizable.strings
+index a347503..bf2a315 100644
+--- a/App/Sources/cs.lproj/Localizable.strings
++++ b/App/Sources/cs.lproj/Localizable.strings
+@@ -605,3 +605,6 @@
+ "Stop code %@" = "Kód zastávky %@";
+ "%@ min late" = "Zpoždění %@ min";
+ "%@ min early" = "O %@ min dříve";
++
++"One-way street (vehicles)" = "Jednosměrná ulice pro vozidla";
++"Search places with Google Maps" = "Vyhledávat místa v Mapách Google";
+diff --git a/VelaCore/Sources/VelaCore/PlaceSearch.swift b/VelaCore/Sources/VelaCore/PlaceSearch.swift
+index ea7842c..3df8bad 100644
+--- a/VelaCore/Sources/VelaCore/PlaceSearch.swift
++++ b/VelaCore/Sources/VelaCore/PlaceSearch.swift
+@@ -22,12 +22,6 @@ public enum PlaceSearch {
+                 // Google sometimes puts a far-off namesake first ("Covent Garden Market" in Ontario,
+                 // "Museo Británico" for the British Museum): one nearby goes ahead of it.
+                 places = nearFirst(places, center: center)
+-                if let top = places.first, top.location.distance(to: center) > farMeters {
+-                    // Nothing near from Google at all: the open map may know the one down the road.
+-                    let osm = (try? await Photon.search(q, near: center)) ?? []
+-                    let near = osm.filter { $0.location.distance(to: center) < nearMeters }
+-                    if !near.isEmpty { return Result(places: near + places) }
+-                }
+                 return Result(places: places)
+             }
+         } catch {
+diff --git a/VelaCore/Sources/VelaCore/RouteControls.swift b/VelaCore/Sources/VelaCore/RouteControls.swift
+index db6a604..856156d 100644
+--- a/VelaCore/Sources/VelaCore/RouteControls.swift
++++ b/VelaCore/Sources/VelaCore/RouteControls.swift
+@@ -2,12 +2,12 @@ import Foundation
+ 
+ public struct RouteControl: Hashable, Sendable {
+     public enum Kind: String, Hashable, Sendable {
+-        case light = "traffic-light", stop = "route-stop", railway = "route-crossing", tram = "tram-crossing", crossing = "pedestrian-crossing", yield = "give-way"
++        case light = "traffic-light", stop = "route-stop", railway = "route-crossing", tram = "tram-crossing", crossing = "pedestrian-crossing", yield = "give-way", oneWay = "one-way"
+ 
+         public var showsDuringDriving: Bool {
+             switch self {
+             case .light, .stop, .railway: return true
+-            case .tram, .crossing, .yield: return false
++            case .tram, .crossing, .yield, .oneWay: return false
+             }
+         }
+     }
+@@ -30,7 +30,7 @@ public enum RouteControls {
+         return nodeControls(items)
+     }
+ 
+-    private static func fetchControls(around scope: String) async -> [[String: Any]]? {
++    private static func fetchControls(around scope: String, walking: Bool = false) async -> [[String: Any]]? {
+         let minimal = """
+         [out:json][timeout:6];
+         (node["highway"~"^(traffic_signals|stop|crossing|give_way)$"](around:\(scope));
+@@ -38,7 +38,7 @@ public enum RouteControls {
+         out body 400;
+         """
+         async let tagged = Overpass.firstAnswer(minimal, stagger: 0.75, requestTimeout: 7, valid: { elements($0) != nil })
+-        async let detailed = Overpass.firstAnswer(query(around: scope), stagger: 0.75, requestTimeout: 8, valid: { elements($0) != nil })
++        async let detailed = Overpass.firstAnswer(query(around: scope, walking: walking), stagger: 0.75, requestTimeout: 8, valid: { elements($0) != nil })
+         let (taggedData, detailedData) = await (tagged, detailed)
+         let explicit = taggedData.flatMap(elements)
+         let enriched = detailedData.flatMap(elements)
+@@ -116,7 +116,7 @@ public enum RouteControls {
+         }
+     }
+ 
+-    private static func query(around scope: String) -> String {
++    private static func query(around scope: String, walking: Bool) -> String {
+         """
+         [out:json][timeout:7];
+         way["railway"~"^(rail|tram|light_rail|narrow_gauge)$"](around:\(scope))->.tracks;
+@@ -127,6 +127,8 @@ public enum RouteControls {
+             node(w.tracks)(w.roads)(around:\(scope));
+         )->.controls;
+         .controls out body 400;
++        \(walking ? "way.roads[oneway~\"^(-1|yes|1|true)$\"]; out body geom 1000; way.roads[highway~\"^(footway|path|pedestrian|steps)$\"]; out body 2000;" : "")
++
+         (way(bn.controls)["highway"];way(bn.controls)["railway"];);
+         out body geom 1800;
+         """
+@@ -169,7 +171,7 @@ public enum RouteControls {
+         }
+     }
+ 
+-    public static func lookup(on line: [LatLng]) async -> [RouteControl]? {
++    public static func lookup(on line: [LatLng], walking: Bool = false) async -> [RouteControl]? {
+         guard line.count >= 2 else { return [] }
+         let cumulative = Geo.cumulative(line)
+         let length = cumulative.last ?? 0
+@@ -179,15 +181,21 @@ public enum RouteControls {
+             let point = Geo.point(along: line, meters: length * Double(index) / Double(count - 1), cumulative: cumulative)
+             return String(format: "%.5f,%.5f", locale: locale, point.lat, point.lng)
+         }.joined(separator: ",")
+-        async let overpass = fetchControls(around: "37,\(points)")
++        async let overpass = fetchControls(around: "37,\(points)", walking: walking)
+         async let postpass = fetchPostpass(covering: line, padding: 45)
+         guard let items = await combined(overpass, postpass) else { return nil }
+-        return mapped(items, on: line, cumulative: cumulative)
++        return mapped(items, on: line, cumulative: cumulative, walking: walking)
+     }
+ 
+-    static func mapped(_ items: [[String: Any]], on line: [LatLng], cumulative: [Double]) -> [RouteControl] {
++    static func mapped(_ items: [[String: Any]], on line: [LatLng], cumulative: [Double], walking: Bool = false) -> [RouteControl] {
++        var candidates: [(at: Double, offset: Double, kind: RouteControl.Kind)] = []
+         var waysByNode: [Int64: [(before: LatLng?, after: LatLng?, oneway: String?)]] = [:]
+         let knownCrossings = Dictionary(nodeControls(items).map { ($0.location, $0.kind) }, uniquingKeysWith: { first, _ in first })
++        let pedestrianNodes = Set(items.flatMap { item -> [Int64] in
++            guard walking, let tags = item["tags"] as? [String: String],
++                  ["footway", "path", "pedestrian", "steps"].contains(tags["highway"] ?? "") else { return [] }
++            return item["nodes"] as? [Int64] ?? []
++        })
+         for way in items where way["type"] as? String == "way" {
+             guard let ids = way["nodes"] as? [Int64], let geometry = way["geometry"] as? [[String: Any]],
+                   ids.count == geometry.count else { continue }
+@@ -195,12 +203,31 @@ public enum RouteControls {
+             guard tags["highway"] != nil || tags["railway"] == nil else { continue }
+             let points = geometry.map(coordinate)
+             let oneway = tags["oneway"]
++            if walking, ["yes", "1", "true", "-1"].contains(oneway ?? "") {
++                // A vertex on the walked route, plus an adjoining segment on that route,
++                // distinguishes travelling on the street from merely passing near it.
++                let geometry = points.compactMap { $0 }
++                let matches = zip(geometry, geometry.dropFirst()).compactMap { a, b -> Double? in
++                    guard a.distance(to: b) > 3 else { return nil }
++                    let x = Geo.project(a, on: line, cumulative: cumulative)
++                    let y = Geo.project(b, on: line, cumulative: cumulative)
++                    guard max(x.offset, y.offset) < 7, abs(x.along - y.along) > 3 else { return nil }
++                    return min(x.along, y.along)
++                }
++                if let at = matches.min() { candidates.append((at, 0, .oneWay)) }
++                else {
++                    for (index, node) in ids.enumerated() where pedestrianNodes.contains(node) {
++                        guard let point = points[index] else { continue }
++                        let at = Geo.project(point, on: line, cumulative: cumulative)
++                        if at.offset < 5 { candidates.append((at.along, at.offset, .oneWay)) }
++                    }
++                }
++            }
+             for (index, node) in ids.enumerated() {
+                 waysByNode[node, default: []].append((index > 0 ? points[index - 1] : nil,
+                                                        index + 1 < points.count ? points[index + 1] : nil, oneway))
+             }
+         }
+-        var candidates: [(at: Double, offset: Double, kind: RouteControl.Kind)] = []
+         for item in items where item["type"] as? String == "node" {
+             guard let point = coordinate(item), let id = item["id"] as? Int64, let kind = knownCrossings[point] else { continue }
+             let tags = item["tags"] as? [String: String] ?? [:]
+@@ -213,7 +240,7 @@ public enum RouteControls {
+             let after = Geo.point(along: line, meters: at.along + 12, cumulative: cumulative)
+             let ways = waysByNode[id] ?? []
+             let direction = tags["traffic_signals:direction"] ?? tags["direction"]
+-            if !crossing, !ways.isEmpty {
++            if !walking, !crossing, !ways.isEmpty {
+                 let incoming = Geo.bearing(before, before.distance(to: onRoute) > 4 ? onRoute : after)
+                 let matches = ways.contains { way in
+                     let forwardAllowed = way.oneway != "-1" && direction != "backward"
+@@ -222,7 +249,7 @@ public enum RouteControls {
+                            (reverseAllowed && aligned(way.after, with: point, bearing: incoming))
+                 }
+                 guard matches || (at.offset <= 4 && direction == nil && ways.allSatisfy({ $0.oneway == nil })) else { continue }
+-            } else if !crossing && (direction != nil || at.offset > 8) {
++            } else if !walking && !crossing && (direction != nil || at.offset > 8) {
+                 continue
+             }
+             candidates.append((at.along, at.offset, kind))
+diff --git a/VelaCore/Sources/VelaCore/TrafficAlternatives.swift b/VelaCore/Sources/VelaCore/TrafficAlternatives.swift
+new file mode 100644
+index 0000000..50a88fc
+--- /dev/null
++++ b/VelaCore/Sources/VelaCore/TrafficAlternatives.swift
+@@ -0,0 +1,21 @@
++import Foundation
++
++public enum TrafficAlternatives {
++    /// Both durations refer to the same departure position, even if the car moves during the request.
++    public static func compare(_ routes: [Route], on original: [LatLng], previousETA: Double)
++        -> (currentETA: Double?, alternative: Route?, saving: Double) {
++        var current: Double?
++        var alternative: Route?
++        for route in routes {
++            guard let seconds = route.trafficSeconds, seconds.isFinite, seconds > 0, route.polyline.count > 1 else { continue }
++            if Geo.isNearRoute(route.polyline, reference: original) && Geo.isNearRoute(original, reference: route.polyline) {
++                current = min(current ?? seconds, seconds)
++            } else if seconds < (alternative?.durationSeconds ?? .infinity) {
++                alternative = route
++            }
++        }
++        let baseline = current ?? previousETA
++        let saving = baseline - (alternative?.durationSeconds ?? baseline)
++        return (current, saving > max(60, baseline * 0.05) ? alternative : nil, saving)
++    }
++}
+diff --git a/VelaCore/Tests/VelaCoreTests/RoutingTests.swift b/VelaCore/Tests/VelaCoreTests/RoutingTests.swift
+index 119f0f2..0542585 100644
+--- a/VelaCore/Tests/VelaCoreTests/RoutingTests.swift
++++ b/VelaCore/Tests/VelaCoreTests/RoutingTests.swift
+@@ -2,6 +2,22 @@ import XCTest
+ @testable import VelaCore
+ 
+ final class RoutingTests: XCTestCase {
++    func testNewTrafficDelayTriggersAlternativeDespitePreviouslyShortETA() {
++        let original = [LatLng(0, 0), LatLng(0, 0.02)]
++        let detour = [original[0], LatLng(0.005, 0.01), original[1]]
++        func route(_ path: [LatLng], _ live: Double?) -> Route {
++            Route(mode: .drive, polyline: path, distanceMeters: Geo.length(path), typicalSeconds: 300,
++                  trafficSeconds: live, summary: nil, maneuvers: [], source: "google")
++        }
++        let better = route(detour, 480)
++        let comparison = TrafficAlternatives.compare([route(detour, nil), better, route(original, 660)],
++                                                     on: original, previousETA: 300)
++        XCTAssertEqual(comparison.currentETA, 660)
++        XCTAssertEqual(comparison.alternative?.id, better.id)
++        XCTAssertEqual(comparison.saving, 180)
++        XCTAssertNil(TrafficAlternatives.compare([route(original, 490), better], on: original, previousETA: 700).alternative)
++    }
++
+     func testPostpassCrossingRemainsAvailableWithoutOverpassGeometry() throws {
+         let response = """
+         {
+diff --git a/VelaCore/Tests/VelaCoreTests/WalkEventsTests.swift b/VelaCore/Tests/VelaCoreTests/WalkEventsTests.swift
+new file mode 100644
+index 0000000..af7ed94
+--- /dev/null
++++ b/VelaCore/Tests/VelaCoreTests/WalkEventsTests.swift
+@@ -0,0 +1,25 @@
++import XCTest
++@testable import VelaCore
++
++final class WalkEventsTests: XCTestCase {
++    private let line = [LatLng(0, 0), LatLng(0.01, 0)]
++
++    func testOneWayCrossingMustSharePedestrianNode() {
++        let road: [String: Any] = ["type": "way", "tags": ["highway": "residential", "oneway": "-1"],
++            "nodes": [Int64(1), 2, 3], "geometry": [["lat": 0.005, "lon": -0.001],
++                ["lat": 0.005, "lon": 0.0], ["lat": 0.005, "lon": 0.001]]]
++        let path: [String: Any] = ["type": "way", "tags": ["highway": "footway"], "nodes": [Int64(4), 2, 5]]
++        let cumulative = Geo.cumulative(line)
++        XCTAssertTrue(RouteControls.mapped([road], on: line, cumulative: cumulative, walking: true).isEmpty)
++        XCTAssertEqual(RouteControls.mapped([road, path], on: line, cumulative: cumulative, walking: true).map(\.kind), [.oneWay])
++        XCTAssertTrue(RouteControls.mapped([road, path], on: line, cumulative: cumulative).isEmpty)
++    }
++
++    func testWalkShowsStopFacingVehiclesInOppositeDirection() {
++        let stop: [String: Any] = ["type": "node", "id": Int64(1), "lat": 0.005, "lon": 0.0,
++                                  "tags": ["highway": "stop", "direction": "backward"]]
++        let cumulative = Geo.cumulative(line)
++        XCTAssertTrue(RouteControls.mapped([stop], on: line, cumulative: cumulative).isEmpty)
++        XCTAssertEqual(RouteControls.mapped([stop], on: line, cumulative: cumulative, walking: true).map(\.kind), [.stop])
++    }
++}

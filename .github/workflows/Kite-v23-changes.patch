@@ -1,0 +1,331 @@
+diff --git a/App/Sources/DirectionsViews.swift b/App/Sources/DirectionsViews.swift
+index 77bd5ae..2e38505 100644
+--- a/App/Sources/DirectionsViews.swift
++++ b/App/Sources/DirectionsViews.swift
+@@ -733,6 +733,7 @@ struct TransitBody: View {
+ private struct TransitFallbackLinks: View {
+     @ObservedObject var model: AppModel
+     let state: DirectionsState
++    @State private var showGoogleTransit = false
+ 
+     var body: some View {
+         if let from = state.fromPlace?.location ?? model.userLatLng,
+@@ -752,7 +753,10 @@ private struct TransitFallbackLinks: View {
+                         Label("Apple Maps", systemImage: "arrow.up.right.square")
+                     }
+                     if !model.settings.noGoogle, let url = googleURL(from: from, to: to) {
+-                        Link(destination: url) { Label("Google Maps", systemImage: "arrow.up.right.square") }
++                        Button { showGoogleTransit = true } label: { Label("Google Maps", systemImage: "tram") }
++                            .fullScreenCover(isPresented: $showGoogleTransit) {
++                                GoogleMapsPage(url: url, title: L10n.text("Transit"))
++                            }
+                     }
+                 }
+                 .font(.subheadline.weight(.semibold))
+diff --git a/App/Sources/GoogleMapsPage.swift b/App/Sources/GoogleMapsPage.swift
+new file mode 100644
+index 0000000..75fe595
+--- /dev/null
++++ b/App/Sources/GoogleMapsPage.swift
+@@ -0,0 +1,167 @@
++import SwiftUI
++import WebKit
++
++/// A user-visible Google Maps page. Reviews, media and sorting stay in Google's controls.
++struct GoogleMapsPage: View {
++    enum Section: String {
++        case reviews, photos
++    }
++
++    let url: URL
++    let title: String
++    var section: Section? = nil
++
++    @Environment(\.dismiss) private var dismiss
++    @State private var loading = true
++    @State private var failed = false
++    @State private var retry = 0
++
++    var body: some View {
++        NavigationView {
++            ZStack(alignment: .top) {
++                GoogleMapsWebView(url: url, section: section, loading: $loading, failed: $failed)
++                    .id(retry)
++                if loading && !failed {
++                    ProgressView().padding(12)
++                        .background(.regularMaterial, in: Capsule()).padding()
++                }
++                if failed {
++                    VStack(spacing: 16) {
++                        Text(L10n.isCzech ? "Stránku Google Maps se nepodařilo načíst." : "The Google Maps page could not load.")
++                        Button(L10n.text("Reload")) {
++                            failed = false
++                            loading = true
++                            retry += 1
++                        }
++                        Link("Google Maps", destination: url)
++                    }
++                    .padding()
++                    .frame(maxWidth: .infinity, maxHeight: .infinity)
++                    .background(.background)
++                }
++            }
++            .navigationTitle(title)
++            .navigationBarTitleDisplayMode(.inline)
++            .toolbar {
++                ToolbarItem(placement: .cancellationAction) {
++                    Link(destination: url) {
++                        Label("Google Maps", systemImage: "arrow.up.right.square")
++                    }
++                }
++                ToolbarItem(placement: .confirmationAction) {
++                    Button("Done") { dismiss() }
++                }
++            }
++        }.navigationViewStyle(.stack)
++    }
++}
++
++private struct GoogleMapsWebView: UIViewRepresentable {
++    let url: URL
++    let section: GoogleMapsPage.Section?
++    @Binding var loading: Bool
++    @Binding var failed: Bool
++
++    func makeCoordinator() -> Coordinator { Coordinator(loading: $loading, failed: $failed) }
++
++    func makeUIView(context: Context) -> WKWebView {
++        let configuration = WKWebViewConfiguration()
++        configuration.websiteDataStore = .nonPersistent()
++        if let section {
++            // Select only a visible Maps content tab. If Google changes its layout the normal
++            // page stays available so the user can choose the tab directly.
++            let labels = section == .reviews
++                ? #"^(reviews|recenze|bewertungen|avis|reseñas|recensioni|opinie|recenzie)(\s+.*)?$"#
++                : #"^(photos|fotky|fotografie|fotos|fotografías|foto|zdjęcia)(\s+.*)?$"#
++            let script = """
++            (() => {
++              if (location.hostname !== 'www.google.com' || !/^\\/maps(?:\\/|$)/.test(location.pathname)) return;
++              const wanted = /\(labels)/i;
++              const open = () => {
++                const tab = Array.from(document.querySelectorAll('[role="tab"]')).find(element =>
++                  element.getClientRects().length && wanted.test((element.getAttribute('aria-label') || element.textContent || '').trim()));
++                if (!tab) return false;
++                if (tab.getAttribute('aria-selected') !== 'true') tab.click();
++                return true;
++              };
++              if (open()) return;
++              const observer = new MutationObserver(() => { if (open()) observer.disconnect(); });
++              observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-label'] });
++              setTimeout(() => observer.disconnect(), 8000);
++            })();
++            """
++            configuration.userContentController.addUserScript(
++                WKUserScript(source: script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
++            )
++        }
++        let webView = WKWebView(frame: .zero, configuration: configuration)
++        webView.navigationDelegate = context.coordinator
++        webView.uiDelegate = context.coordinator
++        webView.allowsBackForwardNavigationGestures = true
++        webView.load(URLRequest(url: url, timeoutInterval: 20))
++        return webView
++    }
++
++    func updateUIView(_ uiView: WKWebView, context: Context) {}
++
++    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
++        uiView.navigationDelegate = nil
++        uiView.uiDelegate = nil
++        uiView.stopLoading()
++    }
++
++    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
++        @Binding var loading: Bool
++        @Binding var failed: Bool
++
++        init(loading: Binding<Bool>, failed: Binding<Bool>) {
++            _loading = loading
++            _failed = failed
++        }
++
++        private func allows(_ url: URL?) -> Bool {
++            guard let url, url.scheme == "https", let host = url.host else { return false }
++            if host == "consent.google.com" { return true }
++            return (host == "www.google.com" || host == "maps.google.com")
++                && (url.path == "/" || url.path == "/maps" || url.path.hasPrefix("/maps/") || url.path == "/sorry/index")
++        }
++
++        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
++                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
++            if action.targetFrame?.isMainFrame == false {
++                decisionHandler(.allow)
++            } else {
++                decisionHandler(allows(action.request.url) ? .allow : .cancel)
++            }
++        }
++
++        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
++                     for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
++            if action.targetFrame == nil, allows(action.request.url) { webView.load(action.request) }
++            return nil
++        }
++
++        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
++            loading = false
++        }
++
++        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
++            showFailure(error)
++        }
++
++        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
++            showFailure(error)
++        }
++
++        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
++            loading = false
++            failed = true
++        }
++
++        private func showFailure(_ error: Error) {
++            guard (error as? URLError)?.code != .cancelled else { return }
++            loading = false
++            failed = true
++        }
++    }
++}
+diff --git a/App/Sources/GooglePlaceMedia.swift b/App/Sources/GooglePlaceMedia.swift
+index 5693010..e6a6de9 100644
+--- a/App/Sources/GooglePlaceMedia.swift
++++ b/App/Sources/GooglePlaceMedia.swift
+@@ -113,10 +113,20 @@ struct PlaceMediaSheet: View {
+     @State private var details: GooglePlaceMedia.Details?
+     @State private var failed = false
+     @State private var retry = 0
++    @State private var showGooglePage = false
+ 
+     var body: some View {
+         NavigationView {
+             List {
++                if !AppSettings.shared.noGoogle, place.googlePlacePage != nil {
++                    Button {
++                        showGooglePage = true
++                    } label: {
++                        Label(L10n.isCzech ? (photos ? "Fotky v Google Maps" : "Všechny recenze v Google Maps")
++                              : (photos ? "Photos in Google Maps" : "All reviews in Google Maps"),
++                              systemImage: photos ? "photo.on.rectangle" : "text.bubble")
++                    }
++                }
+                 if photos {
+                     if !place.photoUrls.isEmpty { PhotoStrip(urls: place.photoUrls, height: 150, opensViewer: true) }
+                     ForEach(details?.photos ?? []) { NativePlacePhoto(photo: $0) }
+@@ -135,19 +145,8 @@ struct PlaceMediaSheet: View {
+                         }
+                     }
+                 }
+-                if place.source == "google", !AppSettings.shared.noGoogle {
+-                    if let url = place.shareURL {
+-                        Link(destination: url) {
+-                            Label("Google Maps", systemImage: "arrow.up.right.square")
+-                        }
+-                    }
+-                    if PlacesCredential.key.isEmpty {
+-                        Section {
+-                            Text(L10n.text("Add your Places API key to load more Google reviews and photos."))
+-                            PlacesKeySettings()
+-                            Button(L10n.text("Load Google content")) { retry += 1 }
+-                        }
+-                    } else if place.placeId == nil {
++                if place.source == "google", !AppSettings.shared.noGoogle, !PlacesCredential.key.isEmpty {
++                    if place.placeId == nil {
+                         Text(L10n.text("This place has no Google Places ID.")).foregroundStyle(.secondary)
+                     } else if failed {
+                         Text(L10n.text("Google content could not be loaded. Check the Places API key."))
+@@ -167,6 +166,11 @@ struct PlaceMediaSheet: View {
+             .navigationTitle(L10n.text(photos ? "Photos" : "Reviews"))
+             .navigationBarTitleDisplayMode(.inline)
+             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
++            .fullScreenCover(isPresented: $showGooglePage) {
++                if let url = place.googlePlacePage {
++                    GoogleMapsPage(url: url, title: place.name, section: photos ? .photos : .reviews)
++                }
++            }
+             .task(id: retry) {
+                 let key = PlacesCredential.key
+                 guard place.source == "google", !AppSettings.shared.noGoogle, let id = place.placeId, !key.isEmpty else { return }
+diff --git a/VelaCore/Sources/VelaCore/Place.swift b/VelaCore/Sources/VelaCore/Place.swift
+index b389691..2ddb2d0 100644
+--- a/VelaCore/Sources/VelaCore/Place.swift
++++ b/VelaCore/Sources/VelaCore/Place.swift
+@@ -81,6 +81,36 @@ public struct Place: Identifiable, Hashable, Codable, Sendable {
+         return location.distance(to: other.location) <= 150
+     }
+ 
++    /// Opens Google's public place page. The feature ID identifies the business even without a Places ID.
++    public var googlePlacePage: URL? {
++        guard source == "google" else { return nil }
++        if let featureId {
++            let parts = featureId.split(separator: ":", omittingEmptySubsequences: false)
++            if parts.count == 2, parts.allSatisfy({ $0.hasPrefix("0x") }),
++               UInt64(parts[0].dropFirst(2), radix: 16) != nil,
++               let cid = UInt64(parts[1].dropFirst(2), radix: 16), cid > 0 {
++                var page = URLComponents()
++                page.scheme = "https"
++                page.host = "www.google.com"
++                page.path = "/maps"
++                page.queryItems = [URLQueryItem(name: "cid", value: String(cid))]
++                return page.url
++            }
++        }
++        if placeId?.isEmpty == false { return shareURL }
++        var page = URLComponents()
++        page.scheme = "https"
++        page.host = "www.google.com"
++        page.path = "/maps/search/"
++        let address = address?.isEmpty == false ? address : nil
++        let nearby = address ?? "\(location.lat.plain),\(location.lng.plain)"
++        page.queryItems = [
++            URLQueryItem(name: "api", value: "1"),
++            URLQueryItem(name: "query", value: "\(name) \(nearby)")
++        ]
++        return page.url
++    }
++
+     /** A Google Maps link for the place, for sharing and for opening it in Google Maps. */
+     public var shareURL: URL? {
+         if let placeId {
+diff --git a/VelaCore/Tests/VelaCoreTests/MapLinksTests.swift b/VelaCore/Tests/VelaCoreTests/MapLinksTests.swift
+index 9c5ad84..6cc2fd7 100644
+--- a/VelaCore/Tests/VelaCoreTests/MapLinksTests.swift
++++ b/VelaCore/Tests/VelaCoreTests/MapLinksTests.swift
+@@ -71,3 +71,29 @@ final class MapLinksTests: XCTestCase {
+         XCTAssertEqual(p.lng, -0.1286, accuracy: 0.001)
+     }
+ }
++
++final class GooglePlacePageTests: XCTestCase {
++    func testFeatureIDKeepsExactPlaceWithoutPlacesKey() {
++        var place = Place(id: "test", name: "Kavárna", location: LatLng(49, 17), source: "google")
++        place.featureId = "0x123:0xffffffffffffffff"
++        XCTAssertEqual(place.googlePlacePage?.absoluteString, "https://www.google.com/maps?cid=18446744073709551615")
++    }
++
++    func testInvalidFeatureFallsBackToGooglePlaceID() {
++        var place = Place(id: "test", name: "Kavárna", location: LatLng(49, 17), source: "google")
++        place.featureId = "invalid:0x1"
++        place.placeId = "ChIJExample"
++        let query = place.googlePlacePage.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems
++        XCTAssertEqual(query?.first { $0.name == "query_place_id" }?.value, "ChIJExample")
++        XCTAssertEqual(query?.first { $0.name == "query" }?.value, "Kavárna")
++        place.source = "osm"
++        XCTAssertNil(place.googlePlacePage)
++    }
++
++    func testFallbackSearchPreservesBusinessAndAddress() {
++        var place = Place(id: "test", name: "Čaj & Káva", location: LatLng(49, 17), source: "google")
++        place.address = "Olomouc"
++        let query = place.googlePlacePage.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems
++        XCTAssertEqual(query?.first { $0.name == "query" }?.value, "Čaj & Káva Olomouc")
++    }
++}
