@@ -28,11 +28,11 @@ public enum ArrivalHelp {
     }
 
     public static func parkingQuery(near p: LatLng, radius: Int = 500) -> String {
-        "[out:json][timeout:25];nwr[\\"amenity\\"=\\"parking\\"](around:\\(radius),\\(p.lat),\\(p.lng));out center tags 60;"
+        "[out:json][timeout:25];nwr[\"amenity\"=\"parking\"](around:\(radius),\(p.lat),\(p.lng));out center tags 60;"
     }
 
     public static func entranceQuery(near p: LatLng, radius: Int = 350) -> String {
-        "[out:json][timeout:25];node[\\"entrance\\"=\\"main\\"](around:\\(radius),\\(p.lat),\\(p.lng));out 30;"
+        "[out:json][timeout:25];node[\"entrance\"=\"main\"](around:\(radius),\(p.lat),\(p.lng));out 30;"
     }
 
     /** The car parks anyone can use, nearest first: not private, not just a few spaces along a street. */
@@ -50,7 +50,7 @@ public enum ArrivalHelp {
             guard let lat = (e["lat"] ?? center?["lat"]) as? Double, let lng = (e["lon"] ?? center?["lon"]) as? Double else { continue }
             let at = LatLng(lat, lng)
             let fee = tags["fee"].map { ["yes", "true"].contains($0.lowercased()) ? true : ["no", "false"].contains($0.lowercased()) ? false : nil } ?? nil
-            let id = "\\(e["type"] as? String ?? "x")\\((e["id"] as? NSNumber)?.int64Value ?? 0)"
+            let id = "\(e["type"] as? String ?? "x")\((e["id"] as? NSNumber)?.int64Value ?? 0)"
             out.append(CarPark(id: id, name: tags["name"], location: at, meters: at.distance(to: p), fee: fee,
                                spaces: tags["capacity"].flatMap { Int($0) },
                                kind: kind == "underground" ? "Underground" : kind == "multi-storey" ? "Multi-storey" : nil))

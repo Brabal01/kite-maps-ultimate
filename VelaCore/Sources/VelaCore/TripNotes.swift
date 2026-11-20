@@ -60,10 +60,13 @@ public struct RoadCharge: Hashable, Sendable {
     public var name: String
     /** How and when to pay, in a few words. */
     public var note: String
+    /** A clean air zone (some older cars pay or are fined) rather than a charge for everyone. */
+    public var zone: Bool
 
-    public init(name: String, note: String) {
+    public init(name: String, note: String, zone: Bool = false) {
         self.name = name
         self.note = note
+        self.zone = zone
     }
 }
 

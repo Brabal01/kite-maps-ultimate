@@ -857,8 +857,9 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
     private fun offerFaster(fresh: Route, saving: Double, remainingMeters: Double, remainingLine: List<LatLng>) {
         val minutes = max(1, (saving / 60).roundToInt())
         // What else changes, so it's an easy call: longer or shorter, and any pay-later charge it adds.
-        val had = RoadCharges.on(remainingLine).map { it.name }.toSet()
-        val charges = RoadCharges.on(fresh.polyline).map { it.name }.filter { it !in had }
+        val clean = AppSettings.cleanCar
+        val had = (RoadCharges.on(remainingLine) + CleanAirZones.on(remainingLine, clean)).map { it.name }.toSet()
+        val charges = (RoadCharges.on(fresh.polyline) + CleanAirZones.on(fresh.polyline, clean)).map { it.name }.filter { it !in had }
         val offer = FasterOffer(minutes, fresh.summary, now() + FASTER_WAIT_MS, fresh.distanceMeters - remainingMeters, charges)
         fasterRoute = fresh
         fasterOffer = offer

@@ -690,6 +690,7 @@ struct RouteTolls: View {
 struct RouteCharges: View {
     let route: Route
     @State private var charges: [RoadCharge] = []
+    @ObservedObject private var settings = AppSettings.shared
     @Environment(\.colorScheme) private var scheme
     /** Made-up charges for the build's screenshots. */
     static var demo: [RoadCharge] = []
@@ -698,10 +699,10 @@ struct RouteCharges: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(charges.isEmpty ? Self.demo : charges, id: \.self) { c in
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "sterlingsign.circle.fill").font(.system(size: 26, weight: .bold))
-                        .foregroundColor(Color(hex: 0xE37400))
+                    Image(systemName: c.zone ? "leaf.circle.fill" : "sterlingsign.circle.fill").font(.system(size: 26, weight: .bold))
+                        .foregroundColor(Color(hex: c.zone ? 0x15803D : 0xE37400))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Charge on this route: \(c.name)").font(.system(size: 17, weight: .bold))
+                        Text(c.zone ? "Clean air zone on this route: \(c.name)" : "Charge on this route: \(c.name)").font(.system(size: 17, weight: .bold))
                             .fixedSize(horizontal: false, vertical: true)
                         Text(c.note).font(.system(size: 15, weight: .medium)).foregroundColor(Vela.muted(scheme))
                             .fixedSize(horizontal: false, vertical: true)
@@ -712,9 +713,9 @@ struct RouteCharges: View {
                 .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Vela.chip(scheme)))
             }
         }
-        .task(id: route.id) {
-            let line = route.polyline
-            charges = await Task.detached { RoadCharges.on(line) }.value
+        .task(id: "\(route.id)-\(settings.cleanCar)") {
+            let line = route.polyline, clean = settings.cleanCar
+            charges = await Task.detached { RoadCharges.on(line) + CleanAirZones.on(line, cleanCar: clean) }.value
         }
     }
 }

@@ -933,8 +933,9 @@ final class Navigator: ObservableObject {
     private func offerFaster(_ fresh: Route, saving: Double, remainingMeters: Double, remainingLine: [LatLng]) {
         let minutes = max(1, Int((saving / 60).rounded()))
         // What else changes, so it's an easy call: longer or shorter, and any pay-later charge it adds.
-        let had = Set(RoadCharges.on(remainingLine).map(\.name))
-        let charges = RoadCharges.on(fresh.polyline).map(\.name).filter { !had.contains($0) }
+        let clean = AppSettings.shared.cleanCar
+        let had = Set((RoadCharges.on(remainingLine) + CleanAirZones.on(remainingLine, cleanCar: clean)).map(\.name))
+        let charges = (RoadCharges.on(fresh.polyline) + CleanAirZones.on(fresh.polyline, cleanCar: clean)).map(\.name).filter { !had.contains($0) }
         let offer = FasterOffer(minutes: minutes, via: fresh.summary, until: Date().addingTimeInterval(Self.fasterWait),
                                 extraMeters: fresh.distanceMeters - remainingMeters, newCharges: charges)
         fasterRoute = fresh

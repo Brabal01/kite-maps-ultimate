@@ -452,16 +452,18 @@ fun TripBody(model: AppModel) {
 @Composable
 fun RouteCharges(route: Route) {
     val dark = LocalDark.current
-    var charges by remember(route.id) { mutableStateOf(RouteChargesDemo.charges) }
-    LaunchedEffect(route.id) {
-        val found = withContext(Dispatchers.Default) { RoadCharges.on(route.polyline) }
-        if (found.isNotEmpty()) charges = found
+    val clean = AppSettings.cleanCar
+    var charges by remember(route.id, clean) { mutableStateOf(RouteChargesDemo.charges) }
+    LaunchedEffect(route.id, clean) {
+        val found = withContext(Dispatchers.Default) { RoadCharges.on(route.polyline) + CleanAirZones.on(route.polyline, clean) }
+        if (found.isNotEmpty() || RouteChargesDemo.charges.isEmpty()) charges = found
     }
     charges.forEach { c ->
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Vela.chip(dark)).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(Icons.Filled.CurrencyPound, null, tint = Color(0xFFE37400), modifier = Modifier.size(28.dp))
+            Icon(if (c.zone) Icons.Filled.Eco else Icons.Filled.CurrencyPound, null,
+                tint = if (c.zone) Color(0xFF15803D) else Color(0xFFE37400), modifier = Modifier.size(28.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Charge on this route: ${c.name}", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = primaryText)
+                Text(if (c.zone) "Clean air zone on this route: ${c.name}" else "Charge on this route: ${c.name}", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = primaryText)
                 Text(c.note, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Vela.muted(dark), lineHeight = 19.sp)
             }
         }

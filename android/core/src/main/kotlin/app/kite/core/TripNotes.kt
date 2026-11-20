@@ -46,7 +46,7 @@ object ClosingCheck {
 }
 
 /** A charge on the way that has no barrier to remind you: you pay online afterwards, or get a fine. */
-data class RoadCharge(val name: String, val note: String)
+data class RoadCharge(val name: String, val note: String, val zone: Boolean = false)
 
 /**
  * Britain's pay-later road charges. A short fixed list, not looked up live: each is a spot in the
