@@ -1,0 +1,84 @@
+name: Build custom iPhone IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [iphone-custom-v18]
+
+permissions:
+  contents: read
+
+jobs:
+  ipa:
+    name: Build Kite.ipa
+    timeout-minutes: 35
+    # Xcode 27.1 (the iOS 27.1 SDK) is what lets Kite fill the iPhone Duo's screens; built with an
+    # older Xcode it runs there small, with black bars.
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply the Kite Maps customizations
+        run: |
+          git apply --check .github/workflows/Kite-0.7.16-custom.patch
+          git apply .github/workflows/Kite-0.7.16-custom.patch
+          git apply --check .github/workflows/Kite-v16-changes.patch
+          git apply .github/workflows/Kite-v16-changes.patch
+          git apply --check .github/workflows/Kite-v17-changes.patch
+          git apply .github/workflows/Kite-v17-changes.patch
+          git apply --check .github/workflows/Kite-v18-changes.patch
+          git apply .github/workflows/Kite-v18-changes.patch
+          git diff --check
+      - name: Test VelaCore
+        working-directory: VelaCore
+        run: swift test
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Make the Xcode project
+        run: xcodegen generate
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Kite.xcodeproj \
+            -scheme Kite \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build | tail -n 200
+      - name: Stamp the build number
+        # AltStore and SideStore spot updates by this number, so each build gets its own.
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $((1000 + GITHUB_RUN_NUMBER))" \
+            build/Build/Products/Release-iphoneos/Kite.app/Info.plist
+      - name: Ad-hoc sign
+        # An app with no signature at all is read as broken by some sideloaders. An ad-hoc
+        # signature fixes that; the sideloader still re-signs with your Apple ID.
+        run: |
+          APP=build/Build/Products/Release-iphoneos/Kite.app
+          WIDGET="$APP/PlugIns/NavigationWidget.appex"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $((1000 + GITHUB_RUN_NUMBER))" "$WIDGET/Info.plist"
+          codesign --force --sign - --timestamp=none "$WIDGET"
+          for f in "$APP"/Frameworks/*.framework; do
+            codesign --force --sign - --timestamp=none "$f"
+          done
+          codesign --force --sign - --timestamp=none "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+      - name: Package .ipa
+        run: |
+          mkdir -p Payload
+          ditto build/Build/Products/Release-iphoneos/Kite.app Payload/Kite.app
+          zip -qr -X Kite.ipa Payload
+          unzip -l Kite.ipa | tail -n 3
+          unzip -tq Kite.ipa
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kite-custom-ipa
+          path: Kite.ipa
+
