@@ -1031,47 +1031,107 @@ struct WazeInfoCard: View {
 
 /**
  * Before starting a drive: what Waze drivers have reported along this route right now, like
- * "2 police · 1 crash". Quiet when Waze is off or didn't answer.
+ * "2 police · 1 crash". Tap one to see where each is along the way, and tap a row to see it on the
+ * map. Quiet when Waze is off or didn't answer.
  */
 struct RouteWazeSummary: View {
     let route: Route
+    /** Shows a report's spot on the map. */
+    var onShow: ((WazeAlert) -> Void)? = nil
+    /** Called with every report found on the route, so the map can show them as icons. */
+    var onFound: (([WazeAlert]) -> Void)? = nil
     @ObservedObject private var settings = AppSettings.shared
-    @State private var counts: [(WazeAlert.Kind, Int)]?
+    @State private var found: [(alert: WazeAlert, along: Double)]?
+    @State private var picked: KindPick?
     /** For the build's screenshots, since Waze turns away the build's computers. */
     static var demo: [(WazeAlert.Kind, Int)]?
+
+    struct KindPick: Identifiable {
+        let kind: WazeAlert.Kind
+        var id: String { kind.rawValue }
+    }
+
+    private var counts: [(WazeAlert.Kind, Int)]? {
+        if let demo = Self.demo { return demo }
+        guard let found else { return nil }
+        let grouped = Dictionary(grouping: found, by: \.alert.kind)
+        return WazeAlert.Kind.allCases.compactMap { k in grouped[k].map { (k, $0.count) } }
+    }
 
     var body: some View {
         // A VStack, not a Group: an empty Group has nothing to hang .task on, so it would never ask.
         VStack(alignment: .leading, spacing: 0) {
             if let counts {
                 if counts.isEmpty {
-                    Label("No road closures on this route", systemImage: "checkmark.shield.fill")
+                    Label("No crashes, roadworks or closures reported on this route", systemImage: "checkmark.shield.fill")
                         .font(.system(size: 16, weight: .semibold)).foregroundColor(Vela.open)
                 } else {
                     WrapLayout(spacing: 8, lineSpacing: 8) {
                         ForEach(counts, id: \.0) { item in
                             let tint = Color(uiColor: MapIcons.wazeColor(item.0))
-                            HStack(spacing: 6) {
-                                WazeBadge(kind: item.0, size: 24)
-                                Text("\(item.1) \(Self.label(item.0, item.1))").font(.system(size: 16, weight: .bold))
+                            Button { picked = KindPick(kind: item.0) } label: {
+                                HStack(spacing: 6) {
+                                    WazeBadge(kind: item.0, size: 24)
+                                    Text("\(item.1) \(Self.label(item.0, item.1))").font(.system(size: 16, weight: .bold))
+                                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .heavy)).foregroundColor(.secondary)
+                                }
+                                .padding(.leading, 6).padding(.trailing, 10)
+                                .frame(height: 38)
+                                .background(Capsule().fill(tint.opacity(0.18)))
                             }
-                            .padding(.leading, 6).padding(.trailing, 12)
-                            .frame(height: 38)
-                            .background(Capsule().fill(tint.opacity(0.18)))
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Shows where along the route")
                         }
                     }
-                    .accessibilityElement(children: .combine)
                 }
             }
         }
         .task(id: route.id) {
-            if let demo = Self.demo { counts = demo; return }
-            guard settings.wazeOn, route.mode == .drive else { counts = nil; return }
-            counts = nil
-            guard let found = await Waze.alongRoute(route.polyline) else { return }
-            let on = Waze.project(found, on: route.polyline).map(\.alert).filter { settings.shows($0) }
-            let grouped = Dictionary(grouping: on, by: \.kind)
-            counts = WazeAlert.Kind.allCases.compactMap { k in grouped[k].map { (k, $0.count) } }
+            if Self.demo != nil { return }
+            guard settings.wazeOn, route.mode == .drive else { found = nil; onFound?([]); return }
+            found = nil
+            onFound?([])
+            // Closures from the live map, and drivers' reports (crashes, police, hazards) from Waze's
+            // app servers for the first 40 km, the same as once you're driving.
+            let line = route.polyline
+            async let closures = Waze.alongRoute(line)
+            let live = await WazeLive.shared.alongRoute(line, here: line[0])
+            let fromMap = await closures
+            guard fromMap != nil || live != nil else { return }
+            var merged: [String: WazeAlert] = [:]
+            for a in (fromMap ?? []) + (live ?? []) { merged[a.id] = a }
+            let on = Waze.project(Array(merged.values), on: line).filter { settings.shows($0.alert) && $0.alert.kind != .jam }
+            found = on
+            onFound?(on.map(\.alert))
+        }
+        .sheet(item: $picked) { pick in
+            NavigationView {
+                List {
+                    ForEach((found ?? []).filter { $0.alert.kind == pick.kind }, id: \.alert.id) { item in
+                        Button {
+                            picked = nil
+                            onShow?(item.alert)
+                        } label: {
+                            HStack(spacing: 12) {
+                                WazeBadge(kind: item.alert.kind, size: 34)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(Fmt.distance(item.along)) along the way").font(.system(size: 18, weight: .bold))
+                                    Text([item.alert.street, item.alert.reportedText].compactMap { $0 }.joined(separator: " · "))
+                                        .font(.system(size: 15)).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "map").foregroundColor(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .navigationTitle(Self.label(pick.kind, 2).capitalized + " on this route")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { picked = nil } } }
+            }
+            .kiteType()
+            .presentationDetents([.medium, .large])
         }
     }
 

@@ -146,6 +146,8 @@ final class AppModel: ObservableObject {
     @Published var browseFollowing = false
     /** The driving view with no route, switched to by itself when you set off (nil when not driving). */
     @Published var cruise: Cruise?
+    /** Waze reports found along the route being planned, shown as icons on it before you go. */
+    @Published var routeReports: [WazeAlert] = []
     private var cruiseSub: AnyCancellable?
     /** When fast driving with no route began, for switching to the driving view after a few seconds. */
     private var movingSince: Date?
@@ -875,6 +877,12 @@ final class AppModel: ObservableObject {
         showLayers = false
         c.handle(loc)
         followBrowse(loc, entering: true)
+    }
+
+    /** A spot on the map, close up (a report along the route). */
+    func showSpot(_ p: LatLng) {
+        browseFollowing = false
+        map?.setCenter(CLLocationCoordinate2D(latitude: p.lat, longitude: p.lng), zoomLevel: 15, animated: true)
     }
 
     func recenterCruise() {

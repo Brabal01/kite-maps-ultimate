@@ -388,7 +388,10 @@ struct TripBody: View {
                     .font(.system(size: 17, weight: .semibold)).foregroundColor(delayColor(r))
             }
             if r.mode == .drive { RouteTolls(route: r).padding(.top, 2) }
-            if r.mode == .drive { RouteWazeSummary(route: r).padding(.top, 4) }
+            if r.mode == .drive {
+                RouteWazeSummary(route: r, onShow: { model.showSpot($0.location) }, onFound: { model.routeReports = $0 })
+                    .padding(.top, 4)
+            }
             if r.mode == .drive { RouteLiveCams(model: model, route: r).padding(.top, 6) }
         }
     }

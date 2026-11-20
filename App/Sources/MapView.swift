@@ -748,7 +748,7 @@ struct VelaMapView: UIViewRepresentable {
             let history = WazeHistory.shared.sightings
             let kinds = s.wazeKinds.map(\.rawValue).sorted().joined()
             // While navigating, drivers' reports from Waze's app servers too (the live map has only closures).
-            let live = model.nav?.liveAlerts ?? []
+            let live = model.nav?.liveAlerts ?? (model.directions != nil ? model.routeReports : [])
             // While driving, reports off your route fade back so the ones you'll meet stand out.
             let route = model.nav?.route.mode == .drive ? model.nav?.route.polyline ?? [] : []
             let key = "\(s.wazeOn)\(s.wazeOnMap)\(s.wazeHeatmap)\(s.wazeMaxAge)\(kinds)\(wazeAt.timeIntervalSince1970)\(history.count)\(live.map(\.id).joined())\(route.count)\(route.first?.lat ?? 0)"
