@@ -54,7 +54,10 @@ fun PlaceHeader(model: AppModel, place: Place) {
             CircleIconButton(Icons.Filled.Share) { ctx.share(place.shareUrl) }
             CircleIconButton(Icons.Filled.Close) { model.closePlace() }
         }
-        PlaceMetaLine(place, here = model.userLatLng)
+        // Tapping the stars opens the reviews (GitHub #70).
+        Box(Modifier.clickable(enabled = place.rating != null) { model.showReviews = place.id; model.detent = SheetDetent.FULL }) {
+            PlaceMetaLine(place, here = model.userLatLng)
+        }
         StatusText(place)
         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.weight(1f).heightIn(min = 56.dp).clip(CircleShape).background(Vela.accent(dark))
@@ -92,14 +95,24 @@ fun PlaceBody(model: AppModel, place: Place) {
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PlaceActions(model, place, driveSeconds)
         PhotoStrip(place.photoUrls, 140.dp, opensViewer = true, streetView = place, model = model)
-        if (place.about.isNotEmpty()) {
+        // Google's places have reviews to read; open map data has none.
+        val hasReviews = place.source == "google" && place.rating != null && !AppSettings.noGoogle
+        LaunchedEffect(model.showReviews) {
+            if (model.showReviews == place.id && hasReviews) { tab = 2; model.showReviews = null }
+        }
+        val tabs = listOfNotNull(0 to "Overview", if (hasReviews) 2 to "Reviews" else null, if (place.about.isNotEmpty()) 1 to "About" else null)
+        if (tabs.size > 1) {
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                listOf("Overview", "About").forEachIndexed { i, label ->
-                    SegmentedButton(tab == i, { tab = i }, SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
+                tabs.forEachIndexed { i, (id, label) ->
+                    SegmentedButton(tab == id, { tab = id }, SegmentedButtonDefaults.itemShape(i, tabs.size)) { Text(label) }
                 }
             }
         }
-        if (tab == 0) PlaceOverview(place) else PlaceAbout(place)
+        when (tab) {
+            1 -> PlaceAbout(place)
+            2 -> ReviewsList(place)
+            else -> PlaceOverview(place)
+        }
         Text(if (place.source == "google") "Place details from Google Maps" else "Map data © OpenStreetMap contributors",
             fontSize = KType.caption, color = secondaryText)
     }
@@ -362,3 +375,64 @@ fun vehicleIcon(v: TransitLeg.Vehicle) = when (v) {
     TransitLeg.Vehicle.FERRY -> Icons.Filled.DirectionsBoat
     TransitLeg.Vehicle.OTHER -> Icons.Filled.DirectionsTransit
 }
+
+/**
+ * A place's Google reviews inside Kite (GitHub #70): stars, who, when and what they said, the ones
+ * Google Maps shows first. When Google won't list them, a button opens them on Google.
+ */
+@Composable
+fun ReviewsList(place: Place) {
+    val ctx = LocalContext.current
+    val dark = LocalDark.current
+    var reviews by remember(place.id) { mutableStateOf<List<GoogleReview>?>(null) }
+    var failed by remember(place.id) { mutableStateOf(false) }
+    LaunchedEffect(place.id) {
+        val fid = place.featureId ?: run { failed = true; return@LaunchedEffect }
+        val found = GoogleClient.shared.reviews(fid)
+        if (found != null) reviews = found else failed = true
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        place.rating?.let { rating ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(String.format(Locale.US, "%.1f", rating), fontSize = 40.sp, fontWeight = FontWeight.ExtraBold, color = primaryText)
+                Column {
+                    Text(starsText(rating), fontSize = 18.sp, color = Color(0xFFF59E0B))
+                    place.reviewCount?.let { Text("%,d reviews on Google".format(it), fontSize = KType.subheadline, color = secondaryText) }
+                }
+            }
+        }
+        val list = reviews
+        if (list != null) {
+            list.forEach { r ->
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Filled.AccountCircle, null, tint = secondaryText, modifier = Modifier.size(30.dp))
+                        Column {
+                            Text(r.author, fontSize = KType.subheadline, fontWeight = FontWeight.Bold, color = primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(listOfNotNull(r.rating?.let { starsText(it.toDouble()) }, r.whenText).joinToString("  "), fontSize = KType.caption, color = secondaryText)
+                        }
+                    }
+                    Text(r.text, fontSize = KType.subheadline, color = primaryText)
+                }
+                HorizontalDivider()
+            }
+        } else if (!failed) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text("Loading reviews…", color = secondaryText)
+            }
+        }
+        if ((failed || list?.isEmpty() == true) && place.featuredReview != null) {
+            Text("“${place.featuredReview}”", fontSize = KType.subheadline, color = primaryText)
+        }
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(CircleShape).background(Vela.tonal(dark))
+            .clickable { ctx.open(GoogleReviews.webUrl(place)) }, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.RateReview, null, tint = Vela.onTonal(dark), modifier = Modifier.size(20.dp))
+            Text(if (list?.isNotEmpty() == true) "More reviews on Google" else "Read the reviews on Google", fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold, color = Vela.onTonal(dark))
+        }
+    }
+}
+
+private fun starsText(rating: Double): String = (0 until 5).joinToString("") { if (rating - it >= 0.5) "★" else "☆" }

@@ -87,6 +87,15 @@ class GoogleClient {
         return get(directionsEndpoint + "&pb=" + enc(pb), "https://www.google.com/", true)
     }
 
+    /** The place's Google reviews, most relevant first; null when Google didn't answer as expected. */
+    suspend fun reviews(featureId: String): List<GoogleReview>? {
+        val url = GoogleReviews.url(featureId) ?: return null
+        return try {
+            warm()
+            GoogleReviews.parse(get(url, "https://www.google.com/", true))
+        } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+    }
+
     private suspend fun warm() = warmLock.withLock {
         if (warmed) return@withLock
         // Only counts once Google answered: opened with no signal, try again on the next search.

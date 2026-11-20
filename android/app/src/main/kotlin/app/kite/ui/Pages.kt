@@ -318,6 +318,13 @@ private fun DrivingSettings() {
         ToggleRow("Avoid tolls", Icons.Filled.Toll, 0xF59E0B, s.avoidTolls) { s.avoidTolls = it }
         RowDivider()
         ToggleRow(if (Fmt.yards) "Avoid motorways" else "Avoid highways", Icons.Filled.AddRoad, 0x1D4ED8, s.avoidHighways) { s.avoidHighways = it }
+        RowDivider()
+        ToggleRow("My car meets clean air zone rules", Icons.Filled.Eco, 0x16A34A, s.cleanCar) { s.cleanCar = it }
+    }
+    SettingsGroup(footer = "With Kite open and no route, the driving view comes up by itself once you're going faster than about 15 mph, " +
+        "with cameras, the speed limit and the road's name. It goes back to the map after a couple of minutes parked. " +
+        "Turn this off if you're often a passenger.") {
+        ToggleRow("Driving view when I set off", Icons.Filled.DirectionsCar, 0x0F766E, s.autoDrive) { s.autoDrive = it }
     }
 }
 

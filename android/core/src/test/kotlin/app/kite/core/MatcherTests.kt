@@ -54,4 +54,18 @@ class MatcherTests {
         assertEquals(100.0, LatLng(50.9, -1.4).distanceTo(p), 1.0)
         assertEquals(90.0, Geo.bearing(LatLng(50.9, -1.4), p), 0.5)
     }
+
+    @Test fun googleReviews() {
+        assertEquals("6699", GoogleReviews.ids("0x48738c3e0a3b4c4f:0x1a2b")?.second)
+        assertEquals("48738c3e0a3b4c4f".toULong(16).toString(), GoogleReviews.ids("0x48738c3e0a3b4c4f:0x1a2b")?.first)
+        assertNull(GoogleReviews.ids("ChIJ123"))
+        val body = ")]}'\n" + """[null,null,[[[null,"Sam P"],"2 months ago",null,"Great coffee, friendly staff.",5],[[null,"Jo"],"a week ago",null,null,4],[[null,"Al"],"a year ago",null,"Slow.",2]]]"""
+        val r = GoogleReviews.parse(body)!!
+        assertEquals(2, r.size)
+        assertEquals("Sam P", r[0].author)
+        assertEquals(5, r[0].rating)
+        assertEquals("2 months ago", r[0].whenText)
+        assertEquals("Slow.", r[1].text)
+        assertNull(GoogleReviews.parse("<html>"))
+    }
 }

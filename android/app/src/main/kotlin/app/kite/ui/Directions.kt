@@ -73,6 +73,10 @@ fun DirectionsOverlay(model: AppModel) {
             Box(Modifier.statusBarsPadding().padding(top = 6.dp).onSizeChanged { cardHeight = with(density) { it.height.toDp() } }) {
                 EndpointsCard(model, d)
             }
+            Box(Modifier.statusBarsPadding().padding(top = 6.dp + cardHeight + 14.dp).padding(horizontal = 16.dp).fillMaxWidth(),
+                contentAlignment = Alignment.TopCenter) {
+                AvoidRoadCard(model, d)
+            }
         }
     }
     androidx.activity.compose.BackHandler { model.closeDirections() }
@@ -87,7 +91,7 @@ fun EndpointsCard(model: AppModel, state: DirectionsState) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = primaryText, modifier = Modifier.size(26.dp))
         }
         Column(Modifier.weight(1f)) {
-            Endpoint(Icons.Outlined.Circle, Vela.tealLight, if (state.reversed) state.destination.name else "Your location")
+            if (state.reversed) Endpoint(Icons.Outlined.Circle, Vela.tealLight, state.destination.name) else OriginRow(model, state)
             state.stops.forEachIndexed { i, stop ->
                 HorizontalDivider(Modifier.padding(start = 30.dp))
                 Row(Modifier.height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -100,7 +104,7 @@ fun EndpointsCard(model: AppModel, state: DirectionsState) {
                 }
             }
             HorizontalDivider(Modifier.padding(start = 30.dp))
-            Endpoint(Icons.Filled.Place, Vela.closed, if (state.reversed) "Your location" else state.destination.name)
+            if (state.reversed) OriginRow(model, state) else Endpoint(Icons.Filled.Place, Vela.closed, state.destination.name)
             if (!state.transit && state.stops.size < 8) {
                 HorizontalDivider(Modifier.padding(start = 30.dp))
                 Row(Modifier.fillMaxWidth().height(44.dp).tap { model.addingStop = true }, verticalAlignment = Alignment.CenterVertically,
@@ -114,6 +118,64 @@ fun EndpointsCard(model: AppModel, state: DirectionsState) {
             Icon(Icons.Filled.SwapVert, "Swap start and end", tint = primaryText, modifier = Modifier.size(24.dp))
         }
     }
+}
+
+/**
+ * "Your location", or the place picked to start from instead: tap to pick one (GitHub #55),
+ * ✕ to go back to where you are.
+ */
+@Composable
+private fun OriginRow(model: AppModel, state: DirectionsState) {
+    Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Icon(if (state.origin == null) Icons.Filled.MyLocation else Icons.Outlined.Circle, null,
+            tint = if (state.reversed) Vela.closed else Vela.tealLight, modifier = Modifier.size(18.dp))
+        Text(state.origin?.name ?: "Your location", fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = primaryText, maxLines = 1,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).tap { model.pickingOrigin = true })
+        if (state.origin != null) {
+            Icon(Icons.Filled.Close, "Start from your location", tint = secondaryText,
+                modifier = Modifier.size(20.dp).clip(CircleShape).tap { model.setOrigin(null) })
+        }
+    }
+}
+
+/**
+ * Tap the route to avoid a road (GitHub idea, 0.7.17): "Avoid Bassett Avenue?", then while it looks
+ * for a way round, then "Avoiding Bassett Avenue" with Undo. Small, under the from/to box.
+ */
+@Composable
+fun AvoidRoadCard(model: AppModel, state: DirectionsState) {
+    val dark = LocalDark.current
+    val ask = model.avoidAsk
+    when {
+        ask != null -> Row(Modifier.fillMaxWidth().height(54.dp).glass(CircleShape).padding(start = 14.dp, end = 6.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(Icons.Filled.Block, null, tint = Vela.closed, modifier = Modifier.size(22.dp))
+            Text("Avoid ${ask.road ?: "this road"}?", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = primaryText, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text("Cancel", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = secondaryText, modifier = Modifier.tap { model.avoidAsk = null }.padding(6.dp))
+            Box(Modifier.height(40.dp).clip(CircleShape).background(Vela.accent(dark)).tap { model.avoidRoad() }.padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center) {
+                Text("Avoid", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = Vela.onAccent(dark))
+            }
+        }
+        model.avoidBusy -> Row(Modifier.height(46.dp).glass(CircleShape).padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            Text("Finding a way round…", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = primaryText)
+        }
+        state.avoidNames.isNotEmpty() && state.mode == TravelMode.DRIVE && !state.transit -> Row(Modifier.height(44.dp).glass(CircleShape).padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(Icons.Filled.Block, null, tint = Vela.closed, modifier = Modifier.size(18.dp))
+            Text("Avoiding ${avoidNames(state.avoidNames)}", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = primaryText,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Text("Undo", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = Vela.accentText(dark), modifier = Modifier.tap { model.undoAvoid() })
+        }
+    }
+}
+
+fun avoidNames(list: List<String>): String {
+    val seen = list.distinct()
+    return if (seen.size <= 2) seen.joinToString(" and ") else "${seen[0]} and ${seen.size - 1} more"
 }
 
 @Composable
@@ -136,7 +198,7 @@ fun routeCards(d: DirectionsState): List<Route> = if (!d.transit && d.route != n
 /** The place shuts before, or just as, this trip gets there. */
 fun closingWarning(d: DirectionsState): ClosingCheck.Warning? {
     val r = d.route ?: return null
-    if (d.transit || d.reversed) return null
+    if (d.transit || d.previewOnly) return null
     val c = Calendar.getInstance()
     return ClosingCheck.warning(d.destination.statusText, c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE), r.durationSeconds)
 }
@@ -227,7 +289,7 @@ fun TripHeader(model: AppModel) {
         Column(Modifier.padding(horizontal = 18.dp).padding(bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             cards.forEachIndexed { i, r -> RouteCard(r, r.id == d.route?.id) { model.selectRoute(i) } }
             Box(Modifier.padding(top = 2.dp)) { ClosingLine(d) }
-            if (!d.reversed) Box(Modifier.padding(top = 2.dp)) { GoButton(model) }
+            if (!d.previewOnly) Box(Modifier.padding(top = 2.dp)) { GoButton(model) } else PreviewLine(d)
             Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.weight(1f)) { ModeTabs(model, d) }
                 RouteOptionsButton(model)
@@ -267,7 +329,17 @@ fun TripHeader(model: AppModel) {
         }
         ModeTabs(model, d)
         ClosingLine(d)
-        if (!d.transit && !d.reversed && d.route != null) GoButton(model)
+        if (!d.transit && !d.previewOnly && d.route != null) GoButton(model) else if (d.route != null) PreviewLine(d)
+    }
+}
+
+/** Instead of Go when the trip doesn't start where you are. */
+@Composable
+private fun PreviewLine(d: DirectionsState) {
+    if (d.origin == null || d.transit) return
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(Icons.Filled.Visibility, null, tint = secondaryText, modifier = Modifier.size(18.dp))
+        Text("Just a preview: to drive it, start from your location", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = secondaryText)
     }
 }
 
@@ -324,7 +396,15 @@ fun TripBody(model: AppModel) {
                             fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = delayColor(r, dark))
                     }
                     if (r.mode == TravelMode.DRIVE) Box(Modifier.padding(top = 2.dp)) { RouteTolls(r) }
-                    if (r.mode == TravelMode.DRIVE) Box(Modifier.padding(top = 4.dp)) { RouteWazeSummary(r) }
+                    if (r.mode == TravelMode.DRIVE && d.avoidNames.isEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Filled.TouchApp, null, tint = secondaryText, modifier = Modifier.size(16.dp))
+                            Text("Tap a road on the route to avoid it", fontSize = 15.sp, color = secondaryText)
+                        }
+                    }
+                    if (r.mode == TravelMode.DRIVE) Box(Modifier.padding(top = 4.dp)) {
+                        RouteWazeSummary(r, onShow = { model.showSpot(it.location) }, onFound = { model.routeReports = it })
+                    }
                     if (r.mode == TravelMode.DRIVE) Box(Modifier.padding(top = 6.dp)) { RouteLiveCams(model, r) }
                 }
                 // More than three routes is rare; the ones past the cards stay reachable here.
@@ -611,13 +691,13 @@ fun SectionTitle(text: String) {
 
 /** Search for a place to stop at on the way. Home, work and saved places are one tap. */
 @Composable
-fun StopPicker(model: AppModel) {
+fun StopPicker(model: AppModel, origin: Boolean = false) {
     val s = AppSettings
     var query by remember { mutableStateOf("") }
     var found by remember { mutableStateOf<List<Place>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    fun close() { model.addingStop = false }
+    fun close() { if (origin) model.pickingOrigin = false else model.addingStop = false }
     fun run() {
         val q = query.trim()
         if (q.isEmpty()) return
@@ -634,10 +714,10 @@ fun StopPicker(model: AppModel) {
             searching = false
         }
     }
-    PickerPage("Add stop", ::close) {
-        PickerSearchField(query, { query = it }, "Search for a stop", ::run)
+    PickerPage(if (origin) "Start from" else "Add stop", ::close) {
+        PickerSearchField(query, { query = it }, if (origin) "Search for a place to start from" else "Search for a stop", ::run)
         LazyColumn(Modifier.fillMaxSize()) {
-            fun pick(p: Place) { model.addStop(p); close() }
+            fun pick(p: Place) { if (origin) model.setOrigin(p) else model.addStop(p); close() }
             if (found.isNotEmpty()) {
                 item { SectionTitle("Results") }
                 items(found, key = { it.id }) { p ->
@@ -658,7 +738,7 @@ fun StopPicker(model: AppModel) {
                     IconRow(icon, p.name, p.address, model.userLatLng?.let { Fmt.distance(it.distanceTo(p.location)) }) { pick(p) }
                 }
             }
-            if (found.isEmpty() && !searching) {
+            if (found.isEmpty() && !searching && !origin) {
                 item { SectionTitle("Along the way") }
                 items(listOf(if (Fmt.yards) "Petrol stations" else "Gas stations", "Coffee", "Restaurants", "EV charging")) { c ->
                     IconRow(Icons.Filled.Search, c) { query = c; run() }

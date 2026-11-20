@@ -2,6 +2,10 @@
 
 package app.kite.ui
 
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+
+import kotlinx.coroutines.async
+
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -132,19 +136,6 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
                 })
             }
         }
-        // The road you're on, just under the arrow.
-        val road = nav.currentRoad
-        if (nav.following && !nav.arrived && !chipShowing && road != null) {
-            // On a short phone (360 x 800) that spot is behind the trip bar: keep it just above the bar instead.
-            val barTop = h - WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() - 68.dp
-            val pillTop = minOf(NavGlide.carY(h.value, if (north) 1f else 0f).dp + 46.dp - 15.dp, barTop - 30.dp - 8.dp)
-            Box(Modifier.fillMaxWidth().offset(y = pillTop), contentAlignment = Alignment.TopCenter) {
-                Text(road, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = w - 240.dp).height(30.dp).glass(CircleShape)
-                        .padding(horizontal = 12.dp).wrapContentHeight(Alignment.CenterVertically))
-            }
-        }
-
         // One column, so however many warnings are up, they push the map buttons down rather than cover them.
         Column(Modifier.fillMaxSize().systemBarsPadding(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Column(Modifier.padding(horizontal = 12.dp).padding(top = 4.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -783,32 +774,75 @@ fun WazeInfoCard(alert: WazeAlert, close: () -> Unit) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun RouteWazeSummary(route: Route) {
+fun RouteWazeSummary(route: Route, onShow: ((WazeAlert) -> Unit)? = null, onFound: ((List<WazeAlert>) -> Unit)? = null) {
     val s = AppSettings
-    var counts by remember(route.id) { mutableStateOf<List<Pair<WazeAlert.Kind, Int>>?>(null) }
+    val dark = LocalDark.current
+    var found by remember(route.id) { mutableStateOf<List<Pair<WazeAlert, Double>>?>(null) }
+    var demo by remember(route.id) { mutableStateOf<List<Pair<WazeAlert.Kind, Int>>?>(null) }
+    var picked by remember(route.id) { mutableStateOf<WazeAlert.Kind?>(null) }
     LaunchedEffect(route.id) {
         // For the build's screenshots, since Waze turns away the build's computers.
-        if (DemoScript.step == "wazeroute") { counts = listOf(WazeAlert.Kind.POLICE to 2, WazeAlert.Kind.ACCIDENT to 1, WazeAlert.Kind.HAZARD to 3); return@LaunchedEffect }
-        counts = null
+        if (DemoScript.step == "wazeroute") { demo = listOf(WazeAlert.Kind.POLICE to 2, WazeAlert.Kind.ACCIDENT to 1, WazeAlert.Kind.HAZARD to 3); return@LaunchedEffect }
+        found = null
+        onFound?.invoke(emptyList())
         if (!s.wazeOn || route.mode != TravelMode.DRIVE) return@LaunchedEffect
-        val found = withContext(Dispatchers.IO) { Waze.alongRoute(route.polyline) } ?: return@LaunchedEffect
-        val on = Waze.project(found, route.polyline).map { it.alert }.filter { s.shows(it) }
-        val grouped = on.groupBy { it.kind }
-        counts = WazeAlert.Kind.entries.mapNotNull { k -> grouped[k]?.let { k to it.size } }
+        // Closures from the live map, and drivers' reports (crashes, police, hazards) from Waze's
+        // app servers for the first 40 km, the same as once you're driving.
+        val line = route.polyline
+        val (fromMap, live) = withContext(Dispatchers.IO) {
+            val closures = async { runCatching { Waze.alongRoute(line) }.getOrNull() }
+            val l = runCatching { WazeLive.shared.alongRoute(line, line.first()) }.getOrNull()
+            closures.await() to l
+        }
+        if (fromMap == null && live == null) return@LaunchedEffect
+        val merged = LinkedHashMap<String, WazeAlert>()
+        for (a in (fromMap ?: emptyList()) + (live ?: emptyList())) merged[a.id] = a
+        val on = Waze.project(merged.values.toList(), line).filter { s.shows(it.alert) && it.alert.kind != WazeAlert.Kind.JAM }
+        found = on.map { it.alert to it.along }
+        onFound?.invoke(on.map { it.alert })
     }
-    val c = counts ?: return
+    val c = demo ?: found?.let { list ->
+        val grouped = list.groupBy { it.first.kind }
+        WazeAlert.Kind.entries.mapNotNull { k -> grouped[k]?.let { k to it.size } }
+    } ?: return
     if (c.isEmpty()) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.VerifiedUser, null, tint = Vela.open, modifier = Modifier.size(18.dp))
-            Text("No road closures on this route", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Vela.open)
+            Text("No crashes, roadworks or closures reported on this route", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Vela.open)
         }
     } else {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             c.forEach { (k, n) ->
-                Row(Modifier.height(38.dp).clip(CircleShape).background(hex(MapIcons.wazeColor(k)).copy(alpha = 0.18f)).padding(start = 6.dp, end = 12.dp),
+                Row(Modifier.height(38.dp).clip(CircleShape).background(hex(MapIcons.wazeColor(k)).copy(alpha = 0.18f)).tap { picked = k }
+                    .padding(start = 6.dp, end = 10.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     WazeBadge(k, 24.dp)
                     Text("$n ${wazeLabel(k, n)}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = primaryText)
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = secondaryText, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+    }
+    val kind = picked ?: return
+    // Where each one is along the way; tap one to see it on the map.
+    ModalBottomSheet(onDismissRequest = { picked = null }, containerColor = Vela.sheet(dark), dragHandle = null) {
+        Column(Modifier.padding(20.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(wazeLabel(kind, 2).replaceFirstChar { it.uppercase() } + " on this route", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold,
+                    color = primaryText, modifier = Modifier.weight(1f))
+                CircleIconButton(Icons.Filled.Close) { picked = null }
+            }
+            LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items((found ?: emptyList()).filter { it.first.kind == kind }, key = { it.first.id }) { (a, along) ->
+                    Row(Modifier.fillMaxWidth().tap { picked = null; onShow?.invoke(a) }, verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        WazeBadge(a.kind, 34.dp)
+                        Column(Modifier.weight(1f)) {
+                            Text("${Fmt.distance(along)} along the way", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = primaryText)
+                            Text(listOfNotNull(a.street, a.reportedText).joinToString(" · "), fontSize = 15.sp, color = secondaryText)
+                        }
+                        Icon(Icons.Filled.Map, null, tint = secondaryText, modifier = Modifier.size(20.dp))
+                    }
                 }
             }
         }

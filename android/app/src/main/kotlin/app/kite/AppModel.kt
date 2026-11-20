@@ -78,11 +78,23 @@ data class DirectionsState(
     val transitTime: Long? = null,
     val arriveBy: Boolean = false,
     val trip: Int = 0,
+    /** Somewhere else to start from instead of where you are (GitHub #55): to look at a trip, not drive it. */
+    val origin: Place? = null,
+    /** Spots on roads tapped to avoid, with the roads' names. */
+    val avoid: List<LatLng> = emptyList(),
+    val avoidNames: List<String> = emptyList(),
+    /** The driving routes from before avoiding a road, for Undo. */
+    val beforeAvoid: List<Route>? = null,
 ) {
+    /** Just looking: the trip doesn't start where you are, so there's no Go. */
+    val previewOnly: Boolean get() = reversed || origin != null
     val current: List<Route> get() = if (transit) emptyList() else routes[mode] ?: emptyList()
     val route: Route? get() = current.getOrNull(selected) ?: current.firstOrNull()
     val pickedTrip: TransitTrip? get() = if (transit) trips?.let { it.getOrNull(trip) ?: it.firstOrNull() } else null
 }
+
+/** A road tapped on the planned route, waiting for "Avoid" or "Cancel". */
+data class AvoidAsk(val point: LatLng, val road: String?)
 
 /** The whole app's state; the map and every sheet read it. */
 class AppModel {
@@ -140,6 +152,13 @@ class AppModel {
     var browseFollowing by mutableStateOf(false)
     /** Street View opened from a place. */
     var streetView by mutableStateOf<StreetViewRequest?>(null)
+    /** The driving view with no route, switched to by itself when you set off (null when not driving). */
+    var cruise by mutableStateOf<Cruise?>(null)
+    /** When fast driving with no route began, for switching to the driving view after a few seconds. */
+    private var movingSince: Long? = null
+    /** Closed with the ✕: stays closed until the car next stops for a while. */
+    private var cruiseClosed = false
+    private var cruiseClosedStill: Long? = null
 
     var map: MapLibreMap? = null
         set(v) { field = v; glide.map = v }
@@ -503,7 +522,8 @@ class AppModel {
     }
 
     fun reverseDirections() {
-        edit { it.copy(reversed = !it.reversed, routes = emptyMap(), selected = 0, trips = null, trip = 0) }
+        edit { it.copy(reversed = !it.reversed, routes = emptyMap(), selected = 0, trips = null, trip = 0,
+            avoid = emptyList(), avoidNames = emptyList(), beforeAvoid = null) }
         loadAllModes()
     }
 
@@ -546,13 +566,81 @@ class AppModel {
 
     fun reloadRoutes() {
         if (directions == null) return
-        edit { it.copy(routes = emptyMap(), errors = emptyMap(), selected = 0) }
+        edit { it.copy(routes = emptyMap(), errors = emptyMap(), selected = 0, avoid = emptyList(), avoidNames = emptyList(), beforeAvoid = null) }
         loadAllModes()
+    }
+
+    /** Start the trip from [p] instead of here; null goes back to your location. */
+    fun setOrigin(p: Place?) {
+        if (directions == null) return
+        edit { it.copy(origin = p) }
+        reloadRoutes()
+    }
+
+    /** "Avoid Bassett Avenue?" after tapping the planned route. */
+    var avoidAsk by mutableStateOf<AvoidAsk?>(null)
+    var avoidBusy by mutableStateOf(false)
+    var pickingOrigin by mutableStateOf(false)
+    /** Waze reports found along the route being planned, shown as icons on it before you go. */
+    var routeReports by mutableStateOf<List<WazeAlert>>(emptyList())
+    /** The place whose Reviews tab to open (its stars were tapped). */
+    var showReviews by mutableStateOf<String?>(null)
+
+    /** The road under a tap on the planned route, to ask whether to avoid it. */
+    fun askAvoid(tap: LatLng) {
+        val d = directions ?: return
+        if (d.transit || d.mode != TravelMode.DRIVE) return
+        val r = d.route ?: return
+        val hit = Geo.project(tap, r.polyline)
+        if (hit.offset >= 60) return
+        val total = Geo.length(r.polyline)
+        // Not the very start or end: the trip has to begin and finish somewhere.
+        if (hit.along <= 150 || hit.along >= total - 150) return
+        val at = Geo.point(r.polyline, hit.along)
+        val road = r.maneuvers.lastOrNull { it.alongMeters <= hit.along + 1 }?.road
+        avoidAsk = AvoidAsk(at, road)
+    }
+
+    /** A way round the road just tapped: the road map's router kept off it, with turn-by-turn from the open router. */
+    fun avoidRoad() {
+        val ask = avoidAsk ?: return
+        avoidAsk = null
+        val d = directions ?: return
+        val r = d.route ?: return
+        if (r.polyline.size < 2) return
+        val name = ask.road ?: "that road"
+        val points = d.avoid + ask.point
+        val via = (if (d.reversed) d.stops.reversed() else d.stops).map { it.location }
+        val from = r.polyline.first(); val to = r.polyline.last()
+        val destId = d.destination.id
+        avoidBusy = true
+        scope.launch {
+            val line = Valhalla.lineAvoiding(from, to, via, points)
+            val found = line?.let { runCatching { OSRM.routeVia(it, TravelMode.DRIVE, spacing = 500.0, maxVias = 40) }.getOrNull() }
+            avoidBusy = false
+            if (directions?.destination?.id != destId) return@launch
+            // The open router can pull a way back onto the road at a corner: check it really stays off.
+            if (found == null || points.any { Geo.project(it, found.polyline).offset <= 20 }) {
+                notice = "Couldn't find a way round $name."
+                return@launch
+            }
+            if (directions?.mode != TravelMode.DRIVE) return@launch
+            edit { it.copy(beforeAvoid = it.beforeAvoid ?: it.routes[TravelMode.DRIVE], avoid = points, avoidNames = it.avoidNames + name,
+                routes = it.routes + (TravelMode.DRIVE to listOf(found)), selected = 0) }
+            frameRoute()
+        }
+    }
+
+    /** Back to the routes from before any road was avoided. */
+    fun undoAvoid() {
+        val before = directions?.beforeAvoid ?: return
+        edit { it.copy(routes = it.routes + (TravelMode.DRIVE to before), avoid = emptyList(), avoidNames = emptyList(), beforeAvoid = null, selected = 0) }
+        frameRoute()
     }
 
     private fun loadAllModes() {
         val d = directions ?: return
-        val me = userLatLng
+        val me = d.origin?.location ?: userLatLng
         if (me == null) {
             val why = if (location.denied) LOCATION_OFF_TEXT
                 else if (location.systemOff) "Location is off on this phone. Turn it on in Settings to get directions from where you are."
@@ -574,7 +662,7 @@ class AppModel {
         val hw = settings.avoidHighways; val tolls = settings.avoidTolls; val google = !settings.noGoogle
         // Already driving (asked at a red light, say): no route that starts with a U-turn.
         val moving = location.last?.let { l -> if (l.speed >= 4 && l.courseKnown) l.course else null }
-        val heading = if (d.reversed) null else moving
+        val heading = if (d.previewOnly) null else moving
         for (m in TravelMode.entries) {
             edit { it.copy(loading = it.loading + m) }
             scope.launch {
@@ -605,7 +693,7 @@ class AppModel {
     /** Transit trips for the current trip, leaving now or at the picked time. */
     fun loadTransit() {
         val d = directions ?: return
-        val me = userLatLng ?: return
+        val me = d.origin?.location ?: userLatLng ?: return
         transitLoadedAt = System.currentTimeMillis()
         // A new request either way, so one still loading can't put back trips without the stops.
         transitRequest++
@@ -660,7 +748,8 @@ class AppModel {
     fun startNavigation() {
         val d = directions ?: return
         val route = d.route ?: return
-        if (d.reversed) return
+        if (d.previewOnly) return
+        endCruise()
         val n = Navigator(route, d.destination, d.stops, scope)
         nav = n
         n.onFinished = { if (nav === n) endNavigation() }
@@ -711,12 +800,77 @@ class AppModel {
 
     private fun locationChanged(f: Fix) {
         if (location.reducedAccuracy || f.accuracy > 200) areaRisk = null
-        val n = nav ?: run { followBrowse(f, entering = false); return }
+        val n = nav ?: run { cruiseCheck(f); followBrowse(f, entering = false); return }
         n.handle(f)
         followCamera(n, f, animated = true)
         tripCheck(n)
         driveNote(n)
         mapTick++
+    }
+
+    /**
+     * Driving with no route: after a few seconds above about 15 mph with nothing open, switch to the
+     * driving view (speed, limit, cameras, road name). Opening a place or a route, or parking, ends it.
+     */
+    private fun cruiseCheck(f: Fix) {
+        cruise?.let { c ->
+            if (directions != null || selected != null || results.isNotEmpty()) { endCruise(); return }
+            c.handle(f)
+            mapTick++
+            return
+        }
+        // After the ✕, wait until the car has stood still a minute before offering it again.
+        if (cruiseClosed) {
+            if (f.speedKnown && f.speed < 1.5) {
+                val t = cruiseClosedStill ?: f.timeMillis.also { cruiseClosedStill = it }
+                if (f.timeMillis - t > 60_000) cruiseClosed = false
+            } else cruiseClosedStill = null
+            return
+        }
+        if (!settings.autoDrive || tab != AppTab.MAP || directions != null || selected != null || results.isNotEmpty() || picking != null) {
+            movingSince = null
+            return
+        }
+        val (go, since) = Cruise.shouldStart(f, movingSince)
+        movingSince = since
+        if (go) startCruise(f)
+    }
+
+    private fun startCruise(f: Fix) {
+        val c = Cruise(scope)
+        cruise = c
+        c.onParked = { if (cruise === c) endCruise() }
+        movingSince = null
+        location.setNavigating(true)
+        browseLook = MapLook.TILTED
+        browseFollowing = true
+        showLayers = false
+        c.handle(f)
+        followBrowse(f, entering = true)
+        mapTick++
+    }
+
+    /** Back to the map; [closed] is the ✕, which keeps it away until the next stop. */
+    fun endCruise(closed: Boolean = false) {
+        val c = cruise ?: return
+        c.stop()
+        cruise = null
+        movingSince = null
+        if (closed) { cruiseClosed = true; cruiseClosedStill = null }
+        if (nav == null) {
+            location.setNavigating(false)
+            browseLook = MapLook.NORTH
+            browseFollowing = false
+            if (directions == null && selected == null) resetCamera()
+        }
+        mapTick++
+    }
+
+    fun recenterCruise() {
+        if (cruise == null) return
+        val f = location.last ?: return
+        browseFollowing = true
+        followBrowse(f, entering = true)
     }
 
     /** The next turn and arrival time on the drive's notification (Android only: the iPhone has no such thing to fill). */
@@ -821,6 +975,13 @@ class AppModel {
         m.setPadding(0, 0, 0, 0)
         val c = m.cameraPosition
         MapCam.animate(m, CameraPosition.Builder(c).tilt(0.0).bearing(0.0).padding(0.0, 0.0, 0.0, 0.0).build(), ms = 500)
+    }
+
+    /** A spot on the map, close up (a report along the route). */
+    fun showSpot(p: LatLng) {
+        val m = map ?: return
+        browseFollowing = false
+        MapCam.animate(m, CameraPosition.Builder().target(p.ml()).zoom(15.0).build(), ms = 500)
     }
 
     fun frame(points: List<LatLng>, bottomFraction: Float = 0.45f, top: Int = 130) {
