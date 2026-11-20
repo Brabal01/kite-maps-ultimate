@@ -127,6 +127,9 @@ struct ContentView: View {
         .sheet(isPresented: $model.addingStop) {
             StopPicker(model: model).kiteType()
         }
+        .sheet(isPresented: $model.pickingOrigin) {
+            StopPicker(model: model, origin: true).kiteType()
+        }
         .sheet(item: $model.picking) { kind in
             PlacePicker(model: model, kind: kind).kiteType()
         }

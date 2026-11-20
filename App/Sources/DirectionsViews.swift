@@ -30,12 +30,77 @@ struct DirectionsOverlay: View {
                                 .onAppear { cardHeight = g.size.height }
                                 .onChange(of: g.size.height) { cardHeight = $0 }
                         })
+                    AvoidRoadCard(model: model, state: d)
+                        .padding(.top, cardHeight + 14)
+                        .padding(.horizontal, 16)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.avoidAsk)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: d.avoidNames)
                 }
             }
             // Never wider than the screen, whatever a row inside asks for: a long trip's row once
             // pushed the whole screen, from/to box included, off the right edge.
             .frame(width: geo.size.width)
         }
+    }
+}
+
+/**
+ * Tap the route to avoid a road (GitHub idea, 0.7.17): "Avoid Bassett Avenue?", then while it looks
+ * for a way round, then "Avoiding Bassett Avenue" with Undo. Small, under the from/to box.
+ */
+struct AvoidRoadCard: View {
+    @ObservedObject var model: AppModel
+    let state: DirectionsState
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Group {
+            if let ask = model.avoidAsk {
+                HStack(spacing: 10) {
+                    Image(systemName: "nosign").font(.system(size: 20, weight: .bold)).foregroundColor(Vela.closed)
+                    Text("Avoid \(ask.road ?? "this road")?").font(.system(size: 18, weight: .bold)).lineLimit(1).minimumScaleFactor(0.75)
+                    Spacer(minLength: 4)
+                    Button("Cancel") { model.avoidAsk = nil }
+                        .font(.system(size: 17, weight: .semibold)).foregroundColor(.secondary)
+                    Button { model.avoidRoad() } label: {
+                        Text("Avoid").font(.system(size: 17, weight: .heavy))
+                            .padding(.horizontal, 16).frame(height: 40)
+                            .foregroundColor(Vela.onAccent(scheme))
+                            .background(Capsule().fill(Vela.accent(scheme)))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.leading, 14).padding(.trailing, 6)
+                .frame(height: 54)
+                .glass(Capsule())
+                .transition(.move(edge: .top).combined(with: .opacity))
+            } else if model.avoidBusy {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Finding a way round…").font(.system(size: 17, weight: .semibold))
+                }
+                .padding(.horizontal, 16).frame(height: 46)
+                .glass(Capsule())
+                .transition(.opacity)
+            } else if !state.avoidNames.isEmpty, state.mode == .drive, !state.transit {
+                HStack(spacing: 10) {
+                    Image(systemName: "nosign").font(.system(size: 16, weight: .bold)).foregroundColor(Vela.closed)
+                    Text("Avoiding \(Self.names(state.avoidNames))").font(.system(size: 16, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.75)
+                    Button("Undo") { model.undoAvoid() }
+                        .font(.system(size: 16, weight: .heavy)).foregroundColor(Vela.accentText(scheme))
+                }
+                .padding(.horizontal, 16).frame(height: 44)
+                .glass(Capsule())
+                .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    static func names(_ list: [String]) -> String {
+        var seen: [String] = []
+        for n in list where !seen.contains(n) { seen.append(n) }
+        return seen.count <= 2 ? seen.joined(separator: " and ") : "\(seen[0]) and \(seen.count - 1) more"
     }
 }
 
@@ -53,7 +118,11 @@ struct EndpointsCard: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Back")
             VStack(spacing: 0) {
-                endpoint(icon: "circle", color: Vela.tealLight, text: state.reversed ? state.destination.name : "Your location")
+                if state.reversed {
+                    endpoint(icon: "circle", color: Vela.tealLight, text: state.destination.name)
+                } else {
+                    originRow
+                }
                 ForEach(Array(state.stops.enumerated()), id: \.offset) { i, stop in
                     Divider().padding(.leading, 30)
                     HStack(spacing: 12) {
@@ -68,7 +137,11 @@ struct EndpointsCard: View {
                     .frame(height: 52)
                 }
                 Divider().padding(.leading, 30)
-                endpoint(icon: "mappin.circle.fill", color: Vela.closed, text: state.reversed ? "Your location" : state.destination.name)
+                if state.reversed {
+                    originRow
+                } else {
+                    endpoint(icon: "mappin.circle.fill", color: Vela.closed, text: state.destination.name)
+                }
                 if !state.transit && state.stops.count < 8 {
                     Divider().padding(.leading, 30)
                     Button { model.addingStop = true } label: {
@@ -100,6 +173,32 @@ struct EndpointsCard: View {
         .padding(.horizontal, 16)
     }
 
+    /**
+     * "Your location", or the place picked to start from instead: tap to pick one (GitHub #55),
+     * ✕ to go back to where you are.
+     */
+    private var originRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: state.origin == nil ? "location.fill" : "circle")
+                .font(.system(size: 16, weight: .bold)).foregroundColor(state.reversed ? Vela.closed : Vela.tealLight).frame(width: 18)
+            Button { model.pickingOrigin = true } label: {
+                HStack {
+                    Text(state.origin?.name ?? "Your location").font(.system(size: 19, weight: .semibold)).lineLimit(1)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Pick somewhere else to start from")
+            if state.origin != nil {
+                Button { model.setOrigin(nil) } label: { Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)) }
+                    .buttonStyle(.plain).foregroundColor(.secondary)
+                    .accessibilityLabel("Start from your location")
+            }
+        }
+        .frame(height: 52)
+    }
+
     private func endpoint(icon: String, color: Color, text: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon).font(.system(size: 16, weight: .bold)).foregroundColor(color).frame(width: 18)
@@ -123,7 +222,7 @@ struct TripHeader: View {
 
     /** The place shuts before, or just as, this trip gets there. */
     static func closing(_ d: DirectionsState) -> ClosingCheck.Warning? {
-        guard !d.transit, !d.reversed, let r = d.route else { return nil }
+        guard !d.transit, !d.previewOnly, let r = d.route else { return nil }
         let c = Calendar.current.dateComponents([.hour, .minute], from: Date())
         return ClosingCheck.warning(status: d.destination.statusText, nowMinutes: (c.hour ?? 0) * 60 + (c.minute ?? 0),
                                     travelSeconds: r.durationSeconds)
@@ -167,6 +266,16 @@ struct TripHeader: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Start driving")
+    }
+
+    /** Instead of Go when the trip doesn't start where you are. */
+    @ViewBuilder private func previewLine(_ d: DirectionsState) -> some View {
+        if d.origin != nil, !d.transit {
+            Label("Just a preview: to drive it, start from your location", systemImage: "eye")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+        }
     }
 
     @ViewBuilder private func closingLine(_ d: DirectionsState) -> some View {
@@ -227,7 +336,7 @@ struct TripHeader: View {
                         card(r, on: r.id == d.route?.id) { model.selectRoute(i) }
                     }
                     closingLine(d).padding(.top, 2)
-                    if !d.reversed { goButton.padding(.top, 2) }
+                    if !d.previewOnly { goButton.padding(.top, 2) } else { previewLine(d) }
                     HStack(spacing: 8) {
                         ModeTabs(model: model, state: d)
                         optionsMenu
@@ -276,7 +385,7 @@ struct TripHeader: View {
                 }
                 ModeTabs(model: model, state: d)
                 closingLine(d)
-                if !d.transit, !d.reversed, d.route != nil { goButton }
+                if !d.transit, !d.previewOnly, d.route != nil { goButton } else if d.route != nil { previewLine(d) }
             }
             .padding(.horizontal, 18)
             .padding(.bottom, 10)
@@ -388,6 +497,10 @@ struct TripBody: View {
                     .font(.system(size: 17, weight: .semibold)).foregroundColor(delayColor(r))
             }
             if r.mode == .drive { RouteTolls(route: r).padding(.top, 2) }
+            if r.mode == .drive, d.avoidNames.isEmpty {
+                Label("Tap a road on the route to avoid it", systemImage: "hand.tap")
+                    .font(.system(size: 15, weight: .medium)).foregroundColor(.secondary)
+            }
             if r.mode == .drive {
                 RouteWazeSummary(route: r, onShow: { model.showSpot($0.location) }, onFound: { model.routeReports = $0 })
                     .padding(.top, 4)
@@ -781,6 +894,8 @@ struct TransitSteps: View {
 /** Search for a place to stop at on the way. Home, work and saved places are one tap. */
 struct StopPicker: View {
     @ObservedObject var model: AppModel
+    /** Picking where to start from instead of a stop. */
+    var origin = false
     @ObservedObject private var settings = AppSettings.shared
     @State private var query = ""
     @State private var found: [Place] = []
@@ -801,7 +916,7 @@ struct StopPicker: View {
                 if !mine.isEmpty && found.isEmpty {
                     Section("Your places") { ForEach(mine, id: \.0.id) { row($0.0, icon: $0.1) } }
                 }
-                if found.isEmpty && !searching {
+                if found.isEmpty && !searching && !origin {
                     Section("Along the way") {
                         ForEach([Fmt.yards ? "Petrol stations" : "Gas stations", "Coffee", "Restaurants", "EV charging"], id: \.self) { c in
                             Button { query = c; run() } label: { Label(c, systemImage: "magnifyingglass") }
@@ -809,10 +924,10 @@ struct StopPicker: View {
                     }
                 }
             }
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search for a stop")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: origin ? "Search for a place to start from" : "Search for a stop")
             .onSubmit(of: .search) { run() }
             .kiteList()
-            .navigationTitle("Add stop")
+            .navigationTitle(origin ? "Start from" : "Add stop")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
@@ -820,7 +935,7 @@ struct StopPicker: View {
 
     private func row(_ p: Place, icon: String) -> some View {
         Button {
-            model.addStop(p)
+            if origin { model.setOrigin(p) } else { model.addStop(p) }
             dismiss()
         } label: {
             HStack(spacing: 12) {

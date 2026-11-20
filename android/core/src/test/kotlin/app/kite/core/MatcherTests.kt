@@ -38,4 +38,20 @@ class MatcherTests {
         assertEquals(1L, CruiseCameras.ahead(listOf(far, ahead), here, 0.0, 31.0)?.first?.id)
         assertNull(CruiseCameras.ahead(listOf(far, side, behind, otherWay, plate), here, 0.0, 13.4))
     }
+
+    @Test fun lineAvoiding() {
+        // Two legs (through a stop): joined without the stop twice.
+        val json = """{"trip":{"legs":[{"shape":"_aua`B~jmtA_pR~oR"},{"shape":"_rhb`B~{`uA_pR~oR"}]}}"""
+        val line = Valhalla.parseLine(json.toByteArray())!!
+        assertEquals(3, line.size)
+        assertEquals(50.92, line[2].lat, 1e-6)
+        assertEquals(-1.42, line[2].lng, 1e-6)
+        assertNull(Valhalla.parseLine("""{"error":"No path could be found"}""".toByteArray()))
+    }
+
+    @Test fun destination() {
+        val p = Geo.destination(LatLng(50.9, -1.4), 90.0, 100.0)
+        assertEquals(100.0, LatLng(50.9, -1.4).distanceTo(p), 1.0)
+        assertEquals(90.0, Geo.bearing(LatLng(50.9, -1.4), p), 0.5)
+    }
 }

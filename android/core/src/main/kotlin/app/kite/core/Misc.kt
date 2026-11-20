@@ -460,6 +460,37 @@ object Valhalla {
     }
 
     /**
+     * A driving line from [from] to [to] through [via], kept off the roads at [avoid] (what you
+     * tapped on the route to avoid). Just the line: Kite turns it into turn-by-turn with the open
+     * router, as for Google's routes. Null when there's no other way or the server didn't answer.
+     */
+    suspend fun lineAvoiding(from: LatLng, to: LatLng, via: List<LatLng> = emptyList(), avoid: List<LatLng>): List<LatLng>? {
+        val body = mapOf(
+            "locations" to (listOf(from) + via + listOf(to)).map { mapOf("lat" to it.lat, "lon" to it.lng) },
+            "costing" to "auto",
+            "exclude_locations" to avoid.map { mapOf("lat" to it.lat, "lon" to it.lng) },
+            "directions_options" to mapOf("units" to "kilometers", "narrative" to false),
+        )
+        return try {
+            val r = Http.post("https://valhalla1.openstreetmap.de/route", Json.write(body).toByteArray(), "application/json",
+                mapOf("User-Agent" to OSRM.userAgent), client)
+            if (r.code == 200) parseLine(r.body) else null
+        } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+    }
+
+    fun parseLine(data: ByteArray): List<LatLng>? {
+        val legs = Json.obj(data)?.get("trip").asMap()?.get("legs").asMaps() ?: return null
+        if (legs.isEmpty()) return null
+        val line = mutableListOf<LatLng>()
+        for (leg in legs) {
+            val shape = leg["shape"] as? String ?: return null
+            val pts = Geo.decodePolyline(shape, 1e6)
+            line += if (line.isEmpty()) pts else pts.drop(1)
+        }
+        return if (line.size >= 2) line else null
+    }
+
+    /**
      * The toll roads a route drives, by name ("M6 Toll", "Dartford Crossing"), from the road map's own
      * toll marks. Empty when there are none; null when the server didn't answer.
      */

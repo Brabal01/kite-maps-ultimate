@@ -37,4 +37,35 @@ final class MatcherTests: XCTestCase {
         XCTAssertEqual(CruiseCameras.ahead([far, ahead], at: here, heading: 0, speedMps: 31)?.camera.id, 1)
         XCTAssertNil(CruiseCameras.ahead([far, side, behind, otherWay, plate], at: here, heading: 0, speedMps: 13.4))
     }
+
+    func testLineAvoiding() {
+        // Two legs (through a stop): joined without the stop twice.
+        let json = #"{"trip":{"legs":[{"shape":"_aua`B~jmtA_pR~oR"},{"shape":"_rhb`B~{`uA_pR~oR"}]}}"#
+        let line = Valhalla.parseLine(Data(json.utf8))
+        XCTAssertEqual(line?.count, 3)
+        XCTAssertEqual(line?.last?.lat ?? 0, 50.92, accuracy: 1e-6)
+        XCTAssertEqual(line?.last?.lng ?? 0, -1.42, accuracy: 1e-6)
+        XCTAssertNil(Valhalla.parseLine(Data(#"{"error":"No path could be found"}"#.utf8)))
+    }
+
+    func testDestination() {
+        let a = LatLng(50.9, -1.4)
+        let p = Geo.destination(a, bearing: 90, meters: 100)
+        XCTAssertEqual(a.distance(to: p), 100, accuracy: 1)
+        XCTAssertEqual(Geo.bearing(a, p), 90, accuracy: 0.5)
+    }
+
+    func testGoogleReviews() {
+        XCTAssertEqual(GoogleReviews.ids("0x48738c3e0a3b4c4f:0x1a2b")?.0, String(UInt64("48738c3e0a3b4c4f", radix: 16)!))
+        XCTAssertEqual(GoogleReviews.ids("0x48738c3e0a3b4c4f:0x1a2b")?.1, "6699")
+        XCTAssertNil(GoogleReviews.ids("ChIJ123"))
+        let body = ")]}'\n" + #"[null,null,[[[null,"Sam P"],"2 months ago",null,"Great coffee, friendly staff.",5],[[null,"Jo"],"a week ago",null,null,4],[[null,"Al"],"a year ago",null,"Slow.",2]]]"#
+        let r = GoogleReviews.parse(body)
+        XCTAssertEqual(r?.count, 2)
+        XCTAssertEqual(r?.first?.author, "Sam P")
+        XCTAssertEqual(r?.first?.rating, 5)
+        XCTAssertEqual(r?.first?.when, "2 months ago")
+        XCTAssertEqual(r?.last?.text, "Slow.")
+        XCTAssertNil(GoogleReviews.parse("<html>"))
+    }
 }

@@ -81,6 +81,39 @@ public enum Valhalla {
     }
 
     /**
+     * A driving line from [from] to [to] through [via], kept off the roads at [avoid] (what you
+     * tapped on the route to avoid). Just the line: Kite turns it into turn-by-turn with the open
+     * router, as for Google's routes. Nil when there's no other way or the server didn't answer.
+     */
+    public static func lineAvoiding(from: LatLng, to: LatLng, via: [LatLng] = [], avoid: [LatLng]) async -> [LatLng]? {
+        let locations = ([from] + via + [to]).map { ["lat": $0.lat, "lon": $0.lng] }
+        let body: [String: Any] = [
+            "locations": locations,
+            "costing": "auto",
+            "exclude_locations": avoid.map { ["lat": $0.lat, "lon": $0.lng] },
+            "directions_options": ["units": "kilometers", "narrative": false],
+        ]
+        var r = URLRequest(url: URL(string: "https://valhalla1.openstreetmap.de/route")!)
+        r.httpMethod = "POST"
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (data, resp) = try? await session.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return parseLine(data)
+    }
+
+    static func parseLine(_ data: Data) -> [LatLng]? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let trip = root["trip"] as? [String: Any], let legs = trip["legs"] as? [[String: Any]], !legs.isEmpty else { return nil }
+        var line: [LatLng] = []
+        for leg in legs {
+            guard let shape = leg["shape"] as? String else { return nil }
+            let pts = Geo.decodePolyline(shape, precision: 1e6)
+            line += line.isEmpty ? pts : Array(pts.dropFirst())
+        }
+        return line.count >= 2 ? line : nil
+    }
+
+    /**
      * The toll roads a route drives, by name ("M6 Toll", "Dartford Crossing"), from the road map's own
      * toll marks. Empty when there are none; nil when the server didn't answer. For "Avoid tolls": the
      * open router Kite falls back on can't avoid them, and some tolls only the map knows.

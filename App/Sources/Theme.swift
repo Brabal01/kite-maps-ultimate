@@ -224,13 +224,14 @@ struct StatusText: View {
 
 struct Stars: View {
     let rating: Double
+    var size: CGFloat = 11
 
     var body: some View {
         HStack(spacing: 1) {
             ForEach(0..<5, id: \.self) { i in
                 let fill = rating - Double(i)
                 Image(systemName: fill >= 0.75 ? "star.fill" : (fill >= 0.25 ? "star.leadinghalf.filled" : "star"))
-                    .font(.system(size: 11))
+                    .font(.system(size: size))
                     .foregroundColor(Vela.star)
             }
         }

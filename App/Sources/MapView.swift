@@ -1149,7 +1149,13 @@ struct VelaMapView: UIViewRepresentable {
                         let tapped = LatLng(c.latitude, c.longitude)
                         if let i = d.current.firstIndex(where: { r in r.id != d.route?.id && r.polyline.contains { $0.distance(to: tapped) < 300 } }) {
                             self.model.selectRoute(i)
+                            return
                         }
+                    }
+                    // A tap on the picked route itself: offer to avoid that road (GitHub idea, 0.7.17).
+                    if !map.visibleFeatures(in: box, styleLayerIdentifiers: ["vela-route-line", "vela-route-edge"]).isEmpty {
+                        let c = map.convert(pt, toCoordinateFrom: map)
+                        self.model.askAvoid(at: LatLng(c.latitude, c.longitude))
                     }
                     return
                 }

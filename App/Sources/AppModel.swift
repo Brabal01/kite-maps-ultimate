@@ -74,6 +74,13 @@ struct DirectionsState {
     /** Places to stop at on the way, in order. */
     var stops: [Place] = []
     var transit = false
+    /** Somewhere else to start from instead of where you are (GitHub #55): to look at a trip, not drive it. */
+    var origin: Place?
+    /** Spots on roads tapped to avoid, with the roads' names. */
+    var avoid: [LatLng] = []
+    var avoidNames: [String] = []
+    /** The driving routes from before avoiding a road, for Undo. */
+    var beforeAvoid: [Route]?
     var trips: [TransitTrip]?
     var tripsError: String?
     /** Nil for "leave now". */
@@ -82,8 +89,16 @@ struct DirectionsState {
     var trip = 0
 
     var current: [Route] { transit ? [] : routes[mode] ?? [] }
+    /** Just looking: the trip doesn't start where you are, so there's no Go. */
+    var previewOnly: Bool { reversed || origin != nil }
     var route: Route? { current.indices.contains(selected) ? current[selected] : current.first }
     var pickedTrip: TransitTrip? { transit ? trips.flatMap { $0.indices.contains(trip) ? $0[trip] : $0.first } : nil }
+}
+
+/** A road tapped on the planned route, waiting for "Avoid" or "Cancel". */
+struct AvoidAsk: Equatable {
+    let point: LatLng
+    let road: String?
 }
 
 /** The whole app's state; the map and every sheet read it. */
@@ -148,6 +163,12 @@ final class AppModel: ObservableObject {
     @Published var cruise: Cruise?
     /** Waze reports found along the route being planned, shown as icons on it before you go. */
     @Published var routeReports: [WazeAlert] = []
+    /** "Avoid Bassett Avenue?" after tapping the planned route. */
+    @Published var avoidAsk: AvoidAsk?
+    @Published var avoidBusy = false
+    @Published var pickingOrigin = false
+    /** The place whose Reviews tab to open (its stars were tapped). */
+    @Published var showReviews: String?
     private var cruiseSub: AnyCancellable?
     /** When fast driving with no route began, for switching to the driving view after a few seconds. */
     private var movingSince: Date?
@@ -554,8 +575,73 @@ final class AppModel: ObservableObject {
         if let p = selected { select(p) }
     }
 
+    /** Start the trip from [p] instead of here; nil goes back to your location. */
+    func setOrigin(_ p: Place?) {
+        guard directions != nil else { return }
+        directions?.origin = p
+        reloadRoutes()
+    }
+
+    /** The road under a tap on the planned route, to ask whether to avoid it. */
+    func askAvoid(at tap: LatLng) {
+        guard let d = directions, !d.transit, d.mode == .drive, let r = d.route else { return }
+        let hit = Geo.project(tap, on: r.polyline)
+        guard hit.offset < 60 else { return }
+        let at = Geo.point(along: r.polyline, meters: hit.along)
+        // Not the very start or end: the trip has to begin and finish somewhere.
+        let total = Geo.length(r.polyline)
+        guard hit.along > 150, hit.along < total - 150 else { return }
+        let road = r.maneuvers.last(where: { $0.alongMeters <= hit.along + 1 })?.road
+        UISelectionFeedbackGenerator().selectionChanged()
+        avoidAsk = AvoidAsk(point: at, road: road)
+    }
+
+    /** A way round the road just tapped: the road map's router kept off it, with turn-by-turn from the open router. */
+    func avoidRoad() {
+        guard let ask = avoidAsk, let d = directions, let r = d.route, r.polyline.count >= 2 else { avoidAsk = nil; return }
+        avoidAsk = nil
+        let name = ask.road ?? "that road"
+        let points = d.avoid + [ask.point]
+        let via = (d.reversed ? d.stops.reversed() : d.stops).map(\.location)
+        let from = r.polyline[0], to = r.polyline[r.polyline.count - 1]
+        let destId = d.destination.id
+        avoidBusy = true
+        Task {
+            defer { avoidBusy = false }
+            guard let line = await Valhalla.lineAvoiding(from: from, to: to, via: via, avoid: points),
+                  let found = try? await OSRM.routeVia(line, mode: .drive, spacing: 500, maxVias: 40),
+                  // The open router can pull a way back onto the road at a corner: check it really stays off.
+                  points.allSatisfy({ Geo.project($0, on: found.polyline).offset > 20 }) else {
+                guard directions?.destination.id == destId else { return }
+                notice = "Couldn't find a way round \(name)."
+                return
+            }
+            guard directions?.destination.id == destId, directions?.mode == .drive else { return }
+            if directions?.beforeAvoid == nil { directions?.beforeAvoid = directions?.routes[.drive] }
+            directions?.avoid = points
+            directions?.avoidNames.append(name)
+            directions?.routes[.drive] = [found]
+            directions?.selected = 0
+            frameRoute()
+        }
+    }
+
+    /** Back to the routes from before any road was avoided. */
+    func undoAvoid() {
+        guard let before = directions?.beforeAvoid else { return }
+        directions?.routes[.drive] = before
+        directions?.avoid = []
+        directions?.avoidNames = []
+        directions?.beforeAvoid = nil
+        directions?.selected = 0
+        frameRoute()
+    }
+
     func reverseDirections() {
         directions?.reversed.toggle()
+        directions?.avoid = []
+        directions?.avoidNames = []
+        directions?.beforeAvoid = nil
         directions?.routes = [:]
         directions?.selected = 0
         directions?.trips = nil
@@ -609,6 +695,9 @@ final class AppModel: ObservableObject {
 
     func reloadRoutes() {
         guard directions != nil else { return }
+        directions?.avoid = []
+        directions?.avoidNames = []
+        directions?.beforeAvoid = nil
         directions?.routes = [:]
         directions?.errors = [:]
         directions?.selected = 0
@@ -617,7 +706,7 @@ final class AppModel: ObservableObject {
 
     private func loadAllModes() {
         guard let d = directions else { return }
-        guard let me = userLatLng else {
+        guard let me = d.origin?.location ?? userLatLng else {
             // Say so on the trip card itself, not just in passing.
             let why = location.denied ? Self.locationOffText : "Waiting for your location…"
             for m in TravelMode.allCases { directions?.errors[m] = why }
@@ -640,7 +729,7 @@ final class AppModel: ObservableObject {
         let hw = settings.avoidHighways, tolls = settings.avoidTolls, google = !settings.noGoogle
         // Already driving (asked at a red light, say): no route that starts with a U-turn.
         let moving = location.last.flatMap { l in l.speed >= 4 && l.course >= 0 && l.courseAccuracy >= 0 && l.courseAccuracy < 45 ? l.course : nil }
-        let heading = d.reversed ? nil : moving
+        let heading = d.previewOnly ? nil : moving
         for m in TravelMode.allCases {
             directions?.loading.insert(m)
             Task {
@@ -668,7 +757,7 @@ final class AppModel: ObservableObject {
 
     /** Transit trips for the current trip, leaving now or at the picked time. */
     func loadTransit() {
-        guard let d = directions, let me = userLatLng else { return }
+        guard let d = directions, let me = d.origin?.location ?? userLatLng else { return }
         transitLoadedAt = Date()
         // A new request either way, so one still loading can't put back trips without the stops.
         transitRequest += 1
@@ -726,7 +815,7 @@ final class AppModel: ObservableObject {
     // MARK: Navigation
 
     func startNavigation() {
-        guard let d = directions, let route = d.route, !d.reversed else { return }
+        guard let d = directions, let route = d.route, !d.previewOnly else { return }
         endCruise()
         let n = Navigator(route: route, destination: d.destination, stops: d.stops, settings: settings)
         nav = n

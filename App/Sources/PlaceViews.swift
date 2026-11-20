@@ -1,3 +1,4 @@
+import SafariServices
 import SwiftUI
 import UIKit
 import VelaCore
@@ -31,6 +32,8 @@ struct PlaceHeader: View {
                 CircleIconButton(icon: "xmark") { withAnimation { model.closePlace() } }
             }
             PlaceMetaLine(place: place, here: model.userLatLng)
+                // Tapping the stars opens the reviews (GitHub #70).
+                .onTapGesture { if place.rating != nil { model.showReviews = place.id; model.detent = .full } }
             StatusText(place: place).font(.subheadline)
             // The one thing most people want, in reach even with the sheet down.
             HStack(spacing: 10) {
@@ -83,14 +86,19 @@ struct PlaceBody: View {
             VStack(alignment: .leading, spacing: 14) {
                 actions
                 PhotoStrip(urls: place.photoUrls, height: 140, opensViewer: true, streetView: place)
-                if hasAbout {
+                if hasAbout || hasReviews {
                     Picker("", selection: $tab) {
                         Text("Overview").tag(0)
-                        Text("About").tag(1)
+                        if hasReviews { Text("Reviews").tag(2) }
+                        if hasAbout { Text("About").tag(1) }
                     }
                     .pickerStyle(.segmented)
                 }
-                if tab == 0 { overview } else { about }
+                switch tab {
+                case 1: about
+                case 2: ReviewsList(place: place)
+                default: overview
+                }
                 Text(place.source == "google" ? "Place details from Google Maps" : "Map data © OpenStreetMap contributors")
                     .font(.caption).foregroundColor(.secondary)
             }
@@ -98,6 +106,9 @@ struct PlaceBody: View {
             .padding(.bottom, 80)
         }
         .sheetScroll()
+        .onChange(of: model.showReviews) { id in
+            if id == place.id, hasReviews { tab = 2; model.showReviews = nil }
+        }
         .task(id: place.id) { await loadDriveTime() }
     }
 
@@ -119,6 +130,8 @@ struct PlaceBody: View {
     }
 
     private var hasAbout: Bool { !place.about.isEmpty }
+    /** Google's places have reviews to read; open map data has none. */
+    private var hasReviews: Bool { place.source == "google" && place.rating != nil && !AppSettings.shared.noGoogle }
 
     /** A bus stop or a station, which gets a live departure board. */
     private var isStop: Bool {
@@ -203,7 +216,13 @@ struct PlaceBody: View {
             InfoRow(icon: "scope", text: coords).copyable(coords)
             if let r = place.featuredReview {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Review").font(.headline)
+                    HStack {
+                        Text("Review").font(.headline)
+                        Spacer()
+                        if hasReviews {
+                            Button("All reviews") { tab = 2 }.font(.subheadline.weight(.semibold))
+                        }
+                    }
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "person.crop.circle.fill").font(.title2).foregroundColor(.secondary)
                         Text("“\(r)”").font(.subheadline)
@@ -410,4 +429,85 @@ enum OtherApp: String, CaseIterable {
         case .apple: return URL(string: "https://maps.apple.com/?ll=\(ll)&q=\(name)")!
         }
     }
+}
+
+/**
+ * A place's Google reviews inside Kite (GitHub #70): stars, who, when and what they said, the ones
+ * Google Maps shows first. When Google won't list them, a button opens them on Google in Kite.
+ */
+struct ReviewsList: View {
+    let place: Place
+    @State private var reviews: [GoogleReview]?
+    @State private var failed = false
+    @State private var web: URL?
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let rating = place.rating {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(String(format: "%.1f", rating)).font(.system(size: 40, weight: .heavy))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Stars(rating: rating, size: 16)
+                        if let n = place.reviewCount { Text("\(n.formatted()) reviews on Google").font(.subheadline).foregroundColor(.secondary) }
+                    }
+                }
+            }
+            if let reviews {
+                ForEach(Array(reviews.enumerated()), id: \.offset) { _, r in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.crop.circle.fill").font(.title2).foregroundColor(.secondary)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(r.author).font(.subheadline.weight(.bold)).lineLimit(1)
+                                HStack(spacing: 6) {
+                                    if let s = r.rating { Stars(rating: Double(s), size: 11) }
+                                    if let w = r.when { Text(w).font(.caption).foregroundColor(.secondary) }
+                                }
+                            }
+                        }
+                        Text(r.text).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Divider()
+                }
+            } else if !failed {
+                HStack(spacing: 10) { ProgressView(); Text("Loading reviews…").foregroundColor(.secondary) }
+            }
+            if failed || reviews?.isEmpty == true, let r = place.featuredReview {
+                Text("“\(r)”").font(.subheadline)
+            }
+            if let url = GoogleReviews.webURL(place) {
+                Button { web = url } label: {
+                    Label(reviews?.isEmpty == false ? "More reviews on Google" : "Read the reviews on Google", systemImage: "text.bubble")
+                        .font(.system(size: 17, weight: .semibold))
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .foregroundColor(Vela.onTonal(scheme))
+                        .background(Capsule().fill(Vela.tonal(scheme)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .task(id: place.id) {
+            guard let fid = place.featureId else { failed = true; return }
+            if let found = await GoogleClient.shared.reviews(featureId: fid) {
+                reviews = found
+            } else {
+                failed = true
+            }
+        }
+        .sheet(item: $web) { url in
+            SafariView(url: url).ignoresSafeArea()
+        }
+    }
+}
+
+/** A web page inside Kite (Google's reviews), with Safari's own Done button. */
+struct SafariView: UIViewControllerRepresentable {
+    let url: URL
+    func makeUIViewController(context: Context) -> SFSafariViewController { SFSafariViewController(url: url) }
+    func updateUIViewController(_ vc: SFSafariViewController, context: Context) {}
+}
+
+extension URL: Identifiable {
+    public var id: String { absoluteString }
 }

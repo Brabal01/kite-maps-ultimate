@@ -127,3 +127,31 @@ for url in ["https://www.google.com/maps/search/?api=1&query=The+Dancing+Man+Sou
         print(" ", code, len(s), "consent" in s.lower(), s.count("review"), url)
     except Exception as e:
         print("  failed", e, url)
+
+print("== Google reviews (listentitiesreviews)")
+try:
+    import http.cookiejar
+    cj = http.cookiejar.CookieJar()
+    op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    hdr = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+           "Accept-Language": "en-GB,en;q=0.9", "Cookie": "SOCS=CAESHAgBEhIaAB; CONSENT=YES+"}
+    op.open(urllib.request.Request("https://www.google.com/maps?hl=en-GB&gl=gb", headers=hdr), timeout=30).read()
+    q = "https://www.google.com/search?tbm=map&authuser=0&hl=en-GB&gl=gb&q=" + urllib.parse.quote("Westquay Southampton")
+    body = op.open(urllib.request.Request(q, headers=hdr), timeout=30).read().decode("utf-8", "replace")
+    import re
+    fids = re.findall(r'"(0x[0-9a-f]+:0x[0-9a-f]+)"', body)
+    print("  feature ids:", fids[:3])
+    if fids:
+        a, b = fids[0].split(":")
+        pb = f"!1m2!1y{int(a,16)}!2y{int(b,16)}!2m2!1i0!2i20!3e1!4m5!3b1!4b1!5b1!6b1!7b1"
+        u = "https://www.google.com/maps/preview/review/listentitiesreviews?authuser=0&hl=en-GB&gl=gb&pb=" + pb
+        r = op.open(urllib.request.Request(u, headers=hdr), timeout=30)
+        t = r.read().decode("utf-8", "replace")
+        print("  status", r.status, "len", len(t), "start", repr(t[:200]))
+        j = json.loads(t[t.index("\n") + 1:] if t.startswith(")]}'") else t)
+        revs = j[2] or []
+        print("  reviews:", len(revs))
+        for x in revs[:3]:
+            print("   ", repr(x[0][1] if x[0] else None), repr(x[1]), repr((x[3] or "")[:80]), x[4])
+except Exception as e:
+    print("  reviews failed", repr(e))
