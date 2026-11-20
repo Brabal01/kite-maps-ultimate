@@ -23,6 +23,10 @@ jobs:
       - name: Unit tests
         working-directory: VelaCore
         run: swift test
+      - name: Live checks for 0.7.17 (zones, entrances, router table)
+        continue-on-error: true
+        timeout-minutes: 15
+        run: python3 -u .github/probe/v0717.py
       - name: Live camera photos check (OpenHighways, TfL, Windy)
         continue-on-error: true
         timeout-minutes: 3
