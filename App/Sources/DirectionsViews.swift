@@ -209,6 +209,97 @@ struct EndpointsCard: View {
     }
 }
 
+/**
+ * At the other end (GitHub #63): a big place's main entrance, to drive to the door instead of the
+ * middle of the building, and the car parks near it. Two slim rows, only when there's something to say.
+ */
+struct ArrivalRows: View {
+    @ObservedObject var model: AppModel
+    let state: DirectionsState
+    @State private var door: LatLng?
+    @State private var parks: [CarPark] = []
+    @State private var showParks = false
+    @Environment(\.colorScheme) private var scheme
+
+    private var place: Place { state.original ?? state.destination }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let note = state.endNote {
+                HStack(spacing: 10) {
+                    Image(systemName: note == "Main entrance" ? "door.left.hand.open" : "parkingsign.circle.fill")
+                        .font(.system(size: 18, weight: .bold)).foregroundColor(Vela.routeBlue)
+                    Text(note == "Main entrance" ? "Going to the main entrance" : "Parking at \(note)")
+                        .font(.system(size: 16, weight: .semibold)).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Button("Undo") { model.endAt(nil, note: nil) }
+                        .font(.system(size: 16, weight: .heavy)).foregroundColor(Vela.accentText(scheme))
+                }
+            } else {
+                if let door {
+                    Button { model.endAt(door, note: "Main entrance") } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "door.left.hand.open").font(.system(size: 18, weight: .bold)).foregroundColor(Vela.routeBlue)
+                            Text("Drive to the main entrance").font(.system(size: 16, weight: .semibold))
+                            Text("\(Fmt.distance(door.distance(to: place.location))) from the pin").font(.system(size: 14)).foregroundColor(.secondary)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                if !parks.isEmpty {
+                    Button { showParks = true } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "parkingsign.circle.fill").font(.system(size: 18, weight: .bold)).foregroundColor(Vela.routeBlue)
+                            Text("\(parks.count) car park\(parks.count == 1 ? "" : "s") near there").font(.system(size: 16, weight: .semibold))
+                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .heavy)).foregroundColor(.secondary)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .task(id: place.id) {
+            door = nil
+            parks = []
+            let p = place
+            async let found = ArrivalHelp.parking(near: p.location)
+            if ArrivalHelp.isBigPlace(p.category) { door = await ArrivalHelp.mainEntrance(near: p.location) }
+            parks = await found ?? []
+        }
+        .sheet(isPresented: $showParks) {
+            NavigationView {
+                List(parks) { c in
+                    Button {
+                        showParks = false
+                        model.endAt(c.location, note: c.name ?? "a car park")
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "parkingsign.circle.fill").font(.title2).foregroundColor(Vela.routeBlue)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(c.name ?? "Car park").font(.system(size: 17, weight: .semibold)).foregroundColor(.primary)
+                                Text([c.kind, c.spaces.map { "\($0) spaces" }, c.fee.map { $0 ? "Paid" : "Free" }].compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption).foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("\(Fmt.walkMinutes(c.meters)) walk").font(.subheadline.weight(.medium)).foregroundColor(.primary)
+                                Text("Park here").font(.caption.weight(.semibold)).foregroundColor(Vela.routeBlue)
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Parking near \(place.name)")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showParks = false } } }
+            }
+            .kiteType()
+            .presentationDetents([.medium, .large])
+        }
+    }
+}
+
 /** The part of the trip sheet always in view: how long, how you go, and a giant Go. */
 struct TripHeader: View {
     @ObservedObject var model: AppModel
@@ -497,6 +588,7 @@ struct TripBody: View {
                     .font(.system(size: 17, weight: .semibold)).foregroundColor(delayColor(r))
             }
             if r.mode == .drive { RouteTolls(route: r).padding(.top, 2) }
+            if r.mode == .drive { ArrivalRows(model: model, state: d).padding(.top, 2) }
             if r.mode == .drive, d.avoidNames.isEmpty {
                 Label("Tap a road on the route to avoid it", systemImage: "hand.tap")
                     .font(.system(size: 15, weight: .medium)).foregroundColor(.secondary)

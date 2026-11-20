@@ -48,6 +48,7 @@ import androidx.compose.ui.window.DialogProperties
 import app.kite.*
 import app.kite.core.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
@@ -396,6 +397,7 @@ fun TripBody(model: AppModel) {
                             fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = delayColor(r, dark))
                     }
                     if (r.mode == TravelMode.DRIVE) Box(Modifier.padding(top = 2.dp)) { RouteTolls(r) }
+                    if (r.mode == TravelMode.DRIVE) Box(Modifier.padding(top = 2.dp)) { ArrivalRows(model, d) }
                     if (r.mode == TravelMode.DRIVE && d.avoidNames.isEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Icon(Icons.Filled.TouchApp, null, tint = secondaryText, modifier = Modifier.size(16.dp))
@@ -687,6 +689,80 @@ fun PickerSearchField(query: String, onQuery: (String) -> Unit, prompt: String, 
 fun SectionTitle(text: String) {
     Text(text, fontSize = KType.subheadline, fontWeight = FontWeight.SemiBold, color = secondaryText,
         modifier = Modifier.padding(horizontal = 18.dp).padding(top = 16.dp, bottom = 4.dp))
+}
+
+/**
+ * At the other end (GitHub #63): a big place's main entrance, to drive to the door instead of the
+ * middle of the building, and the car parks near it. Two slim rows, only when there's something to say.
+ */
+@Composable
+fun ArrivalRows(model: AppModel, state: DirectionsState) {
+    val dark = LocalDark.current
+    val place = state.original ?: state.destination
+    var door by remember(place.id) { mutableStateOf<LatLng?>(null) }
+    var parks by remember(place.id) { mutableStateOf<List<CarPark>>(emptyList()) }
+    var showParks by remember { mutableStateOf(false) }
+    LaunchedEffect(place.id) {
+        val found = async(Dispatchers.IO) { ArrivalHelp.parking(place.location) }
+        if (ArrivalHelp.isBigPlace(place.category)) door = withContext(Dispatchers.IO) { ArrivalHelp.mainEntrance(place.location) }
+        parks = found.await() ?: emptyList()
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val note = state.endNote
+        if (note != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(if (note == "Main entrance") Icons.Filled.DoorFront else Icons.Filled.LocalParking, null, tint = Vela.routeBlue, modifier = Modifier.size(20.dp))
+                Text(if (note == "Main entrance") "Going to the main entrance" else "Parking at $note", fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                    color = primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text("Undo", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = Vela.accentText(dark), modifier = Modifier.tap { model.endAt(null, null) })
+            }
+        } else {
+            door?.let { dr ->
+                Row(Modifier.fillMaxWidth().tap { model.endAt(dr, "Main entrance") }, verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Filled.DoorFront, null, tint = Vela.routeBlue, modifier = Modifier.size(20.dp))
+                    Text("Drive to the main entrance", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = primaryText)
+                    Text("${Fmt.distance(dr.distanceTo(place.location))} from the pin", fontSize = 14.sp, color = secondaryText)
+                }
+            }
+            if (parks.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().tap { showParks = true }, verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Filled.LocalParking, null, tint = Vela.routeBlue, modifier = Modifier.size(20.dp))
+                    Text("${parks.size} car park${if (parks.size == 1) "" else "s"} near there", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = primaryText)
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = secondaryText, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+    if (showParks) {
+        ModalBottomSheet(onDismissRequest = { showParks = false }, containerColor = Vela.sheet(dark), dragHandle = null) {
+            Column(Modifier.padding(20.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Parking near ${place.name}", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = primaryText,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    CircleIconButton(Icons.Filled.Close) { showParks = false }
+                }
+                LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(parks, key = { it.id }) { c ->
+                        Row(Modifier.fillMaxWidth().tap { showParks = false; model.endAt(c.location, c.name ?: "a car park") },
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Icon(Icons.Filled.LocalParking, null, tint = Vela.routeBlue, modifier = Modifier.size(28.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(c.name ?: "Car park", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(listOfNotNull(c.kind, c.spaces?.let { "$it spaces" }, c.fee?.let { if (it) "Paid" else "Free" }).joinToString(" · "),
+                                    fontSize = KType.caption, color = secondaryText)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("${Fmt.walkMinutes(c.meters)} walk", fontSize = KType.subheadline, fontWeight = FontWeight.Medium, color = primaryText)
+                                Text("Park here", fontSize = KType.caption, fontWeight = FontWeight.SemiBold, color = Vela.routeBlue)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** Search for a place to stop at on the way. Home, work and saved places are one tap. */

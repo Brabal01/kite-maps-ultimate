@@ -1367,6 +1367,8 @@ struct AlongRouteSheet: View {
     @State private var found: [(place: Place, ahead: Double)] = []
     @State private var searching = false
     @State private var picked: String?
+    /** How much longer the drive gets with each place as a stop, in seconds (GitHub #60). */
+    @State private var detour: [String: Double] = [:]
 
     private let kinds: [(String, String, String)] = [
         (Fmt.yards ? "Petrol" : "Gas", "fuelpump.fill", Fmt.yards ? "petrol station" : "gas station"), ("EV charging", "bolt.car.fill", "ev charging station"),
@@ -1417,7 +1419,10 @@ struct AlongRouteSheet: View {
                                     }
                                     Spacer()
                                     VStack(alignment: .trailing, spacing: 2) {
-                                        Text("in \(Fmt.distance(f.ahead))").font(.subheadline.weight(.medium)).foregroundColor(.primary)
+                                        if let extra = detour[f.place.id] {
+                                            Text(DetourText.short(extra)).font(.subheadline.weight(.bold)).foregroundColor(DetourText.color(extra))
+                                        }
+                                        Text("in \(Fmt.distance(f.ahead))").font(.caption.weight(.medium)).foregroundColor(.secondary)
                                         Text("Add stop").font(.caption.weight(.semibold)).foregroundColor(Vela.routeBlue)
                                     }
                                 }
@@ -1456,7 +1461,27 @@ struct AlongRouteSheet: View {
             }
             found = out.sorted { $0.1 < $1.1 }.prefix(20).map { (place: $0.0, ahead: $0.1) }
             searching = false
+            // "+3 min": to the place and back to the route a little further on, against staying on it.
+            detour = [:]
+            let list = found
+            guard !list.isEmpty else { return }
+            let me = Geo.point(along: line, meters: here, cumulative: cum)
+            let rejoin = list.map { Geo.point(along: line, meters: min(here + $0.ahead + 1_500, total), cumulative: cum) }
+            if let extra = await OSRM.detours(from: me, places: list.map(\.place.location), rejoin: rejoin), picked == label {
+                for (f, e) in zip(list, extra) { if let e { detour[f.place.id] = e } }
+            }
         }
+    }
+}
+
+/** "+3 min" for a stop's detour; "On the way" when it costs next to nothing. */
+enum DetourText {
+    static func short(_ s: Double) -> String {
+        s < 60 ? "On the way" : "+\(Int((s / 60).rounded())) min"
+    }
+
+    static func color(_ s: Double) -> Color {
+        s < 180 ? Vela.open : s < 600 ? Color(hex: 0xE37400) : Vela.closed
     }
 }
 

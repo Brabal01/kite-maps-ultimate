@@ -50,6 +50,37 @@ object OSRM {
     }
 
     /** The open router forced through points sampled off [line] (Google's route), so its steps follow the same roads. */
+    /**
+     * How much longer the drive gets by stopping at each of [places] (GitHub #60, "+3 min"): from [here]
+     * to the place, then back to the route at [rejoin] (the same index), against driving straight to
+     * [rejoin]. One question to the open router for all of them. Seconds, null for a place it can't reach;
+     * null overall when the router didn't answer.
+     */
+    suspend fun detours(here: LatLng, places: List<LatLng>, rejoin: List<LatLng>): List<Double?>? {
+        val n = places.size
+        if (n == 0 || rejoin.size != n) return emptyList()
+        val coords = (listOf(here) + places + rejoin).joinToString(";") { String.format(java.util.Locale.US, "%.6f,%.6f", it.lng, it.lat) }
+        val sources = (0..n).joinToString(";")
+        val destinations = (1..2 * n).joinToString(";")
+        val url = "https://routing.openstreetmap.de/routed-car/table/v1/driving/$coords?sources=$sources&destinations=$destinations&annotations=duration"
+        return try {
+            val r = Http.get(url, mapOf("User-Agent" to userAgent))
+            if (r.code == 200) parseDetours(r.body, n) else null
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { null }
+    }
+
+    fun parseDetours(data: ByteArray, n: Int): List<Double?>? {
+        val root = Json.obj(data) ?: return null
+        if (root["code"] != "Ok") return null
+        val d = root["durations"].asList()?.map { it.asList() ?: return null } ?: return null
+        if (d.size != n + 1 || d.any { it.size != 2 * n }) return null
+        fun t(i: Int, j: Int) = d[i][j].num()
+        return (0 until n).map { i ->
+            val toPlace = t(0, i); val back = t(i + 1, n + i); val direct = t(0, n + i)
+            if (toPlace == null || back == null || direct == null) null else maxOf(0.0, toPlace + back - direct)
+        }
+    }
+
     suspend fun routeVia(line: List<LatLng>, mode: TravelMode, spacing: Double = 1_500.0, maxVias: Int = 12): Route? {
         if (line.size < 2) return null
         val cum = Geo.cumulative(line)
@@ -423,6 +454,23 @@ object OSRM {
 /** What the app asks for routes: Google (traffic, alternates), else the open router. */
 object Directions {
     data class Result(val routes: List<Route>, val error: String? = null)
+
+    /**
+     * A drive that keeps off the roads tapped away ([avoid], a point on each): the open router's line
+     * round them, with turn-by-turn that follows it. Null when there's no way round.
+     */
+    suspend fun avoiding(from: LatLng, to: LatLng, via: List<LatLng> = emptyList(), avoid: List<LatLng>): Route? {
+        val line = Valhalla.lineAvoiding(from, to, via, avoid) ?: return null
+        val found = runCatching { OSRM.match(line, TravelMode.DRIVE) }.getOrNull()
+            ?: runCatching { OSRM.routeVia(line, TravelMode.DRIVE, spacing = 500.0, maxVias = 40) }.getOrNull()
+            ?: return null
+        // The open router can pull a way back onto the road at a corner: check it really stays off.
+        return if (touches(found.polyline, avoid)) null else found
+    }
+
+    /** Whether [line] goes along any of the avoided roads (within 20 m of a point tapped on one). */
+    fun touches(line: List<LatLng>, avoid: List<LatLng>): Boolean =
+        line.size >= 2 && avoid.any { Geo.project(it, line).offset <= 20 }
 
     suspend fun routes(
         a: LatLng, b: LatLng, mode: TravelMode,

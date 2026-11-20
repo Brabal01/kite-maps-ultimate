@@ -68,4 +68,25 @@ final class MatcherTests: XCTestCase {
         XCTAssertEqual(r?.last?.text, "Slow.")
         XCTAssertNil(GoogleReviews.parse("<html>"))
     }
+
+    func testDetours() {
+        let d = OSRM.parseDetours(Data(#"{"code":"Ok","durations":[[100,200,300,500],[0,10,260,999],[10,0,999,400]]}"#.utf8), count: 2)
+        XCTAssertEqual(d?[0] ?? 0, 60, accuracy: 0.01)
+        XCTAssertEqual(d?[1] ?? 0, 100, accuracy: 0.01)
+        XCTAssertNil(OSRM.parseDetours(Data(#"{"code":"Ok","durations":[[null,200,300,500],[0,10,260,999],[10,0,999,400]]}"#.utf8), count: 2)?[0] ?? nil)
+        XCTAssertNil(OSRM.parseDetours(Data(#"{"code":"NoTable"}"#.utf8), count: 2))
+    }
+
+    func testArrivalHelp() {
+        let here = LatLng(50.9000, -1.4000)
+        let parks = ArrivalHelp.parseParking(Data(#"{"elements":[{"type":"way","id":1,"center":{"lat":50.9010,"lon":-1.4000},"tags":{"amenity":"parking","name":"West Quay Car Park","fee":"yes","capacity":"1200","parking":"multi-storey"}},{"type":"node","id":2,"lat":50.9001,"lon":-1.4000,"tags":{"amenity":"parking","access":"private"}},{"type":"node","id":3,"lat":50.9002,"lon":-1.4000,"tags":{"amenity":"parking","parking":"street_side"}},{"type":"node","id":4,"lat":50.9003,"lon":-1.4000,"tags":{"amenity":"parking","capacity":"6"}}]}"#.utf8), near: here)
+        XCTAssertEqual(parks?.map(\.id), ["way1", "node4"])
+        XCTAssertEqual(parks?.first?.fee, true)
+        XCTAssertEqual(parks?.first?.spaces, 1200)
+        XCTAssertEqual(parks?.first?.kind, "Multi-storey")
+        XCTAssertEqual(ArrivalHelp.parseEntrance(Data(#"{"elements":[{"type":"node","id":9,"lat":50.9005,"lon":-1.4000,"tags":{"entrance":"main"}},{"type":"node","id":10,"lat":50.9001,"lon":-1.4000,"tags":{"entrance":"main","access":"private"}}]}"#.utf8), near: here)?.lat ?? 0, 50.9005, accuracy: 1e-6)
+        XCTAssertNil(ArrivalHelp.parseEntrance(Data(#"{"elements":[{"type":"node","id":9,"lat":50.9001,"lon":-1.4000,"tags":{}}]}"#.utf8), near: here))
+        XCTAssertTrue(ArrivalHelp.isBigPlace("Shopping mall"))
+        XCTAssertFalse(ArrivalHelp.isBigPlace("Cafe"))
+    }
 }

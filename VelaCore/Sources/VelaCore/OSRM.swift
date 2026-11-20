@@ -98,6 +98,36 @@ public enum OSRM {
         return parse(data, mode: mode).first
     }
 
+    /**
+     * How much longer the drive gets by stopping at each of [places] (GitHub #60, "+3 min"): from [here]
+     * to the place, then back to the route at [rejoin] (the same index), against driving straight to
+     * [rejoin]. One question to the open router for all of them. Seconds, nil for a place it can't reach;
+     * nil overall when the router didn't answer.
+     */
+    public static func detours(from here: LatLng, places: [LatLng], rejoin: [LatLng]) async -> [Double?]? {
+        let n = places.count
+        guard n > 0, rejoin.count == n else { return [] }
+        let coords = ([here] + places + rejoin).map { String(format: "%.6f,%.6f", $0.lng, $0.lat) }.joined(separator: ";")
+        let sources = (0...n).map(String.init).joined(separator: ";")
+        let destinations = (1...(2 * n)).map(String.init).joined(separator: ";")
+        guard let url = URL(string: "https://routing.openstreetmap.de/routed-car/table/v1/driving/\(coords)?sources=\(sources)&destinations=\(destinations)&annotations=duration") else { return nil }
+        var r = URLRequest(url: url)
+        r.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        r.timeoutInterval = 20
+        guard let (data, _) = try? await URLSession.shared.data(for: r) else { return nil }
+        return parseDetours(data, count: n)
+    }
+
+    static func parseDetours(_ data: Data, count n: Int) -> [Double?]? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any], root["code"] as? String == "Ok",
+              let d = root["durations"] as? [[Any]], d.count == n + 1, d.allSatisfy({ $0.count == 2 * n }) else { return nil }
+        func t(_ i: Int, _ j: Int) -> Double? { (d[i][j] as? NSNumber)?.doubleValue }
+        return (0..<n).map { i in
+            guard let toPlace = t(0, i), let back = t(i + 1, n + i), let direct = t(0, n + i) else { return nil }
+            return max(0, toPlace + back - direct)
+        }
+    }
+
     private static func bearing(_ line: [LatLng], _ cum: [Double], at m: Double) -> Double? {
         let a = Geo.point(along: line, meters: max(0, m - 10), cumulative: cum)
         let b = Geo.point(along: line, meters: min(cum.last ?? 0, m + 10), cumulative: cum)
@@ -485,6 +515,25 @@ public enum Directions {
             self.routes = routes
             self.error = error
         }
+    }
+
+    /**
+     * A drive that keeps off the roads tapped away ([avoid], a point on each): the open router's line
+     * round them, with turn-by-turn that follows it. Nil when there's no way round.
+     */
+    public static func avoiding(from a: LatLng, to b: LatLng, via: [LatLng] = [], avoid: [LatLng]) async -> Route? {
+        guard let line = await Valhalla.lineAvoiding(from: a, to: b, via: via, avoid: avoid) else { return nil }
+        let found: Route?
+        if let m = try? await OSRM.match(line, mode: .drive) { found = m }
+        else { found = try? await OSRM.routeVia(line, mode: .drive, spacing: 500, maxVias: 40) }
+        // The open router can pull a way back onto the road at a corner: check it really stays off.
+        guard let found, !touches(found.polyline, avoid) else { return nil }
+        return found
+    }
+
+    /** Whether [line] goes along any of the avoided roads (within 20 m of a point tapped on one). */
+    public static func touches(_ line: [LatLng], _ avoid: [LatLng]) -> Bool {
+        line.count >= 2 && avoid.contains { Geo.project($0, on: line).offset <= 20 }
     }
 
     public static func routes(from a: LatLng, to b: LatLng, mode: TravelMode,

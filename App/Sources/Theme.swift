@@ -190,6 +190,11 @@ enum Fmt {
         return m == 0 ? "\(h)h" : "\(h)h \(m)m"
     }
 
+    /** "4 min" on foot, from metres in a straight line (a little slower than walking pace for the corners). */
+    static func walkMinutes(_ meters: Double) -> String {
+        "\(max(1, Int((meters / 70).rounded()))) min"
+    }
+
     static func arrival(_ s: Double) -> String {
         let f = DateFormatter()
         f.timeStyle = .short

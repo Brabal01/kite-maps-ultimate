@@ -81,6 +81,10 @@ struct DirectionsState {
     var avoidNames: [String] = []
     /** The driving routes from before avoiding a road, for Undo. */
     var beforeAvoid: [Route]?
+    /** The place as first picked, while the trip goes to its main entrance or a car park instead. */
+    var original: Place?
+    /** What the trip ends at instead of the place itself: "Main entrance", or the car park's name. */
+    var endNote: String?
     var trips: [TransitTrip]?
     var tripsError: String?
     /** Nil for "leave now". */
@@ -575,6 +579,28 @@ final class AppModel: ObservableObject {
         if let p = selected { select(p) }
     }
 
+    /**
+     * End the trip at [p] instead of the place picked (its main entrance, or a car park near it),
+     * with [note] saying so; nil goes back to the place itself.
+     */
+    func endAt(_ p: LatLng?, note: String?) {
+        guard let d = directions else { return }
+        let place = d.original ?? d.destination
+        if let p {
+            var dest = place
+            dest.location = p
+            if let note, note != "Main entrance" { dest.name = note }
+            directions?.original = place
+            directions?.destination = dest
+            directions?.endNote = note
+        } else {
+            directions?.destination = place
+            directions?.original = nil
+            directions?.endNote = nil
+        }
+        reloadRoutes()
+    }
+
     /** Start the trip from [p] instead of here; nil goes back to your location. */
     func setOrigin(_ p: Place?) {
         guard directions != nil else { return }
@@ -608,10 +634,7 @@ final class AppModel: ObservableObject {
         avoidBusy = true
         Task {
             defer { avoidBusy = false }
-            guard let line = await Valhalla.lineAvoiding(from: from, to: to, via: via, avoid: points),
-                  let found = try? await OSRM.routeVia(line, mode: .drive, spacing: 500, maxVias: 40),
-                  // The open router can pull a way back onto the road at a corner: check it really stays off.
-                  points.allSatisfy({ Geo.project($0, on: found.polyline).offset > 20 }) else {
+            guard let found = await Directions.avoiding(from: from, to: to, via: via, avoid: points) else {
                 guard directions?.destination.id == destId else { return }
                 notice = "Couldn't find a way round \(name)."
                 return
@@ -818,6 +841,8 @@ final class AppModel: ObservableObject {
         guard let d = directions, let route = d.route, !d.previewOnly else { return }
         endCruise()
         let n = Navigator(route: route, destination: d.destination, stops: d.stops, settings: settings)
+        // Roads tapped away on the plan stay avoided when the way is worked out again on the drive.
+        if d.mode == .drive { n.avoid = d.avoid }
         nav = n
         navSub = n.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         n.onFinished = { [weak self, weak n] in

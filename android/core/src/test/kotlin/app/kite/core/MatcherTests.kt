@@ -68,4 +68,28 @@ class MatcherTests {
         assertEquals("Slow.", r[1].text)
         assertNull(GoogleReviews.parse("<html>"))
     }
+
+    @Test fun detours() {
+        val d = OSRM.parseDetours("""{"code":"Ok","durations":[[100,200,300,500],[0,10,260,999],[10,0,999,400]]}""".toByteArray(), 2)!!
+        assertEquals(60.0, d[0]!!, 0.01)
+        assertEquals(100.0, d[1]!!, 0.01)
+        // A place the router can't reach.
+        assertNull(OSRM.parseDetours("""{"code":"Ok","durations":[[null,200,300,500],[0,10,260,999],[10,0,999,400]]}""".toByteArray(), 2)!![0])
+        assertNull(OSRM.parseDetours("""{"code":"NoTable"}""".toByteArray(), 2))
+    }
+
+    @Test fun arrivalHelp() {
+        val here = LatLng(50.9000, -1.4000)
+        val parks = ArrivalHelp.parseParking("""{"elements":[{"type":"way","id":1,"center":{"lat":50.9010,"lon":-1.4000},"tags":{"amenity":"parking","name":"West Quay Car Park","fee":"yes","capacity":"1200","parking":"multi-storey"}},{"type":"node","id":2,"lat":50.9001,"lon":-1.4000,"tags":{"amenity":"parking","access":"private"}},{"type":"node","id":3,"lat":50.9002,"lon":-1.4000,"tags":{"amenity":"parking","parking":"street_side"}},{"type":"node","id":4,"lat":50.9003,"lon":-1.4000,"tags":{"amenity":"parking","capacity":"6"}}]}""".toByteArray(), here)!!
+        // The private one and the street-side spaces are left out; the big named car park beats six spaces nearer.
+        assertEquals(listOf("way1", "node4"), parks.map { it.id })
+        assertEquals(true, parks[0].fee)
+        assertEquals(1200, parks[0].spaces)
+        assertEquals("Multi-storey", parks[0].kind)
+        val door = ArrivalHelp.parseEntrance("""{"elements":[{"type":"node","id":9,"lat":50.9005,"lon":-1.4000,"tags":{"entrance":"main"}},{"type":"node","id":10,"lat":50.9001,"lon":-1.4000,"tags":{"entrance":"main","access":"private"}}]}""".toByteArray(), here)!!
+        assertEquals(50.9005, door.lat, 1e-6)
+        assertNull(ArrivalHelp.parseEntrance("""{"elements":[{"type":"node","id":9,"lat":50.9001,"lon":-1.4000,"tags":{}}]}""".toByteArray(), here))
+        assertTrue(ArrivalHelp.isBigPlace("Shopping mall"))
+        assertTrue(!ArrivalHelp.isBigPlace("Cafe"))
+    }
 }

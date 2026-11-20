@@ -127,6 +127,8 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
     private var lastReroute = 0L
     private var rerouteRequest = 0
     private var stopped = false
+    /** Roads tapped away on the plan (a point on each): reroutes and faster ways keep off them too. */
+    var avoid: List<LatLng> = emptyList()
     private val avoidHighways = AppSettings.avoidHighways
     private val avoidTolls = AppSettings.avoidTolls
     var routeCameras: List<PlacedCamera> = emptyList(); private set
@@ -838,7 +840,8 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
             val current = nowP.remainingSeconds
             val saving = current - fresh.durationSeconds
             val sameWay = abs(fresh.distanceMeters - nowP.remainingMeters) < max(300.0, nowP.remainingMeters * 0.03)
-            if (!sameWay && saving > max(300.0, current * 0.1)) {
+            // A faster way back along a road that was tapped away is no offer at all.
+            if (!sameWay && saving > max(300.0, current * 0.1) && !Directions.touches(fresh.polyline, avoid)) {
                 val left = Geo.slice(route.polyline, nowP.alongMeters, Geo.length(route.polyline))
                 offerFaster(fresh, saving, nowP.remainingMeters, left)
             } else if (sameWay) {
@@ -950,10 +953,17 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
         val to = destination.location
         rerouteRequest++
         val req = rerouteRequest
+        val avoid = if (mode == TravelMode.DRIVE) this.avoid else emptyList()
         scope.launch {
-            val r = runCatching {
+            var r = runCatching {
                 Directions.routes(from, to, mode, avoidHighways, avoidTolls, !AppSettings.noGoogle, stops.map { it.location }, course)
             }.getOrNull()
+            // The new way goes back along a road tapped away on the plan: the way round it instead,
+            // when there is one (otherwise the usual route, rather than none at all).
+            val first = r?.routes?.firstOrNull()
+            if (avoid.isNotEmpty() && first != null && Directions.touches(first.polyline, avoid) && req == rerouteRequest) {
+                runCatching { Directions.avoiding(from, to, stops.map { it.location }, avoid) }.getOrNull()?.let { r = r?.copy(routes = listOf(it)) }
+            }
             if (stopped || req != rerouteRequest) return@launch
             rerouting = false
             // Parked at the destination while the new route was loading: the trip is over, keep it that way.

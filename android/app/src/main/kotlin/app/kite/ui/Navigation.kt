@@ -967,6 +967,8 @@ fun AlongRouteSheet(nav: Navigator, close: () -> Unit) {
     var found by remember { mutableStateOf<List<Pair<Place, Double>>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
     var picked by remember { mutableStateOf<String?>(null) }
+    /** How much longer the drive gets with each place as a stop, in seconds (GitHub #60). */
+    var detour by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
     val y = Fmt.yards
     val kinds = listOf(
         Triple(if (y) "Petrol" else "Gas", Icons.Filled.LocalGasStation, if (y) "petrol station" else "gas station"),
@@ -996,6 +998,14 @@ fun AlongRouteSheet(nav: Navigator, close: () -> Unit) {
                 if (at.offset < 800 && at.along > here + 100) p to (at.along - here) else null
             }.sortedBy { it.second }.take(20)
             searching = false
+            // "+3 min": to the place and back to the route a little further on, against staying on it.
+            detour = emptyMap()
+            val list = found
+            if (list.isEmpty()) return@launch
+            val me = Geo.point(line, here, cum)
+            val rejoin = list.map { Geo.point(line, min(here + it.second + 1_500, total), cum) }
+            val extra = withContext(Dispatchers.IO) { OSRM.detours(me, list.map { it.first.location }, rejoin) }
+            if (extra != null && picked == label) detour = list.zip(extra).mapNotNull { (f, e) -> e?.let { f.first.id to it } }.toMap()
         }
     }
     TripSheet("Search along route", "Close", close) {
@@ -1029,7 +1039,10 @@ fun AlongRouteSheet(nav: Navigator, close: () -> Unit) {
                                 color = secondaryText, maxLines = 1)
                         }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text("in ${Fmt.distance(ahead)}", fontSize = KType.subheadline, fontWeight = FontWeight.Medium, color = primaryText)
+                            detour[p.id]?.let { e ->
+                                Text(detourShort(e), fontSize = KType.subheadline, fontWeight = FontWeight.Bold, color = detourColor(e))
+                            }
+                            Text("in ${Fmt.distance(ahead)}", fontSize = KType.caption, fontWeight = FontWeight.Medium, color = secondaryText)
                             Text("Add stop", fontSize = KType.caption, fontWeight = FontWeight.SemiBold, color = Vela.routeBlue)
                         }
                     }
@@ -1211,4 +1224,13 @@ fun RoundaboutDiagram(shape: RoundaboutShape?, exit: Int, clockwise: Boolean, mo
             fontSize = (w * (if (exit >= 10) 0.17f else 0.22f) / density).sp))
         drawText(t, topLeft = Offset(c.x - t.size.width / 2, c.y - t.size.height / 2))
     }
+}
+
+/** "+3 min" for a stop's detour; "On the way" when it costs next to nothing. */
+fun detourShort(s: Double): String = if (s < 60) "On the way" else "+${Math.round(s / 60)} min"
+
+fun detourColor(s: Double): Color = when {
+    s < 180 -> Vela.open
+    s < 600 -> hex(0xE37400)
+    else -> Vela.closed
 }

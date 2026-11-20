@@ -85,6 +85,10 @@ data class DirectionsState(
     val avoidNames: List<String> = emptyList(),
     /** The driving routes from before avoiding a road, for Undo. */
     val beforeAvoid: List<Route>? = null,
+    /** The place as first picked, while the trip goes to its main entrance or a car park instead. */
+    val original: Place? = null,
+    /** What the trip ends at instead of the place itself: "Main entrance", or the car park's name. */
+    val endNote: String? = null,
 ) {
     /** Just looking: the trip doesn't start where you are, so there's no Go. */
     val previewOnly: Boolean get() = reversed || origin != null
@@ -570,6 +574,22 @@ class AppModel {
         loadAllModes()
     }
 
+    /**
+     * End the trip at [p] instead of the place picked (its main entrance, or a car park near it),
+     * with [note] saying so; null goes back to the place itself.
+     */
+    fun endAt(p: LatLng?, note: String?) {
+        val d = directions ?: return
+        val place = d.original ?: d.destination
+        if (p != null) {
+            val dest = place.copy(location = p, name = if (note != null && note != "Main entrance") note else place.name)
+            edit { it.copy(original = place, destination = dest, endNote = note) }
+        } else {
+            edit { it.copy(destination = place, original = null, endNote = null) }
+        }
+        reloadRoutes()
+    }
+
     /** Start the trip from [p] instead of here; null goes back to your location. */
     fun setOrigin(p: Place?) {
         if (directions == null) return
@@ -615,12 +635,10 @@ class AppModel {
         val destId = d.destination.id
         avoidBusy = true
         scope.launch {
-            val line = Valhalla.lineAvoiding(from, to, via, points)
-            val found = line?.let { runCatching { OSRM.routeVia(it, TravelMode.DRIVE, spacing = 500.0, maxVias = 40) }.getOrNull() }
+            val found = Directions.avoiding(from, to, via, points)
             avoidBusy = false
             if (directions?.destination?.id != destId) return@launch
-            // The open router can pull a way back onto the road at a corner: check it really stays off.
-            if (found == null || points.any { Geo.project(it, found.polyline).offset <= 20 }) {
+            if (found == null) {
                 notice = "Couldn't find a way round $name."
                 return@launch
             }
@@ -751,6 +769,8 @@ class AppModel {
         if (d.previewOnly) return
         endCruise()
         val n = Navigator(route, d.destination, d.stops, scope)
+        // Roads tapped away on the plan stay avoided when the way is worked out again on the drive.
+        if (d.mode == TravelMode.DRIVE) n.avoid = d.avoid
         nav = n
         n.onFinished = { if (nav === n) endNavigation() }
         // In a tunnel the Navigator carries on along the route by itself: move the arrow with it.
