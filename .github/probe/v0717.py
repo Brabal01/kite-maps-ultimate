@@ -59,24 +59,33 @@ def rings(rel):
         out.append(ring)
     return out
 
-print("== Clean air zones in OpenStreetMap (Britain)")
-d = overpass('[out:json][timeout:170];(relation["boundary"="low_emission_zone"](49.8,-8.7,61,2);'
-             'way["boundary"="low_emission_zone"](49.8,-8.7,61,2););out tags geom;')
-for e in (d or {}).get("elements", []):
-    tags = e.get("tags", {})
-    rs = rings(e) if e["type"] == "relation" else [[(g["lat"], g["lon"]) for g in e.get("geometry", [])]]
-    print("ZONE", e["type"], e["id"], json.dumps(tags))
-    for r in rs:
-        if len(r) < 4: continue
-        s = rdp(r, 120 if len(r) > 2000 else 40)
-        print("  RING", len(r), "->", len(s), json.dumps([[round(a, 5), round(b, 5)] for a, b in s]))
+print("== Clean air zones in OpenStreetMap (Britain), city by city")
+CITIES = {"Birmingham": (52.44, -1.95, 52.52, -1.84), "Bristol": (51.42, -2.65, 51.50, -2.53), "Bath": (51.36, -2.42, 51.41, -2.32),
+          "Oxford": (51.73, -1.29, 51.78, -1.22), "Glasgow": (55.84, -4.30, 55.88, -4.22), "Edinburgh": (55.93, -3.23, 55.97, -3.15),
+          "Aberdeen": (57.13, -2.13, 57.16, -2.07), "Dundee": (56.45, -3.00, 56.48, -2.94), "Portsmouth": (50.78, -1.11, 50.83, -1.06),
+          "Bradford": (53.76, -1.81, 53.83, -1.70), "Sheffield": (53.36, -1.50, 53.40, -1.43), "Newcastle": (54.95, -1.65, 54.99, -1.58),
+          "London": (51.28, -0.52, 51.70, 0.34)}
+for city, (s_, w, n, e_) in CITIES.items():
+    d = overpass(f'[out:json][timeout:90];(relation["boundary"="low_emission_zone"]({s_},{w},{n},{e_});'
+                 f'way["boundary"="low_emission_zone"]({s_},{w},{n},{e_}););out tags geom;')
+    if d is None: print(" ", city, "overpass failed"); continue
+    print(" ", city, len(d.get("elements", [])), "zones")
+    for el in d.get("elements", []):
+        tags = el.get("tags", {})
+        rs = rings(el) if el["type"] == "relation" else [[(g["lat"], g["lon"]) for g in el.get("geometry", [])]]
+        print("ZONE", city, el["type"], el["id"], json.dumps(tags))
+        for r in rs:
+            if len(r) < 4: continue
+            sm = rdp(r, 250 if len(r) > 3000 else 40)
+            print("  RING", len(r), "->", len(sm), json.dumps([[round(x, 5), round(y, 5)] for x, y in sm]))
 
 print("== Greater London boundary (for the ULEZ, which covers all of it)")
-d = overpass('[out:json][timeout:170];relation["boundary"="administrative"]["admin_level"="5"]["name"="Greater London"];out tags geom;')
-for e in (d or {}).get("elements", []):
-    for r in rings(e):
-        s = rdp(r, 250)
-        print("  LONDON RING", len(r), "->", len(s), json.dumps([[round(a, 4), round(b, 4)] for a, b in s]))
+d = overpass('[out:json][timeout:170];rel(175342);out tags geom;')
+for el in (d or {}).get("elements", []):
+    print("  name", el.get("tags", {}).get("name"))
+    for r in rings(el):
+        sm = rdp(r, 300)
+        print("  LONDON RING", len(r), "->", len(sm), json.dumps([[round(x, 4), round(y, 4)] for x, y in sm]))
 
 print("== OSRM time table (Southampton)")
 try:
@@ -86,27 +95,44 @@ try:
 except Exception as e:
     print("  table failed", e)
 
-print("== Valhalla route avoiding a spot (Avenue, Southampton)")
+print("== Valhalla route avoiding a spot on its own route (Southampton)")
+def dec(st, p=1e6):
+    idx = lat = lng = 0; out = []
+    while idx < len(st):
+        for k in range(2):
+            sh = res = 0
+            while True:
+                c = ord(st[idx]) - 63; idx += 1; res |= (c & 0x1f) << sh; sh += 5
+                if c < 0x20: break
+            v = ~(res >> 1) if res & 1 else res >> 1
+            if k == 0: lat += v
+            else: lng += v
+        out.append((lat / p, lng / p))
+    return out
 try:
     req = {"locations": [{"lat": 50.9097, "lon": -1.4044}, {"lat": 50.9346, "lon": -1.3966}], "costing": "auto",
-           "exclude_locations": [{"lat": 50.9220, "lon": -1.4010}], "directions_options": {"units": "kilometers"}}
-    code, body = get("https://valhalla1.openstreetmap.de/route?json=" + urllib.parse.quote(json.dumps(req)), t=30)
-    j = json.loads(body)
-    print(" ", code, "km", j["trip"]["summary"]["length"], "s", j["trip"]["summary"]["time"], "shape", j["trip"]["legs"][0]["shape"][:80])
-    req.pop("exclude_locations")
-    code, body = get("https://valhalla1.openstreetmap.de/route?json=" + urllib.parse.quote(json.dumps(req)), t=30)
-    j = json.loads(body)
-    print("  without:", code, "km", j["trip"]["summary"]["length"], "s", j["trip"]["summary"]["time"])
+           "directions_options": {"units": "kilometers", "narrative": False}}
+    code, body = get("https://valhalla1.openstreetmap.de/route", json.dumps(req).encode(), {"Content-Type": "application/json"}, t=30)
+    j = json.loads(body); line = dec(j["trip"]["legs"][0]["shape"])
+    mid = line[len(line) // 2]
+    print("  plain:", code, "km", j["trip"]["summary"]["length"], "points", len(line), "mid", mid)
+    req["exclude_locations"] = [{"lat": mid[0], "lon": mid[1]}]
+    code, body = get("https://valhalla1.openstreetmap.de/route", json.dumps(req).encode(), {"Content-Type": "application/json"}, t=30)
+    j = json.loads(body); l2 = dec(j["trip"]["legs"][0]["shape"])
+    print("  avoiding mid:", code, "km", j["trip"]["summary"]["length"], "closest to mid m", round(min(dist(mid, q) for q in l2)))
 except Exception as e:
-    print("  valhalla failed", e)
+    print("  valhalla failed", repr(e))
 
 print("== Main entrances near big places")
-for name, lat, lng in [("Southampton General", 50.9330, -1.4335), ("Westquay", 50.9045, -1.4085),
-                       ("Southampton Central station", 50.9077, -1.4136), ("Heathrow T5", 51.4720, -0.4880)]:
-    d = overpass(f'[out:json][timeout:60];node["entrance"~"main|yes"](around:400,{lat},{lng});out tags;')
-    els = (d or {}).get("elements", [])
-    print(" ", name, len(els), "entrances,", sum(1 for x in els if x["tags"].get("entrance") == "main"), "main:",
-          [ (x["lat"], x["lon"], x["tags"].get("name") or x["tags"].get("ref") or "", x["tags"].get("access", "")) for x in els if x["tags"].get("entrance") == "main"][:6])
+try:
+    for name, lat, lng in [("Southampton General", 50.9330, -1.4335), ("Westquay", 50.9045, -1.4085),
+                           ("Southampton Central station", 50.9077, -1.4136), ("Heathrow T5", 51.4720, -0.4880)]:
+        d = overpass(f'[out:json][timeout:60];node["entrance"~"main|yes"](around:400,{lat},{lng});out;')
+        els = (d or {}).get("elements", [])
+        print(" ", name, len(els), "entrances,", sum(1 for x in els if x["tags"].get("entrance") == "main"), "main:",
+              [ (x["lat"], x["lon"], x["tags"].get("name") or x["tags"].get("ref") or "", x["tags"].get("access", "")) for x in els if x["tags"].get("entrance") == "main"][:6])
+except Exception as e:
+    print("  entrances failed", repr(e))
 
 print("== Traffic light tags (central Southampton)")
 d = overpass('[out:json][timeout:60];node["highway"="traffic_signals"](50.90,-1.42,50.93,-1.38);out tags;')
