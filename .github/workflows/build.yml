@@ -322,7 +322,10 @@ jobs:
 
   screens:
     name: Screenshots (simulator)
-    runs-on: macos-15
+    # The shared app's map needs the iOS 26+ SDK (Xcode 16 can't link it).
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
@@ -349,7 +352,7 @@ jobs:
       - name: Take screenshots
         run: |
           set -x
-          DEV=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) if 'iOS' in k for x in d[k] if x['name'].startswith('iPhone 16') or x['name'].startswith('iPhone 15')))")
+          DEV=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; ph=[x for k in sorted(d, reverse=True) if 'iOS' in k for x in d[k] if x['name'].startswith('iPhone')]; print(next((x['udid'] for x in ph if x['name'].endswith('Pro')), ph[0]['udid']))")
           xcrun simctl boot "$DEV"
           xcrun simctl bootstatus "$DEV" -b
           xcrun simctl ui "$DEV" appearance dark
