@@ -1,27 +1,41 @@
+// Kite's engine: search, routing, cameras, Waze... no screens. Shared by the Android and iPhone apps.
+// jvm() is what the Android app uses; the iOS targets go into the iPhone app.
 plugins {
-    id("org.jetbrains.kotlin.jvm")
-    `java-library`
-}
-
-java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    id("org.jetbrains.kotlin.multiplatform")
 }
 
 kotlin {
-    compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
-}
+    jvm {
+        compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
+        testRuns["test"].executionTask.configure {
+            useJUnit()
+            // Live checks against the real servers only when asked: `-Plive`.
+            systemProperty("kite.live", providers.gradleProperty("live").isPresent.toString())
+            testLogging { events("failed"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
+        }
+    }
+    iosArm64()
+    iosSimulatorArm64()
 
-dependencies {
-    api("com.squareup.okhttp3:okhttp:5.5.0")
-    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-    testImplementation(kotlin("test"))
-    testImplementation("junit:junit:4.13.2")
-}
+    compilerOptions {
+        optIn.addAll("kotlin.uuid.ExperimentalUuidApi", "kotlin.time.ExperimentalTime", "kotlin.io.encoding.ExperimentalEncodingApi", "kotlinx.cinterop.ExperimentalForeignApi")
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
 
-tasks.test {
-    useJUnit()
-    // Live checks against the real servers only when asked: `-Plive`.
-    systemProperty("kite.live", providers.gradleProperty("live").isPresent.toString())
-    testLogging { events("failed"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
+    sourceSets {
+        commonMain.dependencies {
+            api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+            api("io.ktor:ktor-client-core:3.6.1")
+            implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
+        }
+        jvmMain.dependencies {
+            implementation("io.ktor:ktor-client-okhttp:3.6.1")
+        }
+        iosMain.dependencies {
+            implementation("io.ktor:ktor-client-darwin:3.6.1")
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
+    }
 }
