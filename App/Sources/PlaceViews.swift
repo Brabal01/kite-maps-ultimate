@@ -437,8 +437,10 @@ enum OtherApp: String, CaseIterable {
  */
 struct ReviewsList: View {
     let place: Place
+    /** Google's list of reviews stopped answering apps (checked 2026-11-21): the one review Google
+     *  sends with the place, and the full list on Google's own page inside Kite. */
     @State private var reviews: [GoogleReview]?
-    @State private var failed = false
+    @State private var failed = true
     @State private var web: URL?
     @Environment(\.colorScheme) private var scheme
 
@@ -485,14 +487,6 @@ struct ReviewsList: View {
                         .background(Capsule().fill(Vela.tonal(scheme)))
                 }
                 .buttonStyle(.plain)
-            }
-        }
-        .task(id: place.id) {
-            guard let fid = place.featureId else { failed = true; return }
-            if let found = await GoogleClient.shared.reviews(featureId: fid) {
-                reviews = found
-            } else {
-                failed = true
             }
         }
         .sheet(item: $web) { url in

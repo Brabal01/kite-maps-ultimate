@@ -384,13 +384,10 @@ fun vehicleIcon(v: TransitLeg.Vehicle) = when (v) {
 fun ReviewsList(place: Place) {
     val ctx = LocalContext.current
     val dark = LocalDark.current
-    var reviews by remember(place.id) { mutableStateOf<List<GoogleReview>?>(null) }
-    var failed by remember(place.id) { mutableStateOf(false) }
-    LaunchedEffect(place.id) {
-        val fid = place.featureId ?: run { failed = true; return@LaunchedEffect }
-        val found = GoogleClient.shared.reviews(fid)
-        if (found != null) reviews = found else failed = true
-    }
+    // Google's list of reviews stopped answering apps (checked 2026-11-21): the one review Google
+    // sends with the place, and the full list on Google's own page.
+    val reviews: List<GoogleReview>? = null
+    val failed = true
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         place.rating?.let { rating ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {

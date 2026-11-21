@@ -89,4 +89,19 @@ final class MatcherTests: XCTestCase {
         XCTAssertTrue(ArrivalHelp.isBigPlace("Shopping mall"))
         XCTAssertFalse(ArrivalHelp.isBigPlace("Cafe"))
     }
+
+    func testCleanAirZones() {
+        func names(_ line: [LatLng], clean: Bool = false) -> [String] { CleanAirZones.on(line, cleanCar: clean).map(\.name) }
+        // Into central London from outside: the ULEZ, and nothing once the car meets the rules.
+        XCTAssertEqual(names([LatLng(51.60, -0.60), LatLng(51.5074, -0.1278)]), ["London ULEZ"])
+        XCTAssertEqual(names([LatLng(51.60, -0.60), LatLng(51.5074, -0.1278)], clean: true), [])
+        XCTAssertEqual(CleanAirZones.on([LatLng(51.5074, -0.1278), LatLng(51.5080, -0.1270)], cleanCar: false).first?.zone, true)
+        // Oxford's zone charges every car that isn't electric.
+        XCTAssertEqual(names([LatLng(51.70, -1.30), LatLng(51.7527, -1.2590)], clean: true), ["Oxford Zero Emission Zone"])
+        XCTAssertEqual(names([LatLng(55.90, -4.40), LatLng(55.8611, -4.2502)]), ["Glasgow Low Emission Zone"])
+        XCTAssertEqual(names([LatLng(52.55, -1.80), LatLng(52.4797, -1.9026)]), ["Birmingham Clean Air Zone"])
+        // Southampton, and a drive past London that never goes in.
+        XCTAssertEqual(names([LatLng(50.90, -1.40), LatLng(50.93, -1.39)]), [])
+        XCTAssertEqual(names([LatLng(51.60, -0.60), LatLng(51.70, -0.55)]), [])
+    }
 }

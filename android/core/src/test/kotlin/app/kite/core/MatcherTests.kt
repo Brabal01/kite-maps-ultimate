@@ -92,4 +92,19 @@ class MatcherTests {
         assertTrue(ArrivalHelp.isBigPlace("Shopping mall"))
         assertTrue(!ArrivalHelp.isBigPlace("Cafe"))
     }
+
+    @Test fun cleanAirZones() {
+        fun names(to: LatLng, clean: Boolean = false) = CleanAirZones.on(listOf(LatLng(51.60, -0.60), to), clean).map { it.name }
+        // Into central London from outside: the ULEZ, and nothing once the car meets the rules.
+        assertEquals(listOf("London ULEZ"), names(LatLng(51.5074, -0.1278)))
+        assertEquals(emptyList<String>(), names(LatLng(51.5074, -0.1278), clean = true))
+        assertTrue(CleanAirZones.on(listOf(LatLng(51.5074, -0.1278), LatLng(51.5080, -0.1270)), false).single().zone)
+        // Oxford's zone charges every car that isn't electric.
+        assertEquals(listOf("Oxford Zero Emission Zone"), CleanAirZones.on(listOf(LatLng(51.70, -1.30), LatLng(51.7527, -1.2590)), true).map { it.name })
+        assertEquals(listOf("Glasgow Low Emission Zone"), CleanAirZones.on(listOf(LatLng(55.90, -4.40), LatLng(55.8611, -4.2502)), false).map { it.name })
+        assertEquals(listOf("Birmingham Clean Air Zone"), CleanAirZones.on(listOf(LatLng(52.55, -1.80), LatLng(52.4797, -1.9026)), false).map { it.name })
+        // Southampton, and a drive past London that never goes in.
+        assertEquals(emptyList<String>(), CleanAirZones.on(listOf(LatLng(50.90, -1.40), LatLng(50.93, -1.39)), false).map { it.name })
+        assertEquals(emptyList<String>(), CleanAirZones.on(listOf(LatLng(51.60, -0.60), LatLng(51.70, -0.55)), false).map { it.name })
+    }
 }
