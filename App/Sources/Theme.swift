@@ -190,6 +190,11 @@ enum Fmt {
         return m == 0 ? "\(h)h" : "\(h)h \(m)m"
     }
 
+    /** "4 min" on foot, from metres in a straight line (a little slower than walking pace for the corners). */
+    static func walkMinutes(_ meters: Double) -> String {
+        "\(max(1, Int((meters / 70).rounded()))) min"
+    }
+
     static func arrival(_ s: Double) -> String {
         let f = DateFormatter()
         f.timeStyle = .short
@@ -224,13 +229,14 @@ struct StatusText: View {
 
 struct Stars: View {
     let rating: Double
+    var size: CGFloat = 11
 
     var body: some View {
         HStack(spacing: 1) {
             ForEach(0..<5, id: \.self) { i in
                 let fill = rating - Double(i)
                 Image(systemName: fill >= 0.75 ? "star.fill" : (fill >= 0.25 ? "star.leadinghalf.filled" : "star"))
-                    .font(.system(size: 11))
+                    .font(.system(size: size))
                     .foregroundColor(Vela.star)
             }
         }

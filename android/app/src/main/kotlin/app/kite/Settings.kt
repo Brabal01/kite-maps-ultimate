@@ -82,6 +82,10 @@ object AppSettings {
     var policeRisk by bool("policeRisk", true)
     var policeAircraft by bool("policeAircraft")
     var parkingButton by bool("parkingButton", true)
+    /** Switch to the driving view by itself when you set off with no route (and back once parked). */
+    var autoDrive by bool("autoDrive", true)
+    /** "My car meets the rules": clean air zones on a route aren't flagged. */
+    var cleanCar by bool("cleanCar")
     /** The drive in progress, kept so it can be offered again if the app closes halfway. */
     var trip: SavedTrip? by Pref("trip", { p -> p.getString("trip", null)?.let { SavedTrip.decode(it) } },
         { e, v -> if (v == null) e.remove("trip") else e.putString("trip", v.encode()) })

@@ -23,6 +23,8 @@ struct ContentView: View {
                 .ignoresSafeArea()
             if let nav = model.nav {
                 NavigationOverlay(model: model, nav: nav)
+            } else if let cruise = model.cruise {
+                CruiseOverlay(model: model, cruise: cruise)
             } else if model.directions != nil {
                 DirectionsOverlay(model: model).inSidePanel(panel)
             } else {
@@ -124,6 +126,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.addingStop) {
             StopPicker(model: model).kiteType()
+        }
+        .sheet(isPresented: $model.pickingOrigin) {
+            StopPicker(model: model, origin: true).kiteType()
         }
         .sheet(item: $model.picking) { kind in
             PlacePicker(model: model, kind: kind).kiteType()
@@ -799,6 +804,25 @@ enum DemoScript {
             if step == "northup" { model.cycleDriveLook(); model.cycleDriveLook() }
             return
         }
+        if step == "cruise" {
+            // 0.7.17: the driving view by itself, on the A9 out of Perth, in miles.
+            // Put on the real road: a point a couple of kilometres along the route to Pitlochry.
+            model.settings.units = .yards
+            let to = Place(id: "demo-pitlochry", name: "Pitlochry", location: LatLng(56.7030, -3.7340), source: "demo")
+            model.select(to)
+            await wait(2)
+            model.openDirections(to: to)
+            for _ in 0..<30 where model.directions?.route == nil { await wait(1) }
+            guard let route = model.directions?.route else { return }
+            // 100 m into the first named road with room ahead, so the name has a road to be written on.
+            let step = route.maneuvers.first { ($0.road ?? "").isEmpty == false && $0.distanceMeters >= 500 }
+            let at = step.map { $0.alongMeters + 100 } ?? min(1_600, Geo.length(route.polyline) / 2)
+            model.closeDirections()
+            model.closePlace()
+            await wait(2)
+            model.demoCruise(on: route.polyline, at: at, road: step?.road, ref: "A9")
+            return
+        }
         if step == "uk" {
             // Driving north out of Perth on the A9, in miles and yards, with camera alerts up.
             model.settings.units = .yards
@@ -846,6 +870,9 @@ enum DemoScript {
         await wait(5)
         guard !["place", "lookaround", "copy"].contains(step) else { return }
         if step == "wazeroute" { RouteWazeSummary.demo = [(.police, 2), (.accident, 1), (.hazard, 3)] }
+        if step == "zones" {
+            RouteCharges.demo = [RoadCharge(name: "London ULEZ", note: "Older cars pay a daily charge: most petrol cars from before 2006 and diesels from before late 2015. Pay online.", zone: true)]
+        }
         if step == "charges" {
             RouteCharges.demo = [RoadCharge(name: "Dartford Crossing", note: "No barriers. Charged 6 am to 10 pm. Pay the Dart Charge online by midnight the day after.")]
         }
@@ -853,7 +880,11 @@ enum DemoScript {
         if step == "stops", let second = model.visibleResults.dropFirst().first { model.addStop(second) }
         await wait(8)
         if step == "addstop" { model.addingStop = true; return }
-        if step == "charges" { model.detent = .full; return }
+        if step == "charges" || step == "zones" { model.detent = .full; return }
+        if step == "avoid", let line = model.directions?.route?.polyline, line.count > 2 {
+            model.avoidAsk = AvoidAsk(point: line[line.count / 2], road: "Russell Boulevard")
+            return
+        }
         guard ["nav", "camalert", "wazealert", "trafficalert", "allalerts", "endtrip", "faster"].contains(step) else { return }
         model.startNavigation()
         if step == "faster" {

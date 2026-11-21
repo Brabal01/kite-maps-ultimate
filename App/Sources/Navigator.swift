@@ -127,6 +127,8 @@ final class Navigator: ObservableObject {
     private var rerouteRequest = 0
     /** Set once the trip is ended, so a late answer never talks or moves anything. */
     private var stopped = false
+    /** Roads tapped away on the plan (a point on each): reroutes and faster ways keep off them too. */
+    var avoid: [LatLng] = []
     private var avoidHighways: Bool
     private var avoidTolls: Bool
     private var routeCameras: [(camera: RoadCamera, along: Double)] = []
@@ -259,6 +261,13 @@ final class Navigator: ObservableObject {
         // Leaving a roundabout is part of the roundabout, not a turn of its own.
         if b.leavesRoundabout { return nil }
         return b.alongMeters - a.alongMeters < 300 ? b : nil
+    }
+
+    /** How far after the next turn the "Then" one comes, for "Then ↰ after 40 yds". */
+    var thenGap: Double? {
+        guard let b = thenManeuver, let a = nextManeuver else { return nil }
+        let gap = b.alongMeters - a.alongMeters
+        return gap > 0 ? gap : nil
     }
 
     /**
@@ -907,7 +916,8 @@ final class Navigator: ObservableObject {
             let saving = current - fresh.durationSeconds
             // The same way, more or less: just a better arrival time.
             let sameWay = abs(fresh.distanceMeters - now.remainingMeters) < max(300, now.remainingMeters * 0.03)
-            if !sameWay, saving > max(300, current * 0.1) {
+            // A faster way back along a road that was tapped away is no offer at all.
+            if !sameWay, saving > max(300, current * 0.1), !Directions.touches(fresh.polyline, self.avoid) {
                 let left = Geo.slice(self.route.polyline, from: now.alongMeters, to: Geo.length(self.route.polyline))
                 self.offerFaster(fresh, saving: saving, remainingMeters: now.remainingMeters, remainingLine: left)
             } else if sameWay {
@@ -923,8 +933,9 @@ final class Navigator: ObservableObject {
     private func offerFaster(_ fresh: Route, saving: Double, remainingMeters: Double, remainingLine: [LatLng]) {
         let minutes = max(1, Int((saving / 60).rounded()))
         // What else changes, so it's an easy call: longer or shorter, and any pay-later charge it adds.
-        let had = Set(RoadCharges.on(remainingLine).map(\.name))
-        let charges = RoadCharges.on(fresh.polyline).map(\.name).filter { !had.contains($0) }
+        let clean = AppSettings.shared.cleanCar
+        let had = Set((RoadCharges.on(remainingLine) + CleanAirZones.on(remainingLine, cleanCar: clean)).map(\.name))
+        let charges = (RoadCharges.on(fresh.polyline) + CleanAirZones.on(fresh.polyline, cleanCar: clean)).map(\.name).filter { !had.contains($0) }
         let offer = FasterOffer(minutes: minutes, via: fresh.summary, until: Date().addingTimeInterval(Self.fasterWait),
                                 extraMeters: fresh.distanceMeters - remainingMeters, newCharges: charges)
         fasterRoute = fresh
@@ -1042,10 +1053,17 @@ final class Navigator: ObservableObject {
         let hw = avoidHighways, tolls = avoidTolls
         rerouteRequest += 1
         let req = rerouteRequest
+        let avoid = mode == .drive ? self.avoid : []
         Task {
-            let r = await Directions.routes(from: from, to: to, mode: mode, avoidHighways: hw, avoidTolls: tolls,
+            var r = await Directions.routes(from: from, to: to, mode: mode, avoidHighways: hw, avoidTolls: tolls,
                                             useGoogle: !AppSettings.shared.noGoogle, via: self.stops.map(\.location),
                                             heading: course)
+            // The new way goes back along a road tapped away on the plan: the way round it instead,
+            // when there is one (otherwise the usual route, rather than none at all).
+            if !avoid.isEmpty, let first = r.routes.first, Directions.touches(first.polyline, avoid), req == self.rerouteRequest,
+               let round = await Directions.avoiding(from: from, to: to, via: self.stops.map(\.location), avoid: avoid) {
+                r.routes = [round]
+            }
             guard !self.stopped, req == self.rerouteRequest else { return }
             self.rerouting = false
             // Parked at the destination while the new route was loading: the trip is over, keep it that way.

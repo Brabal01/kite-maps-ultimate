@@ -3,6 +3,37 @@
 Every version of Kite Maps, newest first. The small number goes up for fixes and polish, and
 the middle number for big milestones.
 
+## 0.7.17 (iPhone and Android)
+
+Ideas from a Kite user on GitHub, picked by Matteo:
+
+- **Driving view by itself:** with Kite open and no route, once you're going faster than about
+  15 mph for a few seconds the driving view comes up on its own: the road you're on, its speed
+  limit, your speed, speed cameras and drivers' reports ahead. It goes back to the map after two
+  minutes parked, or with the ✕. Settings has a switch to turn it off (handy as a passenger).
+- **The road's name on the road:** the name of the road you're on is written along the road just
+  ahead of the car, like a road marking, instead of in a pill under the arrow.
+- **Next turn on the lock screen (iPhone):** the turn arrow, distance and arrival time show on the
+  lock screen and in the Dynamic Island while you drive. Android already had this.
+- **What's on the route before you go:** the police, roadworks and crash counts on the route card
+  can be tapped to show each one on the map and in a list.
+- **Avoid a road:** tap a road on the planned route and Kite finds a way round it, with Undo. The
+  road stays avoided if Kite has to work out the way again on the drive.
+- **Google reviews:** a Reviews tab on a place, with the place's top reviews and a link to all of
+  them on Google.
+- **Avoid tolls, checked:** with Avoid tolls on, the route card says "No tolls on this route", or
+  names the toll road when there was no way round.
+- **Start from anywhere:** set a different starting point to see the route and time from there.
+- **Parking and the main entrance:** for big places, the route card offers the main entrance and
+  nearby car parks to drive to instead.
+- **Two close turns:** the Then box shows how far the second turn is after the first.
+- **Traffic lights:** only the lights facing your direction are counted and shown.
+- **Clean air zones:** routes into London's ULEZ, Birmingham, Bristol, Oxford's zero emission zone
+  or Scotland's low emission zones say so on the route card. Settings, Routes has "My car meets
+  clean air zone rules" to hide them (Oxford's zone still shows, since only electric cars are free).
+  No prices, as before.
+- **Detour times:** places found along the route show how much time the stop adds ("+3 min").
+
 ## 0.7.16 (iPhone and Android)
 
 Four ideas from a Kite user on GitHub, picked by Matteo:

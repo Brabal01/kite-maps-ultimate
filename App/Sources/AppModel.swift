@@ -74,6 +74,17 @@ struct DirectionsState {
     /** Places to stop at on the way, in order. */
     var stops: [Place] = []
     var transit = false
+    /** Somewhere else to start from instead of where you are (GitHub #55): to look at a trip, not drive it. */
+    var origin: Place?
+    /** Spots on roads tapped to avoid, with the roads' names. */
+    var avoid: [LatLng] = []
+    var avoidNames: [String] = []
+    /** The driving routes from before avoiding a road, for Undo. */
+    var beforeAvoid: [Route]?
+    /** The place as first picked, while the trip goes to its main entrance or a car park instead. */
+    var original: Place?
+    /** What the trip ends at instead of the place itself: "Main entrance", or the car park's name. */
+    var endNote: String?
     var trips: [TransitTrip]?
     var tripsError: String?
     /** Nil for "leave now". */
@@ -82,8 +93,16 @@ struct DirectionsState {
     var trip = 0
 
     var current: [Route] { transit ? [] : routes[mode] ?? [] }
+    /** Just looking: the trip doesn't start where you are, so there's no Go. */
+    var previewOnly: Bool { reversed || origin != nil }
     var route: Route? { current.indices.contains(selected) ? current[selected] : current.first }
     var pickedTrip: TransitTrip? { transit ? trips.flatMap { $0.indices.contains(trip) ? $0[trip] : $0.first } : nil }
+}
+
+/** A road tapped on the planned route, waiting for "Avoid" or "Cancel". */
+struct AvoidAsk: Equatable {
+    let point: LatLng
+    let road: String?
 }
 
 /** The whole app's state; the map and every sheet read it. */
@@ -144,6 +163,22 @@ final class AppModel: ObservableObject {
     @Published var browseLook: MapLook = .north
     /** Whether the browse map is following you in 3D or 2D; dragging the map stops it. */
     @Published var browseFollowing = false
+    /** The driving view with no route, switched to by itself when you set off (nil when not driving). */
+    @Published var cruise: Cruise?
+    /** Waze reports found along the route being planned, shown as icons on it before you go. */
+    @Published var routeReports: [WazeAlert] = []
+    /** "Avoid Bassett Avenue?" after tapping the planned route. */
+    @Published var avoidAsk: AvoidAsk?
+    @Published var avoidBusy = false
+    @Published var pickingOrigin = false
+    /** The place whose Reviews tab to open (its stars were tapped). */
+    @Published var showReviews: String?
+    private var cruiseSub: AnyCancellable?
+    /** When fast driving with no route began, for switching to the driving view after a few seconds. */
+    private var movingSince: Date?
+    /** Closed with the ✕: stays closed until the car next stops for a while. */
+    private var cruiseClosed = false
+    private var cruiseClosedStill: Date?
 
     weak var map: MLNMapView? { didSet { glide.map = map } }
     /** How wide the side panel is on a big screen (the open iPhone Duo), so the map centres
@@ -544,8 +579,92 @@ final class AppModel: ObservableObject {
         if let p = selected { select(p) }
     }
 
+    /**
+     * End the trip at [p] instead of the place picked (its main entrance, or a car park near it),
+     * with [note] saying so; nil goes back to the place itself.
+     */
+    func endAt(_ p: LatLng?, note: String?) {
+        guard let d = directions else { return }
+        let place = d.original ?? d.destination
+        if let p {
+            var dest = place
+            dest.location = p
+            if let note, note != "Main entrance" { dest.name = note }
+            directions?.original = place
+            directions?.destination = dest
+            directions?.endNote = note
+        } else {
+            directions?.destination = place
+            directions?.original = nil
+            directions?.endNote = nil
+        }
+        reloadRoutes()
+    }
+
+    /** Start the trip from [p] instead of here; nil goes back to your location. */
+    func setOrigin(_ p: Place?) {
+        guard directions != nil else { return }
+        directions?.origin = p
+        reloadRoutes()
+    }
+
+    /** The road under a tap on the planned route, to ask whether to avoid it. */
+    func askAvoid(at tap: LatLng) {
+        guard let d = directions, !d.transit, d.mode == .drive, let r = d.route else { return }
+        let hit = Geo.project(tap, on: r.polyline)
+        guard hit.offset < 60 else { return }
+        let at = Geo.point(along: r.polyline, meters: hit.along)
+        // Not the very start or end: the trip has to begin and finish somewhere.
+        let total = Geo.length(r.polyline)
+        guard hit.along > 150, hit.along < total - 150 else { return }
+        let road = r.maneuvers.last(where: { $0.alongMeters <= hit.along + 1 })?.road
+        UISelectionFeedbackGenerator().selectionChanged()
+        avoidAsk = AvoidAsk(point: at, road: road)
+    }
+
+    /** A way round the road just tapped: the road map's router kept off it, with turn-by-turn from the open router. */
+    func avoidRoad() {
+        guard let ask = avoidAsk, let d = directions, let r = d.route, r.polyline.count >= 2 else { avoidAsk = nil; return }
+        avoidAsk = nil
+        let name = ask.road ?? "that road"
+        let points = d.avoid + [ask.point]
+        let via = (d.reversed ? d.stops.reversed() : d.stops).map(\.location)
+        let from = r.polyline[0], to = r.polyline[r.polyline.count - 1]
+        let destId = d.destination.id
+        avoidBusy = true
+        Task {
+            defer { avoidBusy = false }
+            guard let found = await Directions.avoiding(from: from, to: to, via: via, avoid: points) else {
+                guard directions?.destination.id == destId else { return }
+                notice = "Couldn't find a way round \(name)."
+                return
+            }
+            guard directions?.destination.id == destId, directions?.mode == .drive else { return }
+            if directions?.beforeAvoid == nil { directions?.beforeAvoid = directions?.routes[.drive] }
+            directions?.avoid = points
+            directions?.avoidNames.append(name)
+            directions?.routes[.drive] = [found]
+            directions?.selected = 0
+            frameRoute()
+        }
+    }
+
+    /** Back to the routes from before any road was avoided. */
+    func undoAvoid() {
+        guard let before = directions?.beforeAvoid else { return }
+        directions?.routes[.drive] = before
+        directions?.avoid = []
+        directions?.avoidNames = []
+        directions?.beforeAvoid = nil
+        directions?.selected = 0
+        frameRoute()
+    }
+
     func reverseDirections() {
         directions?.reversed.toggle()
+        directions?.avoid = []
+        directions?.avoidNames = []
+        directions?.beforeAvoid = nil
         directions?.routes = [:]
         directions?.selected = 0
         directions?.trips = nil
@@ -599,6 +718,9 @@ final class AppModel: ObservableObject {
 
     func reloadRoutes() {
         guard directions != nil else { return }
+        directions?.avoid = []
+        directions?.avoidNames = []
+        directions?.beforeAvoid = nil
         directions?.routes = [:]
         directions?.errors = [:]
         directions?.selected = 0
@@ -607,7 +729,7 @@ final class AppModel: ObservableObject {
 
     private func loadAllModes() {
         guard let d = directions else { return }
-        guard let me = userLatLng else {
+        guard let me = d.origin?.location ?? userLatLng else {
             // Say so on the trip card itself, not just in passing.
             let why = location.denied ? Self.locationOffText : "Waiting for your location…"
             for m in TravelMode.allCases { directions?.errors[m] = why }
@@ -630,7 +752,7 @@ final class AppModel: ObservableObject {
         let hw = settings.avoidHighways, tolls = settings.avoidTolls, google = !settings.noGoogle
         // Already driving (asked at a red light, say): no route that starts with a U-turn.
         let moving = location.last.flatMap { l in l.speed >= 4 && l.course >= 0 && l.courseAccuracy >= 0 && l.courseAccuracy < 45 ? l.course : nil }
-        let heading = d.reversed ? nil : moving
+        let heading = d.previewOnly ? nil : moving
         for m in TravelMode.allCases {
             directions?.loading.insert(m)
             Task {
@@ -658,7 +780,7 @@ final class AppModel: ObservableObject {
 
     /** Transit trips for the current trip, leaving now or at the picked time. */
     func loadTransit() {
-        guard let d = directions, let me = userLatLng else { return }
+        guard let d = directions, let me = d.origin?.location ?? userLatLng else { return }
         transitLoadedAt = Date()
         // A new request either way, so one still loading can't put back trips without the stops.
         transitRequest += 1
@@ -716,8 +838,11 @@ final class AppModel: ObservableObject {
     // MARK: Navigation
 
     func startNavigation() {
-        guard let d = directions, let route = d.route, !d.reversed else { return }
+        guard let d = directions, let route = d.route, !d.previewOnly else { return }
+        endCruise()
         let n = Navigator(route: route, destination: d.destination, stops: d.stops, settings: settings)
+        // Roads tapped away on the plan stay avoided when the way is worked out again on the drive.
+        if d.mode == .drive { n.avoid = d.avoid }
         nav = n
         navSub = n.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         n.onFinished = { [weak self, weak n] in
@@ -736,9 +861,11 @@ final class AppModel: ObservableObject {
         location.setNavigating(true, mode: route.mode.rawValue)
         map?.showsUserLocation = false
         if let loc = location.last { n.handle(loc); followCamera(n, loc, animated: false) }
+        LiveTurn.shared.start(n)
     }
 
     func endNavigation() {
+        LiveTurn.shared.end()
         nav?.stop()
         glide.stop()
         nav = nil
@@ -783,6 +910,8 @@ final class AppModel: ObservableObject {
     private func followBrowse(_ loc: CLLocation, entering: Bool) {
         guard browseFollowing, browseLook != .north, nav == nil, let map else { return }
         guard entering || (selected == nil && results.isEmpty && directions == nil) else { return }
+        // The screenshots' made-up drive stays where it was put.
+        if !entering, cruise?.isDemo == true { return }
         let course = loc.course >= 0 && loc.speed > 2 ? loc.course : map.direction
         let cam: MLNMapCamera
         if entering {
@@ -815,6 +944,7 @@ final class AppModel: ObservableObject {
     private func locationChanged(_ loc: CLLocation) {
         if location.reducedAccuracy || loc.horizontalAccuracy > 200 { areaRisk = nil }
         guard let n = nav else {
+            cruiseCheck(loc)
             followBrowse(loc, entering: false)
             return
         }
@@ -822,6 +952,87 @@ final class AppModel: ObservableObject {
         followCamera(n, loc, animated: true)
         mapTick += 1
         tripCheck(n)
+        LiveTurn.shared.update(n)
+    }
+
+    /**
+     Driving with no route: after a few seconds above about 15 mph with nothing open, switch to the
+     driving view (speed, limit, cameras, road name). Opening a place or a route, or parking, ends it.
+     */
+    private func cruiseCheck(_ loc: CLLocation) {
+        if let c = cruise {
+            if directions != nil || selected != nil || !results.isEmpty { endCruise(); return }
+            c.handle(loc)
+            mapTick += 1
+            return
+        }
+        // After the ✕, wait until the car has stood still a minute before offering it again.
+        if cruiseClosed {
+            if loc.speed >= 0 && loc.speed < 1.5 {
+                if cruiseClosedStill == nil { cruiseClosedStill = loc.timestamp }
+                if let t = cruiseClosedStill, loc.timestamp.timeIntervalSince(t) > 60 { cruiseClosed = false }
+            } else {
+                cruiseClosedStill = nil
+            }
+            return
+        }
+        guard settings.autoDrive, tab == .map, directions == nil, selected == nil, results.isEmpty, picking == nil,
+              Cruise.shouldStart(loc, movingSince: &movingSince) else { return }
+        startCruise(loc)
+    }
+
+    private func startCruise(_ loc: CLLocation) {
+        let c = Cruise()
+        cruise = c
+        cruiseSub = c.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+        c.onParked = { [weak self] in self?.endCruise() }
+        movingSince = nil
+        location.setNavigating(true)
+        browseLook = .tilted
+        browseFollowing = true
+        showLayers = false
+        c.handle(loc)
+        followBrowse(loc, entering: true)
+    }
+
+    /** The driving view with no route, for the build's screenshots: a car doing 56 mph along [line]. */
+    func demoCruise(on line: [LatLng], at meters: Double, road: String?, ref: String?) {
+        guard line.count >= 2 else { return }
+        let p = Geo.point(along: line, meters: meters)
+        let course = Geo.bearing(p, Geo.point(along: line, meters: meters + 30))
+        let loc = CLLocation(coordinate: CLLocationCoordinate2D(latitude: p.lat, longitude: p.lng), altitude: 0,
+                             horizontalAccuracy: 5, verticalAccuracy: 5, course: course, speed: 25, timestamp: Date())
+        startCruise(loc)
+        cruise?.showDemo(loc, road: road ?? ref ?? "A9", ref: ref, limitKmh: 96.6)
+        mapTick += 1
+    }
+
+    /** A spot on the map, close up (a report along the route). */
+    func showSpot(_ p: LatLng) {
+        browseFollowing = false
+        map?.setCenter(CLLocationCoordinate2D(latitude: p.lat, longitude: p.lng), zoomLevel: 15, animated: true)
+    }
+
+    func recenterCruise() {
+        guard cruise != nil, let loc = location.last else { return }
+        browseFollowing = true
+        followBrowse(loc, entering: true)
+    }
+
+    /** Back to the map; [closed] is the ✕, which keeps it away until the next stop. */
+    func endCruise(closed: Bool = false) {
+        guard let c = cruise else { return }
+        c.stop()
+        cruise = nil
+        cruiseSub = nil
+        movingSince = nil
+        if closed { cruiseClosed = true; cruiseClosedStill = nil }
+        location.setNavigating(false)
+        if nav == nil {
+            browseLook = .north
+            browseFollowing = false
+            if directions == nil && selected == nil { resetCamera() }
+        }
     }
 
     /** Keeps the saved trip fresh while driving, and on arriving forgets it. */

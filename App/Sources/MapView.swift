@@ -127,6 +127,7 @@ struct VelaMapView: UIViewRepresentable {
         private var railFetch: Task<Void, Never>?
         /** Live Waze reports for the box last asked about, and when. */
         private var wazeAlerts: [WazeAlert] = []
+        private var lastRoadNameKey = ""
         private var wazeBox: (s: Double, w: Double, n: Double, e: Double)?
         private var wazeAt = Date.distantPast
         private var wazeFetch: Task<Void, Never>?
@@ -499,6 +500,38 @@ struct VelaMapView: UIViewRepresentable {
             nextRoad.textPitchAlignment = NSExpression(forConstantValue: "viewport")
             style.addLayer(nextRoad)
 
+            // The road you're on, written on the road just ahead of the car like a painted marking
+            // (Matteo's pick over a box on the screen). Lies flat and follows the road's bends.
+            // The map's own named roads, drawn too faintly to see: read back in the driving view with no
+            // route, so the name follows the road you're on round its bends.
+            if let omt = style.source(withIdentifier: "openmaptiles") as? MLNVectorTileSource {
+                let q = MLNLineStyleLayer(identifier: "vela-road-query", source: omt)
+                q.sourceLayerIdentifier = "transportation_name"
+                // Not quite 0: a layer that draws nothing at all can't be asked what's under it.
+                q.lineOpacity = NSExpression(forConstantValue: 0.01)
+                q.lineWidth = NSExpression(forConstantValue: 3)
+                style.addLayer(q)
+            }
+            let roadNameSrc = MLNShapeSource(identifier: "vela-road-name", shape: nil, options: nil)
+            style.addSource(roadNameSrc)
+            let roadName = MLNSymbolStyleLayer(identifier: "vela-road-name", source: roadNameSrc)
+            roadName.text = NSExpression(forKeyPath: "label")
+            roadName.symbolPlacement = NSExpression(forConstantValue: "line-center")
+            roadName.textPitchAlignment = NSExpression(forConstantValue: "map")
+            roadName.textRotationAlignment = NSExpression(forConstantValue: "map")
+            roadName.keepsTextUpright = NSExpression(forConstantValue: true)
+            roadName.textFontNames = NSExpression(forConstantValue: ["Noto Sans Bold"])
+            roadName.textFontSize = NSExpression(format: "mgl_interpolate:withCurveType:parameters:stops:($zoomLevel, 'linear', nil, %@)",
+                                                 [13: 15, 15: 18, 17: 22, 18: 26])
+            roadName.textLetterSpacing = NSExpression(forConstantValue: 0.08)
+            roadName.textTransform = NSExpression(forConstantValue: "uppercase")
+            roadName.textColor = NSExpression(forConstantValue: UIColor(hex: 0x0E3B36))
+            roadName.textHaloColor = NSExpression(forConstantValue: UIColor.white.withAlphaComponent(0.95))
+            roadName.textHaloWidth = NSExpression(forConstantValue: 2)
+            roadName.textAllowsOverlap = NSExpression(forConstantValue: true)
+            roadName.textIgnoresPlacement = NSExpression(forConstantValue: true)
+            style.addLayer(roadName)
+
             let puckSrc = MLNShapeSource(identifier: "vela-puck", shape: nil, options: nil)
             style.addSource(puckSrc)
             let puck = MLNSymbolStyleLayer(identifier: "vela-puck", source: puckSrc)
@@ -551,24 +584,77 @@ struct VelaMapView: UIViewRepresentable {
             style.layer(withIdentifier: "vela-sat")?.isVisible = s.satellite
             style.layer(withIdentifier: "vela-terrain")?.isVisible = s.terrain && !s.satellite
             for id in ["vela-rail", "vela-rail-case"] { style.layer(withIdentifier: id)?.isVisible = s.transitLines && !navigating }
-            if styledDriving != navigating {
-                MapStyler.drive(style, on: navigating)
-                styledDriving = navigating
+            // The driving view with no route gets the driving map too, without the route line.
+            let driving = navigating || model.cruise != nil
+            if styledDriving != driving {
+                MapStyler.drive(style, on: driving)
+                styledDriving = driving
                 // A bold route line while driving, like Waze; the usual blue when planning.
                 (style.layer(withIdentifier: "vela-route-line") as? MLNLineStyleLayer)?.lineWidth = NSExpression(forConstantValue: navigating ? 12 : 10)
                 (style.layer(withIdentifier: "vela-route-edge") as? MLNLineStyleLayer)?.lineWidth = NSExpression(forConstantValue: navigating ? 22 : 15)
             }
-            for id in ["building", "building-3d"] { style.layer(withIdentifier: id)?.isVisible = !s.satellite && !navigating }
+            for id in ["building", "building-3d"] { style.layer(withIdentifier: id)?.isVisible = !s.satellite && !driving }
             renderResults(style)
             renderRoutes(style)
             renderPuck(style)
             renderCameras(style)
             renderLiveCams(map, style)
             renderSignals(style)
+            renderRoadName(style)
             renderWaze(style)
             updateHeat(map)
             renderMine(style)
             if s.transitLines { loadRail(map) }
+        }
+
+        /**
+         * The road's name on the road ahead: 40 to 220 m along the route while navigating (left off
+         * when the next turn is close, where the turn arrow and the new road's name need the room),
+         * or straight ahead along your heading in the driving view with no route.
+         */
+        private func renderRoadName(_ style: MLNStyle) {
+            let src = style.source(withIdentifier: "vela-road-name") as? MLNShapeSource
+            var line: [LatLng] = []
+            var name: String?
+            if let n = model.nav {
+                if n.following, !n.arrived, let p = n.progress, let road = n.currentRoad,
+                   (n.nextManeuver.map { $0.alongMeters - p.alongMeters > 260 || $0.type == .straight } ?? true) {
+                    let cum = Geo.cumulative(n.route.polyline)
+                    let total = cum.last ?? 0
+                    let a = p.alongMeters + 40, b = min(p.alongMeters + 220, total)
+                    if b - a > 80 { line = Geo.slice(n.route.polyline, from: a, to: b, cumulative: cum); name = road }
+                }
+            } else if let c = model.cruise, model.browseFollowing, let fix = c.fix, fix.course >= 0, fix.speed > 2,
+                      let road = c.road ?? c.ref, let map = model.map {
+                // Along the map's own line for the road you're on, so it stays on the road round a bend;
+                // nothing when the map doesn't have it here (never floating off over a field).
+                let here = LatLng(fix.coordinate.latitude, fix.coordinate.longitude)
+                let pt = map.convert(fix.coordinate, toPointTo: map)
+                let box = CGRect(x: pt.x - 300, y: pt.y - 450, width: 600, height: 700).intersection(map.bounds)
+                var lines: [[LatLng]] = []
+                if !box.isNull {
+                    let match = NSPredicate(format: "name == %@ OR ref == %@", c.road ?? "", c.ref ?? "")
+                    func coords(_ p: MLNPolyline) -> [LatLng] {
+                        Array(UnsafeBufferPointer(start: p.coordinates, count: Int(p.pointCount))).map { LatLng($0.latitude, $0.longitude) }
+                    }
+                    for f in map.visibleFeatures(in: box, styleLayerIdentifiers: ["vela-road-query"], predicate: match) {
+                        if let m = f as? MLNMultiPolylineFeature { lines += m.polylines.map(coords) }
+                        else if let p = f as? MLNPolylineFeature { lines.append(coords(p)) }
+                    }
+                }
+                if let path = RoadAhead.path(lines, at: here, heading: fix.course) {
+                    line = path
+                    name = road
+                }
+            }
+            let key = (name ?? "") + (line.first.map { "\(Int($0.lat * 20_000)),\(Int($0.lng * 20_000))" } ?? "")
+            guard key != lastRoadNameKey else { return }
+            lastRoadNameKey = key
+            if let name, line.count >= 2 {
+                src?.shape = polyline(line, ["label": name])
+            } else {
+                src?.shape = nil
+            }
         }
 
         private func renderMine(_ style: MLNStyle) {
@@ -689,7 +775,7 @@ struct VelaMapView: UIViewRepresentable {
             let history = WazeHistory.shared.sightings
             let kinds = s.wazeKinds.map(\.rawValue).sorted().joined()
             // While navigating, drivers' reports from Waze's app servers too (the live map has only closures).
-            let live = model.nav?.liveAlerts ?? []
+            let live = model.nav?.liveAlerts ?? (model.directions != nil ? model.routeReports : [])
             // While driving, reports off your route fade back so the ones you'll meet stand out.
             let route = model.nav?.route.mode == .drive ? model.nav?.route.polyline ?? [] : []
             let key = "\(s.wazeOn)\(s.wazeOnMap)\(s.wazeHeatmap)\(s.wazeMaxAge)\(kinds)\(wazeAt.timeIntervalSince1970)\(history.count)\(live.map(\.id).joined())\(route.count)\(route.first?.lat ?? 0)"
@@ -1090,7 +1176,13 @@ struct VelaMapView: UIViewRepresentable {
                         let tapped = LatLng(c.latitude, c.longitude)
                         if let i = d.current.firstIndex(where: { r in r.id != d.route?.id && r.polyline.contains { $0.distance(to: tapped) < 300 } }) {
                             self.model.selectRoute(i)
+                            return
                         }
+                    }
+                    // A tap on the picked route itself: offer to avoid that road (GitHub idea, 0.7.17).
+                    if !map.visibleFeatures(in: box, styleLayerIdentifiers: ["vela-route-line", "vela-route-edge"]).isEmpty {
+                        let c = map.convert(pt, toCoordinateFrom: map)
+                        self.model.askAvoid(at: LatLng(c.latitude, c.longitude))
                     }
                     return
                 }

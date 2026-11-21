@@ -72,9 +72,6 @@ struct NavigationOverlay: View {
         (UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first?.bounds.height ?? 800) < 700
     }
 
-    /** A chip above the speed badge sits where the road name goes, so the name steps aside for it. */
-    private var chipShowing: Bool { showRiskChip }
-
     var body: some View {
         // One column, so however many warnings are up, they push the map buttons down rather than cover them.
         VStack(spacing: 10) {
@@ -243,23 +240,6 @@ struct NavigationOverlay: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .background(
-            // The road you're on, just under the arrow (the map keeps the arrow at this height while following).
-            GeometryReader { g in
-                if nav.following, !nav.arrived, !chipShowing, let road = nav.currentRoad {
-                    Text(road)
-                        .font(.system(size: 15, weight: .semibold))
-                        .lineLimit(1).minimumScaleFactor(0.7)
-                        .padding(.horizontal, 12).frame(height: 30)
-                        .foregroundColor(.primary)
-                        .glass(Capsule())
-                        // Between the speed sign and the mute button, which sit level with it now the car is lower.
-                        .frame(maxWidth: panel > 0 ? g.size.width - panel - 80 : g.size.width - 240)
-                        .position(x: panel + (g.size.width - panel) / 2, y: roadPillY(g.size.height, north: settings.driveLook == .north))
-                }
-            }
-            .ignoresSafeArea()
-        )
         .task {
             // Screenshot run: the end trip question.
             if DemoScript.step == "endtrip" {
@@ -431,6 +411,10 @@ struct InstructionBanner: View {
                     // Which exit, so the next roundabout is known before the banner changes.
                     Text("\(n)").font(.system(size: 14, weight: .heavy)).foregroundColor(.white)
                         .frame(minWidth: 22, minHeight: 22).background(Circle().fill(Color(hex: 0x0F766E)))
+                }
+                // How soon after this turn it comes, so there's time to pick the lane for it.
+                if let gap = nav.thenGap {
+                    Text("after \(Fmt.distance(gap))").font(.system(size: 14, weight: .bold)).lineLimit(1).fixedSize()
                 }
             }
         }
@@ -643,15 +627,6 @@ struct EndTripCard: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
     }
-}
-
-/**
- * Where the road-name pill sits: just under the car, but on a phone with little height (iPhone mini)
- * that touches the trip bar, so it's kept 8 pt above the bar (64 tall, 4 off the bottom).
- */
-private func roadPillY(_ height: CGFloat, north: Bool = false) -> CGFloat {
-    let safeBottom = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first?.safeAreaInsets.bottom ?? 0
-    return min(NavGlide.carY(height, north: north) + 46, height - safeBottom - 68 - 8 - 15)
 }
 
 /** A word by a map button for a moment after a tap: what it's on now. */
@@ -1056,47 +1031,107 @@ struct WazeInfoCard: View {
 
 /**
  * Before starting a drive: what Waze drivers have reported along this route right now, like
- * "2 police · 1 crash". Quiet when Waze is off or didn't answer.
+ * "2 police · 1 crash". Tap one to see where each is along the way, and tap a row to see it on the
+ * map. Quiet when Waze is off or didn't answer.
  */
 struct RouteWazeSummary: View {
     let route: Route
+    /** Shows a report's spot on the map. */
+    var onShow: ((WazeAlert) -> Void)? = nil
+    /** Called with every report found on the route, so the map can show them as icons. */
+    var onFound: (([WazeAlert]) -> Void)? = nil
     @ObservedObject private var settings = AppSettings.shared
-    @State private var counts: [(WazeAlert.Kind, Int)]?
+    @State private var found: [(alert: WazeAlert, along: Double)]?
+    @State private var picked: KindPick?
     /** For the build's screenshots, since Waze turns away the build's computers. */
     static var demo: [(WazeAlert.Kind, Int)]?
+
+    struct KindPick: Identifiable {
+        let kind: WazeAlert.Kind
+        var id: String { kind.rawValue }
+    }
+
+    private var counts: [(WazeAlert.Kind, Int)]? {
+        if let demo = Self.demo { return demo }
+        guard let found else { return nil }
+        let grouped = Dictionary(grouping: found, by: \.alert.kind)
+        return WazeAlert.Kind.allCases.compactMap { k in grouped[k].map { (k, $0.count) } }
+    }
 
     var body: some View {
         // A VStack, not a Group: an empty Group has nothing to hang .task on, so it would never ask.
         VStack(alignment: .leading, spacing: 0) {
             if let counts {
                 if counts.isEmpty {
-                    Label("No road closures on this route", systemImage: "checkmark.shield.fill")
+                    Label("No crashes, roadworks or closures reported on this route", systemImage: "checkmark.shield.fill")
                         .font(.system(size: 16, weight: .semibold)).foregroundColor(Vela.open)
                 } else {
                     WrapLayout(spacing: 8, lineSpacing: 8) {
                         ForEach(counts, id: \.0) { item in
                             let tint = Color(uiColor: MapIcons.wazeColor(item.0))
-                            HStack(spacing: 6) {
-                                WazeBadge(kind: item.0, size: 24)
-                                Text("\(item.1) \(Self.label(item.0, item.1))").font(.system(size: 16, weight: .bold))
+                            Button { picked = KindPick(kind: item.0) } label: {
+                                HStack(spacing: 6) {
+                                    WazeBadge(kind: item.0, size: 24)
+                                    Text("\(item.1) \(Self.label(item.0, item.1))").font(.system(size: 16, weight: .bold))
+                                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .heavy)).foregroundColor(.secondary)
+                                }
+                                .padding(.leading, 6).padding(.trailing, 10)
+                                .frame(height: 38)
+                                .background(Capsule().fill(tint.opacity(0.18)))
                             }
-                            .padding(.leading, 6).padding(.trailing, 12)
-                            .frame(height: 38)
-                            .background(Capsule().fill(tint.opacity(0.18)))
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Shows where along the route")
                         }
                     }
-                    .accessibilityElement(children: .combine)
                 }
             }
         }
         .task(id: route.id) {
-            if let demo = Self.demo { counts = demo; return }
-            guard settings.wazeOn, route.mode == .drive else { counts = nil; return }
-            counts = nil
-            guard let found = await Waze.alongRoute(route.polyline) else { return }
-            let on = Waze.project(found, on: route.polyline).map(\.alert).filter { settings.shows($0) }
-            let grouped = Dictionary(grouping: on, by: \.kind)
-            counts = WazeAlert.Kind.allCases.compactMap { k in grouped[k].map { (k, $0.count) } }
+            if Self.demo != nil { return }
+            guard settings.wazeOn, route.mode == .drive else { found = nil; onFound?([]); return }
+            found = nil
+            onFound?([])
+            // Closures from the live map, and drivers' reports (crashes, police, hazards) from Waze's
+            // app servers for the first 40 km, the same as once you're driving.
+            let line = route.polyline
+            async let closures = Waze.alongRoute(line)
+            let live = await WazeLive.shared.alongRoute(line, here: line[0])
+            let fromMap = await closures
+            guard fromMap != nil || live != nil else { return }
+            var merged: [String: WazeAlert] = [:]
+            for a in (fromMap ?? []) + (live ?? []) { merged[a.id] = a }
+            let on = Waze.project(Array(merged.values), on: line).filter { settings.shows($0.alert) && $0.alert.kind != .jam }
+            found = on
+            onFound?(on.map(\.alert))
+        }
+        .sheet(item: $picked) { pick in
+            NavigationView {
+                List {
+                    ForEach((found ?? []).filter { $0.alert.kind == pick.kind }, id: \.alert.id) { item in
+                        Button {
+                            picked = nil
+                            onShow?(item.alert)
+                        } label: {
+                            HStack(spacing: 12) {
+                                WazeBadge(kind: item.alert.kind, size: 34)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(Fmt.distance(item.along)) along the way").font(.system(size: 18, weight: .bold))
+                                    Text([item.alert.street, item.alert.reportedText].compactMap { $0 }.joined(separator: " · "))
+                                        .font(.system(size: 15)).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "map").foregroundColor(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .navigationTitle(Self.label(pick.kind, 2).capitalized + " on this route")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { picked = nil } } }
+            }
+            .kiteType()
+            .presentationDetents([.medium, .large])
         }
     }
 
@@ -1332,6 +1367,8 @@ struct AlongRouteSheet: View {
     @State private var found: [(place: Place, ahead: Double)] = []
     @State private var searching = false
     @State private var picked: String?
+    /** How much longer the drive gets with each place as a stop, in seconds (GitHub #60). */
+    @State private var detour: [String: Double] = [:]
 
     private let kinds: [(String, String, String)] = [
         (Fmt.yards ? "Petrol" : "Gas", "fuelpump.fill", Fmt.yards ? "petrol station" : "gas station"), ("EV charging", "bolt.car.fill", "ev charging station"),
@@ -1382,7 +1419,10 @@ struct AlongRouteSheet: View {
                                     }
                                     Spacer()
                                     VStack(alignment: .trailing, spacing: 2) {
-                                        Text("in \(Fmt.distance(f.ahead))").font(.subheadline.weight(.medium)).foregroundColor(.primary)
+                                        if let extra = detour[f.place.id] {
+                                            Text(DetourText.short(extra)).font(.subheadline.weight(.bold)).foregroundColor(DetourText.color(extra))
+                                        }
+                                        Text("in \(Fmt.distance(f.ahead))").font(.caption.weight(.medium)).foregroundColor(.secondary)
                                         Text("Add stop").font(.caption.weight(.semibold)).foregroundColor(Vela.routeBlue)
                                     }
                                 }
@@ -1421,7 +1461,27 @@ struct AlongRouteSheet: View {
             }
             found = out.sorted { $0.1 < $1.1 }.prefix(20).map { (place: $0.0, ahead: $0.1) }
             searching = false
+            // "+3 min": to the place and back to the route a little further on, against staying on it.
+            detour = [:]
+            let list = found
+            guard !list.isEmpty else { return }
+            let me = Geo.point(along: line, meters: here, cumulative: cum)
+            let rejoin = list.map { Geo.point(along: line, meters: min(here + $0.ahead + 1_500, total), cumulative: cum) }
+            if let extra = await OSRM.detours(from: me, places: list.map(\.place.location), rejoin: rejoin), picked == label {
+                for (f, e) in zip(list, extra) { if let e { detour[f.place.id] = e } }
+            }
         }
+    }
+}
+
+/** "+3 min" for a stop's detour; "On the way" when it costs next to nothing. */
+enum DetourText {
+    static func short(_ s: Double) -> String {
+        s < 60 ? "On the way" : "+\(Int((s / 60).rounded())) min"
+    }
+
+    static func color(_ s: Double) -> Color {
+        s < 180 ? Vela.open : s < 600 ? Color(hex: 0xE37400) : Vela.closed
     }
 }
 

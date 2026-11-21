@@ -113,11 +113,11 @@ fun KiteScreen(model: AppModel, activity: MainActivity) {
                 s.traffic, s.satellite, s.terrain, s.transitLines, s.speedCameras, s.plateCameras, s.wazeOnMap, s.wazeHeatmap,
                 s.home, s.work, s.parking, s.saved, LocationService.authorized, model.tab,
                 s.welcomed, s.noGoogle, s.surveillanceCameras,
-                s.liveCams, s.liveRoadCams, s.liveWebcams, LiveCamStore.version)
+                s.liveCams, s.liveRoadCams, s.liveWebcams, LiveCamStore.version, model.cruise, model.routeReports)
         }.collect { kiteMap.render() }
     }
     // Kept on while driving; once arrived the phone goes in a pocket, so the screen may sleep (like the iPhone).
-    val screenOn = model.nav?.let { !it.arrived } ?: false
+    val screenOn = model.nav?.let { !it.arrived } ?: (model.cruise != null)
     LaunchedEffect(screenOn) { activity.keepScreenOn(screenOn) }
     LaunchedEffect(s.wazeOn) { if (!s.wazeOn) WazeWeb.shutDown() }
 
@@ -162,6 +162,7 @@ fun KiteScreen(model: AppModel, activity: MainActivity) {
         val nav = model.nav
         when {
             nav != null -> NavigationOverlay(model, nav)
+            model.cruise != null -> model.cruise?.let { CruiseOverlay(model, it) }
             model.directions != null -> DirectionsOverlay(model)
             else -> when (model.tab) {
                 AppTab.MAP -> BrowseOverlay(model)
@@ -189,6 +190,7 @@ fun KiteScreen(model: AppModel, activity: MainActivity) {
     }
     if (model.showLayers) LayersSheet(model.wazeLiveCount) { model.showLayers = false }
     if (model.addingStop) StopPicker(model)
+    if (model.pickingOrigin) StopPicker(model, origin = true)
     model.picking?.let { PlacePicker(model, it) }
     model.streetView?.let { sv -> StreetViewScreen(sv) { model.streetView = null } }
     if (!s.welcomed || s.needsWazeChoice) {

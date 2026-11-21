@@ -22,7 +22,14 @@ class CameraTests {
         val lights = Overpass.parseSignalNodes(b(json)).map { it.at }
         assertEquals(4, lights.size)
         val on = Overpass.signalsOnRoute(lights, listOf(ll(0.0, 0.0), ll(0.01, 0.0)))
-        assertEquals(listOf(ll(0.0050, 0.0001), ll(0.0095, 0.0)), on)
+        // The first light of the junction, put on the route itself; the side road's 220 m off is left out.
+        assertEquals(2, on.size)
+        assertEquals(0.0050, on[0].lat, 1e-6); assertEquals(0.0, on[0].lng, 1e-9)
+        assertEquals(0.0095, on[1].lat, 1e-6)
+        // The oncoming side's light just past the junction (45 m on) is the same junction.
+        val pair = Overpass.signalsOnRoute(listOf(ll(0.0020, 0.00005), ll(0.0024, -0.00005)), listOf(ll(0.0, 0.0), ll(0.01, 0.0)))
+        assertEquals(1, pair.size)
+        assertEquals(0.0020, pair[0].lat, 1e-6)
     }
 
     @Test fun query() {

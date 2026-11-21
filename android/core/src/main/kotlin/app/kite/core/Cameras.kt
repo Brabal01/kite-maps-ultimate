@@ -223,14 +223,20 @@ object Overpass {
         }
     }
 
-    /** The traffic lights on the route itself, one per junction (lights within 40 m along the route drawn once). */
+    /**
+     * The traffic lights for your own way through each junction, one per junction. A junction's
+     * lights are mapped once per road into it (yours, the side roads', the oncoming side's), and all
+     * of them lie near the route. Within 60 m along the route they're one junction, and the first one
+     * you reach is the one at your stop line. It's drawn on the route itself, on your road, rather
+     * than where it was mapped, which could be across the junction or up a side road.
+     */
     fun signalsOnRoute(signals: List<LatLng>, line: List<LatLng>): List<LatLng> {
         if (line.size < 2) return emptyList()
         val cum = Geo.cumulative(line)
-        val on = signals.map { it to Geo.project(it, line, cum) }.filter { it.second.offset < 20 }.sortedBy { it.second.along }
-        val out = mutableListOf<Pair<LatLng, Double>>()
-        for ((p, at) in on) if (out.lastOrNull()?.let { at.along - it.second >= 40 } != false) out.add(p to at.along)
-        return out.map { it.first }
+        val on = signals.map { Geo.project(it, line, cum) }.filter { it.offset < 20 }.map { it.along }.sorted()
+        val out = mutableListOf<Double>()
+        for (at in on) if (out.lastOrNull()?.let { at - it >= 60 } != false) out.add(at)
+        return out.map { Geo.point(line, it, cum) }
     }
 
     fun parseWays(data: ByteArray): List<LimitWay> {
@@ -467,5 +473,40 @@ object CameraAlerts {
         val a = Geo.point(line, max(min(meters - 20, total - 40), 0.0), cum)
         val b = Geo.point(line, min(max(meters + 20, 40.0), total), cum)
         return Geo.bearing(a, b)
+    }
+}
+
+/**
+ * Speed cameras while driving with no route ("just driving"): with no line to follow, a camera is
+ * "ahead" when it's roughly straight in front of you, close to the road you're on, and checks your
+ * way of travel. Kept narrow, so a camera on a parallel road or round a corner stays quiet.
+ */
+object CruiseCameras {
+    /** How far ahead to warn: about 15 seconds at your speed, between 250 and 700 m. */
+    fun lead(speedMps: Double): Double = kotlin.math.min(700.0, kotlin.math.max(250.0, speedMps * 15))
+
+    /** The nearest camera ahead within [lead], and how far it is; null when none. */
+    fun ahead(cameras: List<RoadCamera>, at: LatLng, heading: Double, speedMps: Double): Pair<RoadCamera, Double>? {
+        val reach = lead(speedMps)
+        var best: Pair<RoadCamera, Double>? = null
+        for (c in cameras) {
+            if (c.kind != RoadCamera.Kind.SPEED || !c.checks(heading)) continue
+            val d = distanceAhead(c.location, at, heading, reach) ?: continue
+            if (best == null || d < best.second) best = c to d
+        }
+        return best
+    }
+
+    /**
+     * How far [q] is in front of you, or null when it's behind, beside the road or beyond [reach].
+     * Straight ahead, give or take the bend of the road: within 25°, and never more than about 40 m
+     * to the side of your line.
+     */
+    fun distanceAhead(q: LatLng, at: LatLng, heading: Double, reach: Double): Double? {
+        val d = at.distanceTo(q)
+        if (d <= 15 || d > reach) return null
+        val off = Geo.diff(Geo.bearing(at, q), heading)
+        if (off > 25 || d * kotlin.math.sin(Math.toRadians(off)) > 40) return null
+        return d
     }
 }

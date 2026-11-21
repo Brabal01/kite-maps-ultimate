@@ -127,6 +127,8 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
     private var lastReroute = 0L
     private var rerouteRequest = 0
     private var stopped = false
+    /** Roads tapped away on the plan (a point on each): reroutes and faster ways keep off them too. */
+    var avoid: List<LatLng> = emptyList()
     private val avoidHighways = AppSettings.avoidHighways
     private val avoidTolls = AppSettings.avoidTolls
     var routeCameras: List<PlacedCamera> = emptyList(); private set
@@ -292,6 +294,15 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
             val a = route.maneuvers[i]; val b = route.maneuvers[j]
             if (b.leavesRoundabout) return null
             return if (b.alongMeters - a.alongMeters < 300) b else null
+        }
+
+    /** How far after the next turn the "Then" one comes, for "Then ↰ after 40 yds". */
+    val thenGap: Double?
+        get() {
+            val b = thenManeuver ?: return null
+            val a = nextManeuver ?: return null
+            val gap = b.alongMeters - a.alongMeters
+            return if (gap > 0) gap else null
         }
 
     private fun update(fix: Fix, heading: Double? = null): RouteTracker.Progress {
@@ -829,7 +840,8 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
             val current = nowP.remainingSeconds
             val saving = current - fresh.durationSeconds
             val sameWay = abs(fresh.distanceMeters - nowP.remainingMeters) < max(300.0, nowP.remainingMeters * 0.03)
-            if (!sameWay && saving > max(300.0, current * 0.1)) {
+            // A faster way back along a road that was tapped away is no offer at all.
+            if (!sameWay && saving > max(300.0, current * 0.1) && !Directions.touches(fresh.polyline, avoid)) {
                 val left = Geo.slice(route.polyline, nowP.alongMeters, Geo.length(route.polyline))
                 offerFaster(fresh, saving, nowP.remainingMeters, left)
             } else if (sameWay) {
@@ -845,8 +857,9 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
     private fun offerFaster(fresh: Route, saving: Double, remainingMeters: Double, remainingLine: List<LatLng>) {
         val minutes = max(1, (saving / 60).roundToInt())
         // What else changes, so it's an easy call: longer or shorter, and any pay-later charge it adds.
-        val had = RoadCharges.on(remainingLine).map { it.name }.toSet()
-        val charges = RoadCharges.on(fresh.polyline).map { it.name }.filter { it !in had }
+        val clean = AppSettings.cleanCar
+        val had = (RoadCharges.on(remainingLine) + CleanAirZones.on(remainingLine, clean)).map { it.name }.toSet()
+        val charges = (RoadCharges.on(fresh.polyline) + CleanAirZones.on(fresh.polyline, clean)).map { it.name }.filter { it !in had }
         val offer = FasterOffer(minutes, fresh.summary, now() + FASTER_WAIT_MS, fresh.distanceMeters - remainingMeters, charges)
         fasterRoute = fresh
         fasterOffer = offer
@@ -941,10 +954,17 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
         val to = destination.location
         rerouteRequest++
         val req = rerouteRequest
+        val avoid = if (mode == TravelMode.DRIVE) this.avoid else emptyList()
         scope.launch {
-            val r = runCatching {
+            var r = runCatching {
                 Directions.routes(from, to, mode, avoidHighways, avoidTolls, !AppSettings.noGoogle, stops.map { it.location }, course)
             }.getOrNull()
+            // The new way goes back along a road tapped away on the plan: the way round it instead,
+            // when there is one (otherwise the usual route, rather than none at all).
+            val first = r?.routes?.firstOrNull()
+            if (avoid.isNotEmpty() && first != null && Directions.touches(first.polyline, avoid) && req == rerouteRequest) {
+                runCatching { Directions.avoiding(from, to, stops.map { it.location }, avoid) }.getOrNull()?.let { r = r?.copy(routes = listOf(it)) }
+            }
             if (stopped || req != rerouteRequest) return@launch
             rerouting = false
             // Parked at the destination while the new route was loading: the trip is over, keep it that way.

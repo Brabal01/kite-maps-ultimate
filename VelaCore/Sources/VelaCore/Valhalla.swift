@@ -62,13 +62,15 @@ public enum Valhalla {
         return out
     }
 
-    private static func fetch(_ shape: [LatLng]) async -> Data? {
+    static let limitAttributes = ["edge.speed_limit", "edge.way_id", "edge.names", "edge.length", "edge.begin_shape_index",
+                                  "edge.end_shape_index", "edge.lane_count", "edge.roundabout", "shape"]
+
+    private static func fetch(_ shape: [LatLng], attributes: [String] = limitAttributes) async -> Data? {
         let body: [String: Any] = [
             "shape": shape.map { ["lat": $0.lat, "lon": $0.lng] },
             "costing": "auto",
             "shape_match": "map_snap",
-            "filters": ["attributes": ["edge.speed_limit", "edge.way_id", "edge.names", "edge.length", "edge.begin_shape_index",
-                                       "edge.end_shape_index", "edge.lane_count", "edge.roundabout", "shape"], "action": "include"],
+            "filters": ["attributes": attributes, "action": "include"],
         ]
         var r = URLRequest(url: endpoint)
         r.httpMethod = "POST"
@@ -76,6 +78,118 @@ public enum Valhalla {
         r.httpBody = try? JSONSerialization.data(withJSONObject: body)
         guard let (data, resp) = try? await session.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return data
+    }
+
+    /**
+     * A driving line from [from] to [to] through [via], kept off the roads at [avoid] (what you
+     * tapped on the route to avoid). Just the line: Kite turns it into turn-by-turn with the open
+     * router, as for Google's routes. Nil when there's no other way or the server didn't answer.
+     */
+    public static func lineAvoiding(from: LatLng, to: LatLng, via: [LatLng] = [], avoid: [LatLng]) async -> [LatLng]? {
+        let locations = ([from] + via + [to]).map { ["lat": $0.lat, "lon": $0.lng] }
+        let body: [String: Any] = [
+            "locations": locations,
+            "costing": "auto",
+            "exclude_locations": avoid.map { ["lat": $0.lat, "lon": $0.lng] },
+            "directions_options": ["units": "kilometers", "narrative": false],
+        ]
+        var r = URLRequest(url: URL(string: "https://valhalla1.openstreetmap.de/route")!)
+        r.httpMethod = "POST"
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (data, resp) = try? await session.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return parseLine(data)
+    }
+
+    static func parseLine(_ data: Data) -> [LatLng]? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let trip = root["trip"] as? [String: Any], let legs = trip["legs"] as? [[String: Any]], !legs.isEmpty else { return nil }
+        var line: [LatLng] = []
+        for leg in legs {
+            guard let shape = leg["shape"] as? String else { return nil }
+            let pts = Geo.decodePolyline(shape, precision: 1e6)
+            line += line.isEmpty ? pts : Array(pts.dropFirst())
+        }
+        return line.count >= 2 ? line : nil
+    }
+
+    /**
+     * The toll roads a route drives, by name ("M6 Toll", "Dartford Crossing"), from the road map's own
+     * toll marks. Empty when there are none; nil when the server didn't answer. For "Avoid tolls": the
+     * open router Kite falls back on can't avoid them, and some tolls only the map knows.
+     */
+    public static func tolls(along line: [LatLng]) async -> [String]? {
+        guard line.count >= 2 else { return [] }
+        let cum = Geo.cumulative(line)
+        let total = cum.last ?? 0
+        var names: [String] = []
+        var start = 0.0
+        while start < total {
+            let end = min(total, start + 25_000)
+            guard let data = await fetch(thin(Geo.slice(line, from: start, to: end, cumulative: cum)),
+                                         attributes: ["edge.toll", "edge.names", "edge.length"]) else { return nil }
+            for n in parseTolls(data) where !names.contains(n) { names.append(n) }
+            start = end
+        }
+        return names
+    }
+
+    /** Each run of toll roads in a matcher answer, by its first name (or "A toll road"). */
+    static func parseTolls(_ data: Data) -> [String] {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let edges = root["edges"] as? [[String: Any]] else { return [] }
+        var out: [String] = []
+        var inToll = false
+        var meters = 0.0
+        var name: String?
+        func close() {
+            // A few metres of toll mark at a junction's edge isn't driving the toll road.
+            if inToll, meters >= 50 {
+                let n = name ?? "A toll road"
+                if !out.contains(n) { out.append(n) }
+            }
+            inToll = false; meters = 0; name = nil
+        }
+        for e in edges {
+            if (e["toll"] as? Bool) == true {
+                inToll = true
+                meters += ((e["length"] as? NSNumber)?.doubleValue ?? 0) * 1000
+                if name == nil { name = (e["names"] as? [String])?.first { !$0.isEmpty } }
+            } else {
+                close()
+            }
+        }
+        close()
+        return out
+    }
+
+    /** The road you're on now and its posted limit, matched from your last few hundred metres of GPS. */
+    public struct Here: Equatable, Sendable {
+        public var road: String?
+        public var ref: String?
+        public var kmh: Double?
+    }
+
+    /**
+     * Where you are on the map, for driving without a route: the road under the newest fix of [trace]
+     * (oldest first, a few hundred metres of it) and its limit. Nil when the server didn't answer
+     * or couldn't place you on a road.
+     */
+    public static func here(trace: [LatLng]) async -> Here? {
+        guard trace.count >= 2,
+              let data = await fetch(thin(trace), attributes: ["edge.names", "edge.speed_limit", "edge.length", "edge.road_class"]) else { return nil }
+        return parseHere(data, at: trace.last!)
+    }
+
+    static func parseHere(_ data: Data, at p: LatLng) -> Here? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let e = (root["edges"] as? [[String: Any]])?.last else { return nil }
+        let names = ((e["names"] as? [String]) ?? []).filter { !$0.isEmpty }
+        // A road number ("A33", "M27") and a street name are both in names: the number apart.
+        let isRef: (String) -> Bool = { $0.range(of: #"^[ABM]\d{1,4}(\(M\))?$"#, options: .regularExpression) != nil }
+        let raw = (e["speed_limit"] as? NSNumber)?.doubleValue
+        let kmh = Overpass.britishLimit(raw.flatMap { (1...200).contains($0) ? $0 : nil }, at: p)
+        return Here(road: names.first { !isRef($0) }, ref: names.first(where: isRef), kmh: kmh)
     }
 
     /** Limit changes along the matched roads (meters from their start), the roads themselves, and their length. */

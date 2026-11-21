@@ -252,18 +252,19 @@ public enum Overpass {
     }
 
     /**
-     * The traffic lights on the route itself, one per junction: a junction's lights are often mapped
-     * once per road into it, so lights within 40 m of each other along the route are drawn once.
+     * The traffic lights for your own way through each junction, one per junction. A junction's
+     * lights are mapped once per road into it (yours, the side roads', the oncoming side's), and all
+     * of them lie near the route. Within 60 m along the route they're one junction, and the first one
+     * you reach is the one at your stop line. It's drawn on the route itself, on your road, rather
+     * than where it was mapped, which could be across the junction or up a side road.
      */
     public static func signalsOnRoute(_ signals: [LatLng], line: [LatLng]) -> [LatLng] {
         guard line.count >= 2 else { return [] }
         let cum = Geo.cumulative(line)
-        let on = signals.map { ($0, Geo.project($0, on: line, cumulative: cum)) }
-            .filter { $0.1.offset < 20 }
-            .sorted { $0.1.along < $1.1.along }
-        var out: [(LatLng, Double)] = []
-        for (p, at) in on where out.last.map({ at.along - $0.1 >= 40 }) ?? true { out.append((p, at.along)) }
-        return out.map(\.0)
+        let on = signals.map { Geo.project($0, on: line, cumulative: cum) }.filter { $0.offset < 20 }.map(\.along).sorted()
+        var out: [Double] = []
+        for at in on where out.last.map({ at - $0 >= 60 }) ?? true { out.append(at) }
+        return out.map { Geo.point(along: line, meters: $0, cumulative: cum) }
     }
 
     static func parseWays(_ data: Data) -> [LimitWay] {
@@ -524,5 +525,39 @@ public enum CameraAlerts {
         let a = Geo.point(along: line, meters: max(min(meters - 20, total - 40), 0), cumulative: cum)
         let b = Geo.point(along: line, meters: min(max(meters + 20, 40), total), cumulative: cum)
         return Geo.bearing(a, b)
+    }
+}
+
+/**
+ * Speed cameras while driving with no route ("just driving"): with no line to follow, a camera is
+ * "ahead" when it's roughly straight in front of you, close to the road you're on, and checks your
+ * way of travel. Kept narrow, so a camera on a parallel road or round a corner stays quiet.
+ */
+public enum CruiseCameras {
+    /** How far ahead to warn: about 15 seconds at your speed, between 250 and 700 m. */
+    public static func lead(speedMps: Double) -> Double { min(700, max(250, speedMps * 15)) }
+
+    /** The nearest camera ahead within [lead(speedMps:)], and how far it is; nil when none. */
+    public static func ahead(_ cameras: [RoadCamera], at p: LatLng, heading: Double, speedMps: Double) -> (camera: RoadCamera, meters: Double)? {
+        let reach = lead(speedMps: speedMps)
+        var best: (RoadCamera, Double)?
+        for c in cameras where c.kind == .speed && c.checks(heading: heading) {
+            guard let d = distanceAhead(c.location, at: p, heading: heading, reach: reach) else { continue }
+            if best.map({ d < $0.1 }) ?? true { best = (c, d) }
+        }
+        return best.map { (camera: $0.0, meters: $0.1) }
+    }
+
+    /**
+     * How far [q] is in front of you, or nil when it's behind, beside the road or beyond [reach].
+     * Straight ahead, give or take the bend of the road: within 25°, and never more than about 40 m
+     * to the side of your line.
+     */
+    public static func distanceAhead(_ q: LatLng, at p: LatLng, heading: Double, reach: Double) -> Double? {
+        let d = p.distance(to: q)
+        guard d > 15, d <= reach else { return nil }
+        let off = abs((Geo.bearing(p, q) - heading + 540).truncatingRemainder(dividingBy: 360) - 180)
+        guard off <= 25, d * sin(off * .pi / 180) <= 40 else { return nil }
+        return d
     }
 }

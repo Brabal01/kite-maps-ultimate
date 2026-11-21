@@ -231,6 +231,9 @@ object Fmt {
         return if (m == 0) "${h}h" else "${h}h ${m}m"
     }
 
+    /** "4 min" on foot, from metres in a straight line (a little slower than walking pace for the corners). */
+    fun walkMinutes(meters: Double): String = "${maxOf(1, Math.round(meters / 70).toInt())} min"
+
     fun arrival(s: Double): String = time(Date(System.currentTimeMillis() + (s * 1000).toLong()))
 
     fun time(d: Date): String = android.text.format.DateFormat.getTimeFormat(KiteApp.app).format(d)

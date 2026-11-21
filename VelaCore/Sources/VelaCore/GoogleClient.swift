@@ -96,6 +96,12 @@ public actor GoogleClient {
         return try await get(url, referer: "https://www.google.com/", xhr: true)
     }
 
+    /** A Google Maps page's answer, with the same session and headers as search (for reviews). */
+    func fetch(_ url: URL) async throws -> String {
+        try await warm()
+        return try await get(url, referer: "https://www.google.com/", xhr: true)
+    }
+
     private func warm() async throws {
         if warmed { return }
         // Only counts once Google answered: opened with no signal, try again on the next search.

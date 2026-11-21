@@ -90,6 +90,10 @@ final class AppSettings: ObservableObject {
     @Published var liveCamsOnRoute: Bool { didSet { d.set(liveCamsOnRoute, forKey: "liveCamsOnRoute") } }
     /** The map's "P" button: save where you parked, and find the way back. */
     @Published var parkingButton: Bool { didSet { d.set(parkingButton, forKey: "parkingButton") } }
+    /** Switch to the driving view by itself when you set off with no route (and back once parked). */
+    @Published var autoDrive: Bool { didSet { d.set(autoDrive, forKey: "autoDrive") } }
+    /** "My car meets the rules": clean air zones on a route aren't flagged. */
+    @Published var cleanCar: Bool { didSet { d.set(cleanCar, forKey: "cleanCar") } }
     @Published var home: Place? { didSet { save(home, "home") } }
     @Published var work: Place? { didSet { save(work, "work") } }
     /** Where the car is parked, with when in `statusText`. */
@@ -125,6 +129,8 @@ final class AppSettings: ObservableObject {
         mapZoom = MapZoom(rawValue: d.string(forKey: "mapZoom") ?? "") ?? .normal
         driveLook = MapLook(rawValue: d.string(forKey: "driveLook") ?? "") ?? .tilted
         parkingButton = d.object(forKey: "parkingButton") as? Bool ?? true
+        autoDrive = d.object(forKey: "autoDrive") as? Bool ?? true
+        cleanCar = d.bool(forKey: "cleanCar")
         liveCams = d.object(forKey: "liveCams") as? Bool ?? true
         liveRoadCams = d.object(forKey: "liveRoadCams") as? Bool ?? true
         liveWebcams = d.object(forKey: "liveWebcams") as? Bool ?? true

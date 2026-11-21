@@ -179,6 +179,12 @@ struct SettingsView: View {
                 Toggle(isOn: $settings.avoidHighways) {
                     SettingLabel(Fmt.yards ? "Avoid motorways" : "Avoid highways", icon: "road.lanes", color: 0x1D4ED8)
                 }
+                Toggle(isOn: $settings.cleanCar) { SettingLabel("My car meets clean air zone rules", icon: "leaf.fill", color: 0x16A34A) }
+            }
+            Section {
+                Toggle(isOn: $settings.autoDrive) { SettingLabel("Driving view when I set off", icon: "car.side.fill", color: 0x0F766E) }
+            } footer: {
+                Text("With Kite open and no route, the driving view comes up by itself once you're going faster than about 15 mph, with cameras, the speed limit and the road's name. It goes back to the map after a couple of minutes parked. Turn this off if you're often a passenger.")
             }
         }
         .kiteList()
