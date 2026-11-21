@@ -1,5 +1,5 @@
-// The Android Gradle plugin is only loaded when building for Android, so the shared app and the
-// engine can be built and checked on a machine with no Android SDK (`-PnoAndroid` or `-PcoreOnly`).
+// The Android Gradle plugin is always on the classpath (the shared app's build names its classes),
+// but only applied when building for Android, so `-PnoAndroid` needs no Android SDK.
 buildscript {
     repositories {
         google()
@@ -7,7 +7,7 @@ buildscript {
         gradlePluginPortal()
     }
     dependencies {
-        if (!project.hasProperty("noAndroid") && !project.hasProperty("coreOnly")) {
+        if (!project.hasProperty("coreOnly")) {
             classpath("com.android.tools.build:gradle:9.4.1")
         }
     }

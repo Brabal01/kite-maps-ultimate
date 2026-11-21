@@ -48,7 +48,8 @@ class KiteMap(private val model: AppModel) {
     private var map: MapHandle? = null
     private var style: Style? = null
     /** The style the map loads: empty until Kite's is ready, then Kite's (built once per launch). */
-    var baseStyle by mutableStateOf<BaseStyle>(BaseStyle.Json("{\"version\":8,\"sources\":{},\"layers\":[]}"))
+    private val emptyStyle = BaseStyle.Json("{\"version\":8,\"sources\":{},\"layers\":[]}")
+    var baseStyle by mutableStateOf<BaseStyle>(emptyStyle)
         private set
     private var building: Job? = null
     private val scope get() = model.scope
@@ -131,6 +132,9 @@ class KiteMap(private val model: AppModel) {
         }
     }
 
+    /** Whether [b] is Kite's own style (built), not the empty one shown while it's fetched. */
+    fun isKiteStyle(b: BaseStyle) = style != null && b === baseStyle && b !== emptyStyle
+
     /** The map on screen has started (or come back): keep a handle to it for the camera and the style. */
     fun attach(state: MapState, mapScope: CoroutineScope) {
         val m = MapHandle(state, mapScope)
@@ -175,8 +179,9 @@ class KiteMap(private val model: AppModel) {
     fun cameraMoved() { map?.let { noteHeading(it) } }
 
     /** Dragging or turning the map by hand. */
+    @Suppress("UNUSED_PARAMETER")
     fun gestureStarted(pan: Boolean) {
-        if (pan || true) if (model.nav == null && model.browseFollowing) model.browseFollowing = false
+        if (model.nav == null && model.browseFollowing) model.browseFollowing = false
     }
 
     /** Any move of the map by hand while navigating stops following the car. */

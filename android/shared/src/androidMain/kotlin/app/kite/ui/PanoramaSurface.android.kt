@@ -1,10 +1,6 @@
 package app.kite.ui
 
-import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Rect
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
@@ -29,6 +25,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import app.kite.*
 import app.kite.core.*
 import kotlinx.coroutines.*
@@ -38,46 +36,23 @@ import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import kotlin.math.ceil
 
-/** Google Street View, full screen: drag to look around, pinch to zoom. Google Maps can take you walking down the street from here. */
+/** The panorama, drawn by the phone's graphics chip (OpenGL): each pixel looks up its spot of the picture. */
 @Composable
-fun StreetViewScreen(req: StreetViewRequest, close: () -> Unit) {
-    val ctx = LocalContext.current
-    // Drawn over the whole app (not a separate window), so it fills the screen edge to edge, under the status bar too.
-    androidx.activity.compose.BackHandler(onBack = close)
-    run {
-        val renderer = remember(req.pano.id) { PanoRenderer(req.pano, req.heading) }
-        Box(Modifier.fillMaxSize().background(Color.Black).pointerInput(Unit) { }) {
-            AndroidView(modifier = Modifier.fillMaxSize(), factory = { c ->
-                GLSurfaceView(c).apply {
-                    setEGLContextClientVersion(2)
-                    setRenderer(renderer)
-                    renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
-                    renderer.view = this
-                }
-            })
-            Box(Modifier.fillMaxSize().pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ -> renderer.gesture(pan.x, pan.y, zoom, size.width.toFloat()) }
-            })
-            // The close button and the place's name over the panorama.
-            Row(Modifier.statusBarsPadding().padding(horizontal = 12.dp).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.55f)).tap(close), contentAlignment = Alignment.Center) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close", tint = Color.White, modifier = Modifier.size(22.dp))
-                }
-                Column(Modifier.clip(CircleShape).background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 12.dp, vertical = 6.dp)) {
-                    Text(req.name, fontSize = KType.subheadline, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("Street View", fontSize = KType.caption, color = Color.White.copy(alpha = 0.8f))
-                }
-            }
-            Row(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 24.dp).height(42.dp).clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.5f)).border(0.75.dp, Color.White.copy(alpha = 0.25f), CircleShape)
-                .tap { ctx.open("https://www.google.com/maps/@?api=1&map_action=pano&pano=${req.pano.id}&heading=${req.heading.toInt()}") }
-                .padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.AutoMirrored.Filled.DirectionsWalk, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                Text("Walk around in Google Maps", fontSize = KType.subheadline, fontWeight = FontWeight.SemiBold, color = Color.White)
-            }
+actual fun PanoramaSurface(state: PanoState, modifier: Modifier) {
+    val renderer = remember(state) { PanoRenderer(state) }
+    AndroidView(modifier = modifier, factory = { c ->
+        GLSurfaceView(c).apply {
+            setEGLContextClientVersion(2)
+            setRenderer(renderer)
+            renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
+            renderer.view = this
         }
-        DisposableEffect(renderer) { onDispose { renderer.dispose() } }
+    })
+    // A new picture, or a new way of looking: draw again.
+    LaunchedEffect(state) {
+        snapshotFlow { listOf(state.heading, state.pitch, state.fov, state.image) }.collect {
+            renderer.update()
+        }
     }
 }
 
@@ -86,57 +61,27 @@ fun StreetViewScreen(req: StreetViewRequest, close: () -> Unit) {
  * pixel on screen looks up the right spot of it (no sphere needed). A low-detail image comes
  * first, then a sharp one.
  */
-class PanoRenderer(private val pano: StreetView.Panorama, startHeading: Double) : GLSurfaceView.Renderer {
+class PanoRenderer(private val state: PanoState) : GLSurfaceView.Renderer {
+    private val pano = state.pano
     var view: GLSurfaceView? = null
-    @Volatile private var heading = startHeading
+    @Volatile private var heading = state.heading
     @Volatile private var pitch = 0.0
     @Volatile private var fov = 80.0
     @Volatile private var pending: Bitmap? = null
+    private var shown: ImageBitmap? = null
     private var program = 0
     private var texture = 0
     private var hasImage = false
     private var aspect = 1f
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val quad = ByteBuffer.allocateDirect(8 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
         put(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)); position(0)
     }
 
-    init {
-        scope.launch {
-            for (zoom in listOf(2, 3)) {
-                // The sharper one only replaces the first if every tile came: a dropped signal
-                // mustn't turn a working view half black.
-                val img = stitch(zoom, complete = zoom > 2) ?: continue
-                pending = img
-                view?.requestRender()
-            }
-        }
-    }
-
-    fun dispose() = scope.cancel()
-
-    /** One screen width turns by about the field of view; a drag down looks up, like the iPhone app. */
-    fun gesture(dx: Float, dy: Float, zoom: Float, width: Float) {
-        val perPx = fov / width.coerceAtLeast(1f)
-        heading -= dx * perPx
-        pitch = (pitch + dy * perPx).coerceIn(-80.0, 80.0)
-        if (zoom != 1f) fov = (fov / zoom).coerceIn(30.0, 100.0)
+    /** Copies the latest view and picture for the drawing thread, and asks for a frame. */
+    fun update() {
+        heading = state.heading; pitch = state.pitch; fov = state.fov
+        state.image?.let { if (it !== shown) { shown = it; pending = it.asAndroidBitmap() } }
         view?.requestRender()
-    }
-
-    /** All of the panorama's tiles at [zoom], drawn into one picture. */
-    private suspend fun stitch(zoom: Int, complete: Boolean = false): Bitmap? = coroutineScope {
-        val (w, h) = pano.size(zoom)
-        val cols = ceil(w / 512.0).toInt(); val rows = ceil(h / 512.0).toInt()
-        val tiles = (0 until rows).flatMap { y -> (0 until cols).map { x -> Triple(x, y, async {
-            Http.getOrNull(StreetView.tileUrl(pano, x, y, zoom))?.takeIf { it.ok }?.body?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
-        }) } }.mapNotNull { (x, y, d) -> d.await()?.let { Triple(x, y, it) } }
-        if (tiles.isEmpty() || (complete && tiles.size < rows * cols)) return@coroutineScope null
-        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val cv = Canvas(out)
-        cv.drawColor(android.graphics.Color.BLACK)
-        for ((x, y, b) in tiles) { cv.drawBitmap(b, null, Rect(x * 512, y * 512, x * 512 + 512, y * 512 + 512), null); b.recycle() }
-        out
     }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {

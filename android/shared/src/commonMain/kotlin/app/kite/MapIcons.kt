@@ -110,6 +110,8 @@ object MapIcons {
         style.addImage("pin-selected", selectedPin())
         style.addImage("pin-origin", originDot())
         style.addImage("puck", puck(dark))
+        style.addImage("me-dot", meDot())
+        style.addImage("me-heading", meHeading())
         style.addImage("bubble-sel", bubble(c(0x0F766E), Color.WHITE))
         style.addImage("bubble-alt", bubble(Color.WHITE, c(0xBDC1C6)))
         style.addImage("road-pill", bubble(c(0x2DD4BF), c(0x0F766E)))
@@ -231,6 +233,19 @@ object MapIcons {
         })
         val shade = Path().apply { moveTo(38f, 13f); lineTo(58f, 60f); lineTo(38f, 50f); close() }
         cv.drawPath(shade, paint(c(0x064E3B, 0.3f)))
+    }
+
+    /** You, off a route: Kite's teal dot in a white ring, with a soft shadow. */
+    fun meDot() = image(26f, 26f) { cv ->
+        cv.drawOval(RectF(2f, 3f, 24f, 25f), paint(c(0x000000, 0.18f)))
+        cv.drawOval(RectF(2f, 2f, 24f, 24f), paint(Color.WHITE))
+        cv.drawOval(RectF(5.5f, 5.5f, 20.5f, 20.5f), paint(c(0x14B8A6)))
+    }
+
+    /** The pointer round your dot, the way you're going (drawn pointing up, the map turns it). */
+    fun meHeading() = image(48f, 48f) { cv ->
+        val p = Path().apply { moveTo(24f, 2f); lineTo(32f, 14f); quadraticTo(24f, 10f, 16f, 14f); close() }
+        cv.drawPath(p, paint(c(0x14B8A6)))
     }
 
     /** A chevron along the route line, pointing the way you go. */

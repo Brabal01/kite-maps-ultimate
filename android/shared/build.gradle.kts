@@ -9,8 +9,8 @@ plugins {
     id("org.jetbrains.compose")
     id("org.jetbrains.kotlin.plugin.compose")
 }
-// Android: the KMP Android target lives in its own file so this one never names an Android class.
-if (withAndroid) apply(from = "android-target.gradle.kts")
+// Android is added only when building for Android, so the iPhone side can be built with no Android SDK.
+if (withAndroid) apply(plugin = "com.android.kotlin.multiplatform.library")
 
 kotlin {
     val xcf = XCFramework("KiteShared")
@@ -32,6 +32,22 @@ kotlin {
             "org.jetbrains.compose.resources.ExperimentalResourceApi",
         )
         freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
+
+    if (withAndroid) {
+        (this as ExtensionAware).extensions.configure<com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryTarget>("android") {
+            namespace = "app.kite.shared"
+            compileSdk = 37
+            minSdk = 26
+            androidResources { enable = true }
+            compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
+        }
+        sourceSets.getByName("androidMain").dependencies {
+            implementation("androidx.core:core-ktx:1.17.0")
+            implementation("androidx.activity:activity-compose:1.12.0")
+            implementation("androidx.webkit:webkit:1.17.0")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+        }
     }
 
     sourceSets {
