@@ -50,6 +50,6 @@ object Voice {
     val isSpeaking: Boolean get() = Speech.isSpeaking
     val onCall: Boolean get() = Speech.onCall
     fun chime() { if (!silent) Speech.chime() }
-    fun buzz() = Speech.buzz()
+    fun buzz() { if (!silent) Speech.buzz() }
     fun openSettings() = Speech.openSettings()
 }
