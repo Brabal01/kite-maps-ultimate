@@ -484,7 +484,7 @@ private fun WazeSettings() {
         WazeAlert.Kind.ROADWORKS to "Roadworks", WazeAlert.Kind.CLOSURE to "Road closures", WazeAlert.Kind.JAM to "Traffic jams reported by drivers",
     )
     val ages = listOf(30 to "30 minutes", 60 to "1 hour", 120 to "2 hours", 240 to "4 hours", 0 to "Keep them all")
-    fun whenText(at: Long): String { val m = ((System.currentTimeMillis() - at) / 60_000).toInt(); return if (m < 1) "just now" else "$m min ago" }
+    fun whenText(at: Long): String { val m = ((nowMillis() - at) / 60_000).toInt(); return if (m < 1) "just now" else "$m min ago" }
     val connection: Pair<String, Color> = Waze.lastStatus?.let { st ->
         val w = whenText(st.atMillis)
         when (st.code) {

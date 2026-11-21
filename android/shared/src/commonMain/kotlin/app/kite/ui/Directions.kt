@@ -541,7 +541,7 @@ private fun clock(t: Long) = Fmt.time(Date(t))
 fun TransitBody(model: AppModel, state: DirectionsState) {
     val ctx = LocalContext.current
     var kind by remember { mutableIntStateOf(if (state.transitTime == null) 0 else if (state.arriveBy) 2 else 1) }
-    var whenAt by remember { mutableLongStateOf(state.transitTime ?: System.currentTimeMillis()) }
+    var whenAt by remember { mutableLongStateOf(state.transitTime ?: nowMillis()) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             listOf("Leave now", "Depart at", "Arrive by").forEachIndexed { i, label ->
@@ -559,7 +559,7 @@ fun TransitBody(model: AppModel, state: DirectionsState) {
                             c.set(y, mo, day)
                             TimePickerDialog(ctx, { _, h, min ->
                                 c.set(Calendar.HOUR_OF_DAY, h); c.set(Calendar.MINUTE, min)
-                                whenAt = max(c.timeInMillis, System.currentTimeMillis() - 3_600_000)
+                                whenAt = max(c.timeInMillis, nowMillis() - 3_600_000)
                                 model.setTransitTime(kind, whenAt)
                             }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), android.text.format.DateFormat.is24HourFormat(ctx)).show()
                         }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()

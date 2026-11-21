@@ -180,7 +180,7 @@ class AppModel {
         location.onUpdate = { locationChanged(it) }
         // A drive cut short (the app closed, the phone restarted): offer it again, for two hours.
         settings.trip?.let { t ->
-            if (!DemoScript.active && System.currentTimeMillis() - t.atMillis < 2 * 3600_000L) resumeOffer = t else settings.trip = null
+            if (!DemoScript.active && nowMillis() - t.atMillis < 2 * 3600_000L) resumeOffer = t else settings.trip = null
         }
     }
 
@@ -204,7 +204,7 @@ class AppModel {
     }
 
     private fun rememberTrip(n: Navigator) {
-        tripSavedAt = System.currentTimeMillis()
+        tripSavedAt = nowMillis()
         settings.trip = SavedTrip(n.destination, n.stops, n.route.mode.raw, tripSavedAt)
     }
 
@@ -322,7 +322,7 @@ class AppModel {
                     resolve(Place(id = "link:${target.at.lat},${target.at.lng}", name = target.name!!, location = target.at, source = "osm"))
                 } else {
                     // Keep where it is in the box, not an empty "Where to?" as if nothing was found.
-                    query = String.format(java.util.Locale.US, "%.5f, %.5f", target.at.lat, target.at.lng)
+                    query = fmt("%.5f, %.5f", target.at.lat, target.at.lng)
                     dropPin(target.at, "Shared location")
                 }
                 is MapLinks.Target.Search -> {
@@ -480,7 +480,7 @@ class AppModel {
             else "Still finding your location. Try again in a moment."
             return
         }
-        val p = Place(id = "parking:${System.currentTimeMillis() / 1000}", name = "Parked car", location = me, source = "osm",
+        val p = Place(id = "parking:${nowMillis() / 1000}", name = "Parked car", location = me, source = "osm",
             category = "Parked at ${Fmt.time(java.util.Date())}")
         settings.parking = p
         notice = "Parking spot saved. Tap the P button to find your car."
@@ -499,7 +499,7 @@ class AppModel {
     /** Long press: a dropped pin with the address there. */
     fun dropPin(point: LatLng, name: String = "Dropped pin") {
         val pin = Place(id = "pin:${point.lat},${point.lng}", name = name, location = point, source = "osm",
-            category = String.format(java.util.Locale.US, "%.5f, %.5f", point.lat, point.lng))
+            category = fmt("%.5f, %.5f", point.lat, point.lng))
         select(pin)
         scope.launch {
             val found = Photon.reverse(point) ?: return@launch
@@ -560,7 +560,7 @@ class AppModel {
     fun showTransit() {
         edit { it.copy(transit = true) }
         // "Leave now" times found a while ago may have left already: look again.
-        if (directions?.transitTime == null && System.currentTimeMillis() - transitLoadedAt > 120_000) loadTransit()
+        if (directions?.transitTime == null && nowMillis() - transitLoadedAt > 120_000) loadTransit()
         frameRoute()
     }
 
@@ -712,7 +712,7 @@ class AppModel {
     fun loadTransit() {
         val d = directions ?: return
         val me = d.origin?.location ?: userLatLng ?: return
-        transitLoadedAt = System.currentTimeMillis()
+        transitLoadedAt = nowMillis()
         // A new request either way, so one still loading can't put back trips without the stops.
         transitRequest++
         // The planner can't go via stops: rather say so than show trains for a different trip.
@@ -785,7 +785,7 @@ class AppModel {
         resumeOffer = null
         rememberTrip(n)
         location.setNavigating(true)
-        DriveService.start(KiteApp.app)
+        DriveSession.start(n.destination.name)
         location.last?.let { n.handle(it); followCamera(n, it, animated = false) }
     }
 
@@ -795,7 +795,7 @@ class AppModel {
         nav = null
         settings.trip = null
         location.setNavigating(false)
-        DriveService.stop(KiteApp.app)
+        DriveSession.stop()
         directions = null
         showSteps = false
         browseLook = MapLook.NORTH
@@ -893,22 +893,16 @@ class AppModel {
         followBrowse(f, entering = true)
     }
 
-    /** The next turn and arrival time on the drive's notification (Android only: the iPhone has no such thing to fill). */
+    /** The next turn and arrival time on the lock screen: Android's drive notification, the iPhone's Live Activity. */
     private fun driveNote(n: Navigator) {
-        val p = n.progress ?: return
-        if (n.arrived) {
-            DriveService.show(KiteApp.app, "You have arrived", n.destination.name)
-            return
-        }
-        val m = n.nextManeuver
-        val turn = if (m == null) "To ${n.destination.name}" else "${Fmt.distance(p.distanceToNext)} · ${SpokenText.forScreen(m.instruction)}"
-        DriveService.show(KiteApp.app, turn, "Arrive ${Fmt.arrival(p.remainingSeconds)} · ${Fmt.distance(p.remainingMeters)} to go")
+        if (n.progress == null) return
+        DriveSession.show(TurnStates.of(n))
     }
 
     private fun tripCheck(n: Navigator) {
         if (n.arrived) {
             if (settings.trip != null) settings.trip = null
-        } else if (System.currentTimeMillis() - tripSavedAt > 60_000 || settings.trip?.stops?.size != n.stops.size) {
+        } else if (nowMillis() - tripSavedAt > 60_000 || settings.trip?.stops?.size != n.stops.size) {
             rememberTrip(n)
         }
     }

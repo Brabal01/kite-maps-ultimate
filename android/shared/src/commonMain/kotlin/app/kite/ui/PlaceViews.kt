@@ -149,7 +149,7 @@ private fun PlaceActions(model: AppModel, place: Place, driveSeconds: Double?) {
                 if (model.settings.work?.id == place.id) item("Remove work", Icons.Filled.Work) { model.setWork(null) }()
                 else item("Set as work", Icons.Outlined.WorkOutline) { model.setWork(place) }()
                 item("Copy coordinates", Icons.Filled.ContentCopy) {
-                    ctx.copy(String.format(Locale.US, "%.6f, %.6f", place.location.lat, place.location.lng))
+                    ctx.copy(fmt("%.6f, %.6f", place.location.lat, place.location.lng))
                 }()
                 place.address?.let { a -> item("Copy address", Icons.Filled.ContentPaste) { ctx.copy("${place.name}, $a") }() }
                 HorizontalDivider()
@@ -199,7 +199,7 @@ private fun PlaceOverview(place: Place) {
                 InfoRow(Icons.Filled.Language, site.removePrefix("https://").removePrefix("http://"))
             }
         }
-        val coords = String.format(Locale.US, "%.6f, %.6f", place.location.lat, place.location.lng)
+        val coords = fmt("%.6f, %.6f", place.location.lat, place.location.lng)
         Copyable(coords) { InfoRow(Icons.Filled.GpsFixed, coords) }
         place.featuredReview?.let { r ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -278,7 +278,7 @@ fun DepartureBoard(place: Place) {
 }
 
 private fun countdown(t: Long): String {
-    val mins = Math.round((t - System.currentTimeMillis()) / 60_000.0).toInt()
+    val mins = Math.round((t - nowMillis()) / 60_000.0).toInt()
     if (mins <= 0) return "Now"
     if (mins < 60) return "$mins min"
     return Fmt.time(java.util.Date(t))
@@ -391,7 +391,7 @@ fun ReviewsList(place: Place) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         place.rating?.let { rating ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(String.format(Locale.US, "%.1f", rating), fontSize = 40.sp, fontWeight = FontWeight.ExtraBold, color = primaryText)
+                Text(fmt("%.1f", rating), fontSize = 40.sp, fontWeight = FontWeight.ExtraBold, color = primaryText)
                 Column {
                     Text(starsText(rating), fontSize = 18.sp, color = Color(0xFFF59E0B))
                     place.reviewCount?.let { Text("%,d reviews on Google".format(it), fontSize = KType.subheadline, color = secondaryText) }

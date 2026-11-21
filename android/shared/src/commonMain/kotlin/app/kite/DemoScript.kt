@@ -74,10 +74,10 @@ object DemoScript {
             } else Geo.point(line, kotlin.math.min(along + speed, total), cum)
             val course = Geo.bearing(pos, next)
             pos = next
-            LocationService.inject(Fix(pos.lat, pos.lng, 5.0, speed, course, 0.0, System.currentTimeMillis()))
+            LocationService.inject(Fix(pos.lat, pos.lng, 5.0, speed, course, 0.0, nowMillis()))
             delay(1000)
         }
-        android.util.Log.i("KiteTrace", "test drive over: ${if (model.nav == null) "arrived" else "still driving"}")
+        klog("KiteTrace", "test drive over: ${if (model.nav == null) "arrived" else "still driving"}")
     }
 
     /** Made-up Waze reports around Reading, so the badges and the heat map show even if Waze turns the build away. */
@@ -86,7 +86,7 @@ object DemoScript {
         var seed = 7UL
         fun rnd(): Double { seed = seed * 6364136223846793005UL + 1442695040888963407UL; return (seed shr 11).toDouble() / (1UL shl 53).toDouble() }
         val list = mutableListOf<WazeAlert>()
-        val now = System.currentTimeMillis()
+        val now = nowMillis()
         for (i in 0 until 60) {
             // Most police around two hot spots, a few anywhere.
             val spot = when (i % 3) { 0 -> LatLng(51.4620, -0.9950); 1 -> LatLng(51.4480, -0.9500); else -> c }
@@ -131,7 +131,7 @@ object DemoScript {
             "resume" -> {
                 // As if the app had closed halfway to Winchester: the card offering to carry on.
                 model.resumeOffer = SavedTrip(Place("demo-winchester", "Winchester Cathedral", LatLng(51.0607, -1.3131), "demo"), emptyList(), 0,
-                    System.currentTimeMillis())
+                    nowMillis())
                 return
             }
             "pickhome" -> { model.picking = PickKind.HOME; return }
@@ -187,7 +187,7 @@ object DemoScript {
                 if (step == "wazetap") {
                     delay(1000)
                     model.wazeInfo = list[list.size - 6].copy(subtype = "ACCIDENT_MAJOR", street = "Oxford Road", thumbsUp = 4, reliability = 9,
-                        reportedAtMillis = System.currentTimeMillis() - 18 * 60_000)
+                        reportedAtMillis = nowMillis() - 18 * 60_000)
                 }
                 return
             }
@@ -241,10 +241,10 @@ object DemoScript {
                 model.select(hall)
                 // What Google sends back for the pictures, for the build's log.
                 val pano = StreetView.find(hall.location)
-                if (pano == null) { android.util.Log.i("KiteTrace", "street view: no panorama"); return }
+                if (pano == null) { klog("KiteTrace", "street view: no panorama"); return }
                 val thumb = Http.getOrNull(StreetView.thumbnailUrl(pano, 0.0))
                 val tile = Http.getOrNull(StreetView.tileUrl(pano, 0, 0, 1))
-                android.util.Log.i("KiteTrace", "street view: pano ${pano.id} thumbnail ${thumb?.code} ${thumb?.body?.size} bytes ${thumb?.headers?.get("content-type")}; tile ${tile?.code} ${tile?.body?.size} bytes")
+                klog("KiteTrace", "street view: pano ${pano.id} thumbnail ${thumb?.code} ${thumb?.body?.size} bytes ${thumb?.headers?.get("content-type")}; tile ${tile?.code} ${tile?.body?.size} bytes")
                 return
             }
             "wazemap" -> {
@@ -252,7 +252,7 @@ object DemoScript {
                 st.wazeKinds = WazeAlert.Kind.entries.toSet()
                 center(model, 51.507, -0.12, 12.3)
                 delay(22000)
-                android.util.Log.i("KiteTrace", "waze after 28 s: ${Waze.lastStatus?.summary ?: "no answer yet"}; ${WazeWeb.note}")
+                klog("KiteTrace", "waze after 28 s: ${Waze.lastStatus?.summary ?: "no answer yet"}; ${WazeWeb.note}")
                 return
             }
             "saved" -> {

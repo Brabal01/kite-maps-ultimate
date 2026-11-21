@@ -81,7 +81,7 @@ class Cruise(private val scope: CoroutineScope) {
 
     /** Asks the road matcher every few seconds while moving (and never two at once). */
     private fun whereAmI(f: Fix) {
-        val now = System.currentTimeMillis()
+        val now = nowMillis()
         if (asking || trace.size < 3 || now - askedAt < 4_000) return
         if (askedFrom?.let { it.distanceTo(f.coord) <= 40 } == true) return
         asking = true
@@ -141,7 +141,7 @@ class Cruise(private val scope: CoroutineScope) {
     /** Drivers' reports within about 4 km, asked again every 90 seconds or 2 km. */
     private fun loadWaze(f: Fix) {
         if (!AppSettings.wazeOn || wazeLoading) return
-        val now = System.currentTimeMillis()
+        val now = nowMillis()
         if (now - wazeAt < 90_000 && wazeFrom?.let { it.distanceTo(f.coord) <= 2_000 } == true) return
         wazeLoading = true
         wazeAt = now

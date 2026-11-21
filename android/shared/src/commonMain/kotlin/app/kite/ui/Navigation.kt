@@ -491,7 +491,7 @@ fun FasterRouteCard(offer: FasterOffer, onKeep: () -> Unit, onTake: () -> Unit) 
     // How much of the wait is left, as the bar under the words.
     val left = remember(offer) { androidx.compose.animation.core.Animatable(1f) }
     LaunchedEffect(offer) {
-        left.animateTo(0f, tween(max(100L, offer.untilMillis - System.currentTimeMillis()).toInt().coerceAtMost(60_000),
+        left.animateTo(0f, tween(max(100L, offer.untilMillis - nowMillis()).toInt().coerceAtMost(60_000),
             easing = androidx.compose.animation.core.LinearEasing))
     }
     Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 4.dp).fillMaxWidth().glass(RoundedCornerShape(28.dp)).padding(18.dp),
@@ -607,7 +607,7 @@ internal fun arrivalParts(s: Double): Pair<String, String> {
 /** "8" min, or "1:20" hr once it's an hour or more. */
 internal fun timeParts(s: Double): Pair<String, String> {
     val mins = maxOf(1, Math.round(s / 60).toInt())
-    return if (mins < 60) "$mins" to "min" else String.format(java.util.Locale.US, "%d:%02d", mins / 60, mins % 60) to "hr"
+    return if (mins < 60) "$mins" to "min" else fmt("%d:%02d", mins / 60, mins % 60) to "hr"
 }
 
 /** "2.1" and "mi" from "2.1 mi". */
@@ -686,7 +686,7 @@ private fun ProgressStrip(left: Float, height: Dp) {
 /** "Reported 12 min ago". */
 val WazeAlert.reportedText: String
     get() {
-        val mins = max(((System.currentTimeMillis() - reportedAtMillis) / 60_000).toInt(), 0)
+        val mins = max(((nowMillis() - reportedAtMillis) / 60_000).toInt(), 0)
         val w = when {
             mins < 1 -> "just now"
             mins < 60 -> "$mins min ago"
@@ -1035,7 +1035,7 @@ fun AlongRouteSheet(nav: Navigator, close: () -> Unit) {
                     Row(Modifier.fillMaxWidth().tap { nav.addStop(p); close() }.padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(p.name, color = primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(listOfNotNull(p.rating?.let { String.format("%.1f ★", it) }, p.statusText).joinToString("  "), fontSize = KType.caption,
+                            Text(listOfNotNull(p.rating?.let { fmt("%.1f ★", it) }, p.statusText).joinToString("  "), fontSize = KType.caption,
                                 color = secondaryText, maxLines = 1)
                         }
                         Column(horizontalAlignment = Alignment.End) {

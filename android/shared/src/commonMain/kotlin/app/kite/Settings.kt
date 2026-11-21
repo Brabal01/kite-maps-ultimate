@@ -1,11 +1,9 @@
 package app.kite
 
-import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.kite.core.*
-import java.util.Locale
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
@@ -17,16 +15,16 @@ enum class UnitsMode(val label: String) {
 
 /** Everything in Settings, kept between launches. Each value is Compose state, so screens redraw when it changes. */
 object AppSettings {
-    private val d: SharedPreferences by lazy { KiteApp.app.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
+    private val d: PrefStore by lazy { PrefStore("settings") }
 
-    private class Pref<T>(val key: String, val read: (SharedPreferences) -> T, val write: (SharedPreferences.Editor, T) -> Unit) :
+    private class Pref<T>(val key: String, val read: (PrefStore) -> T, val write: (PrefStore, T) -> Unit) :
         ReadWriteProperty<Any?, T> {
         private var state: androidx.compose.runtime.MutableState<T>? = null
         private fun s() = state ?: mutableStateOf(read(d)).also { state = it }
         override fun getValue(thisRef: Any?, property: KProperty<*>): T = s().value
         override fun setValue(thisRef: Any?, property: KProperty<*>, value: T) {
             s().value = value
-            d.edit().also { write(it, value) }.apply()
+            write(d, value)
         }
     }
 
@@ -34,14 +32,14 @@ object AppSettings {
         Pref(key, { if (it.contains(key)) it.getBoolean(key, false) else def() }, { e, v -> e.putBoolean(key, v) })
     private fun bool(key: String, def: Boolean = false) = bool(key) { def }
     private fun int(key: String, def: Int) = Pref(key, { it.getInt(key, def) }, { e, v -> e.putInt(key, v) })
-    private fun place(key: String) = Pref(key, { p -> p.getString(key, null)?.let { PlaceCodec.decode(it) } },
+    private fun place(key: String) = Pref(key, { p -> p.getString(key)?.let { PlaceCodec.decode(it) } },
         { e, v -> if (v == null) e.remove(key) else e.putString(key, PlaceCodec.encode(v)) })
-    private fun places(key: String) = Pref(key, { p -> p.getString(key, null)?.let { PlaceCodec.decodeList(it) } ?: emptyList() },
+    private fun places(key: String) = Pref(key, { p -> p.getString(key)?.let { PlaceCodec.decodeList(it) } ?: emptyList() },
         { e, v -> e.putString(key, PlaceCodec.encodeList(v)) })
 
-    var theme: ThemeMode by Pref("theme", { p -> ThemeMode.entries.firstOrNull { it.name == p.getString("theme", null) } ?: ThemeMode.SYSTEM },
+    var theme: ThemeMode by Pref("theme", { p -> ThemeMode.entries.firstOrNull { it.name == p.getString("theme") } ?: ThemeMode.SYSTEM },
         { e, v -> e.putString("theme", v.name) })
-    var units: UnitsMode by Pref("units", { p -> UnitsMode.entries.firstOrNull { it.name == p.getString("units", null) } ?: UnitsMode.AUTO },
+    var units: UnitsMode by Pref("units", { p -> UnitsMode.entries.firstOrNull { it.name == p.getString("units") } ?: UnitsMode.AUTO },
         { e, v -> e.putString("units", v.name) })
     var voice by bool("voice", true)
     /** The voice button's middle setting, "Alerts only": remembered with `voice`, so the next drive starts the same. */
@@ -63,14 +61,14 @@ object AppSettings {
     /** Say so when driving over the posted limit. Off by default, like Vela. */
     var speedingAlert by bool("speedingAlert")
     /** How close the driving map sits: Closer, Normal (as Kite always was) or Wider. */
-    var mapZoom: MapZoom by Pref("mapZoom", { p -> MapZoom.of(p.getString("mapZoom", null)) }, { e, v -> e.putString("mapZoom", v.name) })
+    var mapZoom: MapZoom by Pref("mapZoom", { p -> MapZoom.of(p.getString("mapZoom")) }, { e, v -> e.putString("mapZoom", v.name) })
     /** The driving map's 3D, 2D or north-up choice from the map button, kept for the next drive. */
-    var driveLook: MapLook by Pref("driveLook", { p -> MapLook.of(p.getString("driveLook", null)) }, { e, v -> e.putString("driveLook", v.name) })
+    var driveLook: MapLook by Pref("driveLook", { p -> MapLook.of(p.getString("driveLook")) }, { e, v -> e.putString("driveLook", v.name) })
     /** Live reports from Waze drivers. Off until the person says yes on the Waze screen. */
     var waze by bool("waze")
     var wazeAsked by bool("wazeAsked")
     var wazeKinds: Set<WazeAlert.Kind> by Pref("wazeKinds",
-        { p -> p.getStringSet("wazeKinds", null)?.mapNotNull { k -> WazeAlert.Kind.entries.firstOrNull { it.key == k } }?.toSet()
+        { p -> p.getStringSet("wazeKinds")?.mapNotNull { k -> WazeAlert.Kind.entries.firstOrNull { it.key == k } }?.toSet()
             ?: setOf(WazeAlert.Kind.POLICE, WazeAlert.Kind.ACCIDENT, WazeAlert.Kind.HAZARD, WazeAlert.Kind.WEATHER) },
         { e, v -> e.putStringSet("wazeKinds", v.map { it.key }.toSet()) })
     var wazeOnMap by bool("wazeOnMap", true)
@@ -87,7 +85,7 @@ object AppSettings {
     /** "My car meets the rules": clean air zones on a route aren't flagged. */
     var cleanCar by bool("cleanCar")
     /** The drive in progress, kept so it can be offered again if the app closes halfway. */
-    var trip: SavedTrip? by Pref("trip", { p -> p.getString("trip", null)?.let { SavedTrip.decode(it) } },
+    var trip: SavedTrip? by Pref("trip", { p -> p.getString("trip")?.let { SavedTrip.decode(it) } },
         { e, v -> if (v == null) e.remove("trip") else e.putString("trip", v.encode()) })
     /** Live camera photos (GitHub #15): camera dots on the map, and the cameras along a route before you go. */
     var liveCams by bool("liveCams", true)
@@ -105,13 +103,13 @@ object AppSettings {
     var defaultMode: TravelMode by Pref("defaultMode", { p -> TravelMode.entries.firstOrNull { it.raw == p.getInt("defaultMode", 0) } ?: TravelMode.DRIVE },
         { e, v -> e.putInt("defaultMode", v.raw) })
     var saved: List<Place> by places("saved")
-    var recents: List<String> by Pref("recents", { p -> p.getString("recents", null)?.let { (Json.parse(it) as? List<*>)?.filterIsInstance<String>() } ?: emptyList() },
+    var recents: List<String> by Pref("recents", { p -> p.getString("recents")?.let { (Json.parse(it) as? List<*>)?.filterIsInstance<String>() } ?: emptyList() },
         { e, v -> e.putString("recents", Json.write(v)) })
     /** Places you opened lately, newest first. */
     var recentPlaces: List<Place> by places("recentPlaces")
 
     /** Countries where apps may not warn of speed cameras (France, Germany, Switzerland and a few more). */
-    val camerasRestricted: Boolean get() = Locale.getDefault().country in setOf("FR", "DE", "CH", "CY", "SK", "TR")
+    val camerasRestricted: Boolean get() = systemCountry() in setOf("FR", "DE", "CH", "CY", "SK", "TR")
 
     /** Waze belongs to Google, so "Use Kite without Google" turns it off too. */
     val wazeOn: Boolean get() = waze && !noGoogle
@@ -127,7 +125,7 @@ object AppSettings {
 
     /** Whether this report should show and warn: a wanted kind, and not too old. */
     fun shows(a: WazeAlert): Boolean =
-        wants(a.kind) && (wazeMaxAge == 0 || (System.currentTimeMillis() - a.reportedAtMillis) <= wazeMaxAge * 60_000L)
+        wants(a.kind) && (wazeMaxAge == 0 || (nowMillis() - a.reportedAtMillis) <= wazeMaxAge * 60_000L)
 
     fun isSaved(p: Place) = saved.any { it.matchesNearby(p) }
 

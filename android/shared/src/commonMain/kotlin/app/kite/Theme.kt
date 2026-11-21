@@ -168,7 +168,7 @@ object Fmt {
     fun distance(m: Double): String {
         if (metric) {
             if (m < 950) return "${r(m / 10) * 10} m"
-            return if (m < 9_950) String.format(Locale.US, "%.1f km", m / 1000) else "${r(m / 1000)} km"
+            return if (m < 9_950) fmt("%.1f km", m / 1000) else "${r(m / 1000)} km"
         }
         if (yards) {
             val yd = m * 1.09361
@@ -178,7 +178,7 @@ object Fmt {
             if (ft < 1000) return "${max(r(ft / 50) * 50, 50)} ft"
         }
         val mi = m / 1609.344
-        return if (mi < 9.95) String.format(Locale.US, "%.1f mi", mi) else "${r(mi)} mi"
+        return if (mi < 9.95) fmt("%.1f mi", mi) else "${r(mi)} mi"
     }
 
     /** Words for the voice: "400 feet", "1.2 miles". */
@@ -186,7 +186,7 @@ object Fmt {
         if (metric) {
             if (m < 950) return "${r(m / 50) * 50} meters"
             val km = m / 1000
-            return if (km < 1.05) "1 kilometer" else String.format(Locale.US, "%.1f kilometers", km)
+            return if (km < 1.05) "1 kilometer" else fmt("%.1f kilometers", km)
         }
         if (yards) {
             val yd = m * 1.09361
@@ -199,7 +199,7 @@ object Fmt {
         if (mi < 0.3) return if (yards) "a quarter of a mile" else "a quarter mile"
         if (mi < 0.6) return "half a mile"
         if (mi < 0.9) return "three quarters of a mile"
-        return if (mi < 1.05) "1 mile" else String.format(Locale.US, "%.1f miles", mi)
+        return if (mi < 1.05) "1 mile" else fmt("%.1f miles", mi)
     }
 
     /** A limit for the voice: "30 miles per hour" (to the posted 5), "50 kilometers per hour". */
@@ -234,7 +234,7 @@ object Fmt {
     /** "4 min" on foot, from metres in a straight line (a little slower than walking pace for the corners). */
     fun walkMinutes(meters: Double): String = "${maxOf(1, Math.round(meters / 70).toInt())} min"
 
-    fun arrival(s: Double): String = time(Date(System.currentTimeMillis() + (s * 1000).toLong()))
+    fun arrival(s: Double): String = time(Date(nowMillis() + (s * 1000).toLong()))
 
     fun time(d: Date): String = android.text.format.DateFormat.getTimeFormat(KiteApp.app).format(d)
 
@@ -286,7 +286,7 @@ fun Stars(rating: Double, size: Dp = 13.dp) {
 fun PlaceMetaLine(place: Place, showStars: Boolean = true, here: LatLng? = null) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
         place.rating?.let { r ->
-            Text(String.format(Locale.US, "%.1f", r), color = primaryText, fontSize = KType.subheadline)
+            Text(fmt("%.1f", r), color = primaryText, fontSize = KType.subheadline)
             if (showStars) Stars(r) else Icon(Icons.Filled.Star, null, tint = Vela.star, modifier = Modifier.size(12.dp))
             place.reviewCount?.let { Text("(${Fmt.count(it)})", color = secondaryText, fontSize = KType.subheadline) }
         }

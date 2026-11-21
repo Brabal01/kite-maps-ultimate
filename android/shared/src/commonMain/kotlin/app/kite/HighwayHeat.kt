@@ -2,7 +2,6 @@ package app.kite
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.util.Log
 import app.kite.core.Http
 import kotlinx.coroutines.*
 import okhttp3.Cache
@@ -179,7 +178,7 @@ class HighwayHeat(private val scope: CoroutineScope) {
             for ((t, img) in got) if (img != null) { fresh[t] = img; remember(t.key, img) }
             if (want.isNotEmpty()) {
                 lastOK = fresh.isNotEmpty()
-                Log.i("KiteTrace", "heat map: ${fresh.size} of ${want.size} tiles at zoom ${want.first().z}")
+                klog("KiteTrace", "heat map: ${fresh.size} of ${want.size} tiles at zoom ${want.first().z}")
             }
             val s = map.style ?: return@launch
             show(fresh, s, below)

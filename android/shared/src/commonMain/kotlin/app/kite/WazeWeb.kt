@@ -1,56 +1,46 @@
 package app.kite
 
-import android.annotation.SuppressLint
-import android.app.Activity
-import android.view.ViewGroup
-import android.webkit.CookieManager
-import android.webkit.JavascriptInterface
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.webkit.WebViewCompat
-import androidx.webkit.WebViewFeature
 import app.kite.core.Waze
 import kotlinx.coroutines.*
-import org.json.JSONObject
-import java.lang.ref.WeakReference
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
+
+/**
+ * A web page Kite keeps out of sight behind the map (Android's WebView, the iPhone's WKWebView).
+ * [onLoaded] is called once the page has finished loading, [onFailed] if it couldn't.
+ */
+expect class HiddenWebPage(url: String, startScript: String, onLoaded: () -> Unit, onFailed: () -> Unit) {
+    /**
+     * Runs [body] (the inside of an async JavaScript function) in the page with [args] as string
+     * variables, and hands back what it returns as text (null on no answer).
+     */
+    suspend fun run(body: String, args: Map<String, String>, timeoutMs: Long): String?
+    /** Whether the page holds a cookie for [site] whose name starts with [prefix]. */
+    suspend fun hasCookie(site: String, prefix: String): Boolean
+    fun close()
+}
+
+/** A JavaScript string literal for [s]. */
+fun jsQuote(s: String): String = app.kite.core.Json.write(s)
 
 /**
  * When Waze turns Kite's plain requests away, ask from inside the real live map page instead.
  * Since 2026 Waze guards its feed with Google reCAPTCHA: the live map page runs a check in the
  * background and gets a pass (the "recaptcha-ca-t" cookie), and only requests carrying it get
- * reports. So a web view, tucked out of sight behind the map, opens waze.com/live-map, waits for
+ * reports. So a web page, tucked out of sight behind the map, opens waze.com/live-map, waits for
  * the pass, and fetches the feed from there, copying any extra headers the page itself sends.
- * The same as the iPhone app's WazeWeb.
  */
 object WazeWeb {
-    private var web: WebView? = null
+    private var web: HiddenWebPage? = null
     private var ready = false
     private var waiting = mutableListOf<CancellableContinuation<Unit>>()
-    private var activity: WeakReference<Activity>? = null
-    private val answers = ConcurrentHashMap<Int, CancellableContinuation<String?>>()
-    private val ids = AtomicInteger()
-    private val main = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val main = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     /** What happened last time, for Settings › Road alerts. */
     @Volatile var note = "page: not tried"; private set
 
-    fun install(a: Activity) {
-        // A new screen: the old hidden page went with the old one.
-        if (activity?.get() !== a) { reset(); finish(ok = false) }
-        activity = WeakReference(a)
+    fun install() {
         Waze.fallback = { url -> fetch(url) }
-    }
-
-    /** The screen is going away: drop the hidden page so it doesn't keep the old screen in memory. */
-    fun uninstall(a: Activity) {
-        if (activity?.get() !== a) return
-        reset(); finish(ok = false)
-        activity = null
     }
 
     /** Watches the page's own requests for the feed, and notes reCAPTCHA's key and action. */
@@ -108,25 +98,6 @@ object WazeWeb {
 
 """
 
-    private class Bridge {
-        @JavascriptInterface fun done(id: Int, text: String?) { answers.remove(id)?.let { if (it.isActive) it.resume(text) } }
-    }
-
-    /** Runs [body] (the inside of an async function) in the page, and hands back what it returns. */
-    private suspend fun run(w: WebView, body: String, args: Map<String, String> = emptyMap(), timeoutMs: Long = 20_000): String? {
-        val id = ids.incrementAndGet()
-        val vars = args.entries.joinToString("") { (k, v) -> "var $k = ${JSONObject.quote(v)};" }
-        val js = "(async function () { $vars try { var r = await (async function () { $body })(); KiteBridge.done($id, r == null ? null : String(r)); }" +
-            " catch (e) { KiteBridge.done($id, 'ERR ' + e); } })();"
-        return withTimeoutOrNull(timeoutMs) {
-            suspendCancellableCoroutine { cont ->
-                answers[id] = cont
-                cont.invokeOnCancellation { answers.remove(id) }
-                w.evaluateJavascript(js, null)
-            }
-        }
-    }
-
     suspend fun fetch(url: String): ByteArray? = withContext(Dispatchers.Main) {
         // Switched off while a request was on its way: don't open the page again.
         if (!AppSettings.wazeOn) return@withContext null
@@ -161,12 +132,12 @@ object WazeWeb {
         // A second try a few seconds on: the page's pass may only just be on its way.
         for (attempt in 0 until 2) {
             if (attempt == 1) delay(4000)
-            val text = run(w, js, mapOf("u" to url))
+            val text = w.run(js, mapOf("u" to url), 20_000)
             when {
                 text == null -> note = "page: no answer"
                 text.startsWith("ERR ") -> note = "page: ${text.removePrefix("ERR ")}"
                 text.startsWith("HTTP ") -> note = "page: fetch $text · ${pageState(w)}"
-                else -> { note = "page: ok, ${text.length} chars"; return@withContext text.toByteArray() }
+                else -> { note = "page: ok, ${text.length} chars"; return@withContext text.encodeToByteArray() }
             }
         }
         // Still turned away: open the page afresh next time, for a new pass.
@@ -174,16 +145,15 @@ object WazeWeb {
         null
     }
 
-    private suspend fun pageState(w: WebView): String {
-        val page = run(w, "var k = window.__kite; return k ? 'page asked ' + k.seen + '× (' + k.status + ')' + (k.key ? ' key ' + String(k.key).slice(0, 6) + ' ' + (k.action || '?') : ' no key') : 'no watcher';", timeoutMs = 3000)
-        return "pass ${if (hasPass()) "yes" else "no"}, ${page ?: "?"}"
+    private suspend fun pageState(w: HiddenWebPage): String {
+        val page = w.run("var k = window.__kite; return k ? 'page asked ' + k.seen + '× (' + k.status + ')' + (k.key ? ' key ' + String(k.key).slice(0, 6) + ' ' + (k.action || '?') : ' no key') : 'no watcher';", emptyMap(), 3000)
+        return "pass ${if (hasPass(w)) "yes" else "no"}, ${page ?: "?"}"
     }
 
-    private suspend fun pageReady(w: WebView): Boolean =
-        run(w, "var k = window.__kite; return !!(k && (k.seen > 0 || k.key));", timeoutMs = 2000) == "true"
+    private suspend fun pageReady(w: HiddenWebPage): Boolean =
+        w.run("var k = window.__kite; return !!(k && (k.seen > 0 || k.key));", emptyMap(), 2000) == "true"
 
-    private fun hasPass(): Boolean =
-        CookieManager.getInstance().getCookie("https://www.waze.com")?.split(";")?.any { it.trim().startsWith("recaptcha-ca") } == true
+    private suspend fun hasPass(w: HiddenWebPage): Boolean = w.hasCookie("https://www.waze.com", "recaptcha-ca")
 
     /** Road alerts off, or "Use Kite without Google": close the hidden page so its scripts stop too. */
     fun shutDown() {
@@ -192,47 +162,19 @@ object WazeWeb {
     }
 
     private fun reset() {
-        web?.let { w -> (w.parent as? ViewGroup)?.removeView(w); w.destroy() }
+        web?.close()
         web = null
         ready = false
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
     private suspend fun openPage() {
         if (ready) return
         if (web == null) {
-            val a = activity?.get() ?: return
-            val w = WebView(a)
-            w.settings.javaScriptEnabled = true
-            w.settings.domStorageEnabled = true
-            // The phone's own Chrome name, without the parts that say "app web view", so the page and
-            // reCAPTCHA see a normal browser on this phone.
-            w.settings.userAgentString = w.settings.userAgentString.replace("; wv)", ")").replace(Regex(" Version/[0-9.]+"), "")
-            CookieManager.getInstance().setAcceptThirdPartyCookies(w, true)
-            w.addJavascriptInterface(Bridge(), "KiteBridge")
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-                WebViewCompat.addDocumentStartJavaScript(w, watcher, setOf("https://www.waze.com"))
-            }
-            w.webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView, url: String?) {
-                    if (view === web && !ready) {
-                        // Without a start-of-page script, watch from now on instead.
-                        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) view.evaluateJavascript(watcher, null)
-                        pageLoaded(view)
-                    }
-                }
-                override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                    if (view === web && request.isForMainFrame) finish(ok = false)
-                }
-            }
-            // Behind everything, so the page runs like a real one (reCAPTCHA's check needs its scripts
-            // to keep running) without ever being seen or touched.
-            w.alpha = 0.01f
-            w.isFocusable = false
-            w.setOnTouchListener { _, _ -> true }
-            (a.window.decorView as? ViewGroup)?.addView(w, 0, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-            web = w
-            w.loadUrl(Waze.pageURL)
+            var page: HiddenWebPage? = null
+            page = HiddenWebPage(Waze.pageURL, watcher, onLoaded = { page?.let { if (it === web && !ready) pageLoaded(it) } },
+                onFailed = { if (page === web) finish(ok = false) })
+            web = page
+            val w = page
             // Give up waiting after 25 seconds, so a stuck page never holds the map back.
             main.launch { delay(25_000); if (!ready && web === w) finish(ok = false) }
         }
@@ -240,10 +182,10 @@ object WazeWeb {
     }
 
     /** Once the page has loaded, wait (up to 12 seconds) for reCAPTCHA's pass before saying it's ready. */
-    private fun pageLoaded(w: WebView) {
+    private fun pageLoaded(w: HiddenWebPage) {
         main.launch {
             for (i in 0 until 24) {
-                if (hasPass() || pageReady(w)) break
+                if (hasPass(w) || pageReady(w)) break
                 delay(500)
                 if (web !== w) return@launch
             }

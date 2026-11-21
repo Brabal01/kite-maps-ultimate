@@ -53,12 +53,15 @@ class DriveService : Service() {
         private var title = "Driving with Kite"
         private var text = "Tap to go back to the map"
         private var shownAt = 0L
+        /** The small car icon, set by the Android shell (it owns the drawable). */
+        var notificationIcon = android.R.drawable.ic_menu_mylocation
 
         private fun build(c: Context, title: String, text: String): Notification {
-            val open = PendingIntent.getActivity(c, 0, Intent(c, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            val launch = c.packageManager.getLaunchIntentForPackage(c.packageName) ?: Intent()
+            val open = PendingIntent.getActivity(c, 0, launch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             return NotificationCompat.Builder(c, CHANNEL)
-                .setSmallIcon(R.drawable.ic_shortcut_car)
+                .setSmallIcon(notificationIcon)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setContentIntent(open)
@@ -101,4 +104,10 @@ class DriveService : Service() {
                 .onFailure { runCatching { c.stopService(Intent(c, DriveService::class.java)) } }
         }
     }
+}
+
+actual object DriveSession {
+    actual fun start(destination: String) = DriveService.start(AndroidHost.app)
+    actual fun show(state: TurnState) = DriveService.show(AndroidHost.app, state.title, state.text)
+    actual fun stop() = DriveService.stop(AndroidHost.app)
 }

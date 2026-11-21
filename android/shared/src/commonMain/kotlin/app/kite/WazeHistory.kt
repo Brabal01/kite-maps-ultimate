@@ -22,7 +22,7 @@ object WazeHistory {
     private fun load() {
         if (loaded) return
         loaded = true
-        val cutoff = System.currentTimeMillis() - 90L * 86_400_000
+        val cutoff = nowMillis() - 90L * 86_400_000
         sightings = runCatching { Json.parse(file.readText()).asMaps() }.getOrNull()?.mapNotNull {
             Sighting(it["id"].text() ?: return@mapNotNull null, it["lat"].num() ?: return@mapNotNull null,
                 it["lng"].num() ?: return@mapNotNull null, it["t"].long() ?: return@mapNotNull null)
@@ -37,7 +37,7 @@ object WazeHistory {
 
     /** Kept 90 days while Kite runs too, not only when it starts (and the file follows). */
     private fun prune() {
-        val cutoff = System.currentTimeMillis() - 90L * 86_400_000
+        val cutoff = nowMillis() - 90L * 86_400_000
         if (sightings.none { it.t <= cutoff }) return
         sightings = sightings.filter { it.t > cutoff }
         ids.clear(); ids.addAll(sightings.map { it.id })
@@ -73,9 +73,9 @@ object WazeHistory {
 
     /** While Kite is open, every 10 minutes, also asks Waze about the areas around [places]. */
     fun sweepIfDue(places: List<LatLng>, scope: CoroutineScope) {
-        if (sweeping || System.currentTimeMillis() - sweptAt < 600_000 || places.isEmpty()) return
+        if (sweeping || nowMillis() - sweptAt < 600_000 || places.isEmpty()) return
         sweeping = true
-        sweptAt = System.currentTimeMillis()
+        sweptAt = nowMillis()
         scope.launch {
             for (p in places.take(4)) {
                 val d = 0.12

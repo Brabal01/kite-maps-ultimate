@@ -2,7 +2,6 @@ package app.kite
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,7 +61,7 @@ object LiveCamStore {
     /** Read the saved list, then ask for a new one if it's a day old (or missing). */
     fun ensureLoaded() {
         if (loading != null) return
-        val now = System.currentTimeMillis()
+        val now = nowMillis()
         if (road.isEmpty()) {
             runCatching {
                 val saved = Json.obj(cacheFile.readBytes())
@@ -78,7 +77,7 @@ object LiveCamStore {
             loading = null
             if (!fresh.isNullOrEmpty()) {
                 road = fresh
-                listedAt = System.currentTimeMillis()
+                listedAt = nowMillis()
                 status = "${fresh.size} road cameras"
                 bump()
                 withContext(Dispatchers.IO) {
@@ -87,18 +86,18 @@ object LiveCamStore {
             } else {
                 status = if (road.isEmpty()) "Couldn't load the camera list" else "${road.size} road cameras (saved list)"
                 // Try again in ten minutes rather than on every pan.
-                listedAt = System.currentTimeMillis() - 86_400_000L + 600_000L
-                roadRetryAt = System.currentTimeMillis() + 600_000L
+                listedAt = nowMillis() - 86_400_000L + 600_000L
+                roadRetryAt = nowMillis() + 600_000L
             }
         }
     }
 
     private suspend fun fetchRoadList(): List<LiveCam>? {
         get(LiveCams.OPEN_HIGHWAYS_URL)?.let { LiveCams.parseOpenHighways(it) }?.takeIf { it.size > 100 }?.let {
-            Log.i(TAG, "openhighways ${it.size}"); return it
+            klog(TAG, "openhighways ${it.size}"); return it
         }
         get(LiveCams.TFL_URL)?.let { LiveCams.parseTfL(it) }?.takeIf { it.isNotEmpty() }?.let {
-            Log.i(TAG, "tfl ${it.size}"); return it
+            klog(TAG, "tfl ${it.size}"); return it
         }
         return null
     }
@@ -112,7 +111,7 @@ object LiveCamStore {
      * kept and asked next, so a quick pan never leaves the new place empty.
      */
     fun loadWindy(center: LatLng, spanKm: Double) {
-        val now = System.currentTimeMillis()
+        val now = nowMillis()
         if (!WindyKey.present) return
         // In the minute's pause after a failure: remember the newest view and ask once the pause is over.
         if (now - windyFailedAt < 60_000) { windyPending = center to spanKm; retryWindyLater(); return }
@@ -128,13 +127,13 @@ object LiveCamStore {
             windyFetch = null
             val cams = data?.let { LiveCams.parseWindy(it) }
             if (cams != null) {
-                val t = System.currentTimeMillis()
+                val t = nowMillis()
                 // A full answer (the 50 limit) may have left cameras out: zooming in asks again.
                 windyAsked += Asked(center, radius.toDouble(), t, if (data != null && LiveCams.windyListed(data) >= 50) reach * 0.8 else 0.0)
                 cams.forEach { windy[it.id] = it to t }
                 bump()
             } else {
-                windyFailedAt = System.currentTimeMillis()
+                windyFailedAt = nowMillis()
                 // The view asked for meanwhile is tried again after the minute's pause, not dropped.
                 if (windyPending != null) retryWindyLater()
                 return@launch
@@ -148,7 +147,7 @@ object LiveCamStore {
     /** One retry at the end of the pause, with the newest view asked for in it. */
     private fun retryWindyLater() {
         if (windyRetry != null) return
-        val wait = (61_000 - (System.currentTimeMillis() - windyFailedAt)).coerceAtLeast(1_000)
+        val wait = (61_000 - (nowMillis() - windyFailedAt)).coerceAtLeast(1_000)
         windyRetry = scope.launch {
             delay(wait)
             windyRetry = null
@@ -169,7 +168,7 @@ object LiveCamStore {
      */
     fun loadWindyRoute(key: String, line: List<LatLng>) {
         if (!WindyKey.present || line.size < 2 || key == windyRouteKey) return
-        if (System.currentTimeMillis() - windyFailedAt < 60_000) return
+        if (nowMillis() - windyFailedAt < 60_000) return
         windyRouteKey = key
         windyRouteFetch?.cancel()
         windyRouteFetch = scope.launch {
@@ -180,7 +179,7 @@ object LiveCamStore {
             while (queue.isNotEmpty() && budget > 0) {
                 val ask = queue.removeFirst()
                 val radius = ask.radiusKm.toDouble()
-                val now = System.currentTimeMillis()
+                val now = nowMillis()
                 windyAsked.removeAll { now - it.at >= 600_000 }
                 when (val plan = LiveCams.windyPlan(ask, windyAsked.map { LiveCams.WindyAsked(it.center, it.km, it.minReach) }, line, cum)) {
                     LiveCams.WindyPlan.Skip -> continue
@@ -192,11 +191,11 @@ object LiveCamStore {
                 val cams = data?.let { LiveCams.parseWindy(it) }
                 if (data == null || cams == null) {
                     // Asked again next time the route is shown, after the minute's pause.
-                    windyFailedAt = System.currentTimeMillis()
+                    windyFailedAt = nowMillis()
                     windyRouteKey = null
                     return@launch
                 }
-                val t = System.currentTimeMillis()
+                val t = nowMillis()
                 val full = LiveCams.windyListed(data) >= 50
                 windyAsked += Asked(ask.center, radius, t, if (full) radius * 0.8 else 0.0)
                 cams.forEach { windy[it.id] = it to t }
@@ -223,11 +222,11 @@ object LiveCamStore {
     /** A Windy webcam with a photo link that still works (they last about 15 minutes); road cameras as they are. */
     suspend fun current(cam: LiveCam): LiveCam {
         if (cam.source != LiveCam.Source.WINDY) return cam
-        windy[cam.id]?.let { if (System.currentTimeMillis() - it.second < 600_000) return it.first }
+        windy[cam.id]?.let { if (nowMillis() - it.second < 600_000) return it.first }
         val url = LiveCams.windyOneUrl(cam.id) ?: return cam
         val fresh = withContext(Dispatchers.IO) { get(url, mapOf("x-windy-api-key" to WindyKey.VALUE)) }
             ?.let { LiveCams.parseWindy(it)?.firstOrNull() } ?: return cam
-        windy[cam.id] = fresh to System.currentTimeMillis()
+        windy[cam.id] = fresh to nowMillis()
         return fresh
     }
 

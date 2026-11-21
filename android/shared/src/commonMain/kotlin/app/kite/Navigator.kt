@@ -4,7 +4,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import android.util.Log
 import app.kite.core.*
 import kotlinx.coroutines.*
 import kotlin.math.*
@@ -38,7 +37,7 @@ enum class VoiceMode(val title: String, val detail: String) {
 
 data class AircraftNear(val aircraft: PoliceAircraft, val meters: Double)
 
-private fun now() = System.currentTimeMillis()
+private fun now() = nowMillis()
 private fun since(t: Long) = (now() - t) / 1000.0
 private fun String.lowercasedFirst() = if (isEmpty()) this else substring(0, 1).lowercase() + substring(1)
 
@@ -78,7 +77,7 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
      */
     var estimating by mutableStateOf(false); private set
     /** When the last real GPS fix came in, by the phone's running timer. */
-    private var realFixMs = android.os.SystemClock.elapsedRealtime()
+    private var realFixMs = elapsedRealtime()
     /** Where along the route, how fast and when the estimate started from (the last real fix). */
     private class EstimateFrom(val along: Double, val speed: Double, val atMs: Long)
     private var estimateFrom: EstimateFrom? = null
@@ -174,7 +173,7 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
         while (true) {
             delay(1_000)
             if (lastFix == null || demoAlerts) continue
-            val gap = (android.os.SystemClock.elapsedRealtime() - realFixMs) / 1000.0
+            val gap = (elapsedRealtime() - realFixMs) / 1000.0
             val lost = gap > 8
             estimate(gap)
             if (lost != gpsLost) gpsLost = lost
@@ -193,10 +192,10 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
         if (estimateFrom == null) {
             if (p.offRoute || p.offsetMeters >= 30 || speedMps < 5 || p.remainingMeters <= 400) return
             // Started again after a new route was taken mid-tunnel: from where the estimate had got to, now.
-            estimateFrom = EstimateFrom(p.alongMeters, speedMps, if (estimating) android.os.SystemClock.elapsedRealtime() else realFixMs)
+            estimateFrom = EstimateFrom(p.alongMeters, speedMps, if (estimating) elapsedRealtime() else realFixMs)
         }
         val e = estimateFrom ?: return
-        val t = (android.os.SystemClock.elapsedRealtime() - e.atMs) / 1000.0
+        val t = (elapsedRealtime() - e.atMs) / 1000.0
         val along = e.along + e.speed * t
         if (t >= 180 || along >= Geo.length(route.polyline) - 300) {
             // Too long without GPS to keep guessing: stop, and the screen says the signal is lost.
@@ -314,7 +313,7 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
     fun handle(loc: Fix, estimated: Boolean = false) {
         if (arrived) return
         if (!estimated) {
-            realFixMs = android.os.SystemClock.elapsedRealtime()
+            realFixMs = elapsedRealtime()
             estimateFrom = null
             if (estimating) estimating = false
         }
@@ -356,7 +355,7 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
         }
         if (since(tracedAt) >= 3) {
             tracedAt = now()
-            Log.i("KiteTrace", String.format(java.util.Locale.US, "at %.5f,%.5f along %d off %d next %d in %d offRoute %b speed %d",
+            klog("KiteTrace", fmt("at %.5f,%.5f along %d off %d next %d in %d offRoute %b speed %d",
                 loc.lat, loc.lng, p.alongMeters.toInt(), p.offsetMeters.toInt(), p.nextIndex ?: -1, p.distanceToNext.toInt(), p.offRoute, speedMps.toInt()))
         }
         announce(p)
@@ -762,7 +761,7 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
         demoAlerts = true
         val here = progress?.let { Geo.point(route.polyline, it.alongMeters + 130) } ?: route.polyline.firstOrNull() ?: LatLng(0.0, 0.0)
         val a = WazeAlert(id = "demo-jam", kind = WazeAlert.Kind.JAM, subtype = "JAM_STAND_STILL_TRAFFIC", location = here, street = "A335",
-            reportedAtMillis = System.currentTimeMillis() - 4 * 60_000, thumbsUp = 1, reliability = 7)
+            reportedAtMillis = nowMillis() - 4 * 60_000, thumbsUp = 1, reliability = 7)
         wazeAhead = WazeAhead(a, 130.0, 600.0)
     }
 
@@ -770,7 +769,7 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
         demoAlerts = true
         val here = progress?.let { Geo.point(route.polyline, it.alongMeters + 300) } ?: route.polyline.firstOrNull() ?: LatLng(0.0, 0.0)
         val a = WazeAlert(id = "demo-police", kind = WazeAlert.Kind.POLICE, subtype = "POLICE_HIDING", location = here, street = "A9",
-            reportedAtMillis = System.currentTimeMillis() - 7 * 60_000, thumbsUp = 3, reliability = 8)
+            reportedAtMillis = nowMillis() - 7 * 60_000, thumbsUp = 3, reliability = 8)
         wazeAhead = WazeAhead(a, 260.0, 600.0)
         policeRisk = 72
         aircraftNear = AircraftNear(PoliceAircraft(id = "demo-heli", callsign = "NPAS15", location = here, altitudeFeet = 1400.0, helicopter = true), 3200.0)
@@ -936,7 +935,7 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
     }
 
     private fun reroute(loc: Fix, quiet: Boolean = false, adding: Place? = null) {
-        Log.i("KiteTrace", "reroute from ${loc.lat},${loc.lng}")
+        klog("KiteTrace", "reroute from ${loc.lat},${loc.lng}")
         rerouting = true
         lastReroute = now()
         if (!Connectivity.online) {

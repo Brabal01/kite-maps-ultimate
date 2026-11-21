@@ -72,8 +72,8 @@ private val webViolet = Color(0xFF7C3AED)
 /** How old a photo is, as a little pill: green when fresh, amber after 20 minutes, grey when it's likely stuck. */
 @Composable
 fun PhotoAgePill(taken: Long?) {
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) { while (true) { delay(30_000); now = System.currentTimeMillis() } }
+    var now by remember { mutableLongStateOf(nowMillis()) }
+    LaunchedEffect(Unit) { while (true) { delay(30_000); now = nowMillis() } }
     val age = taken?.let { maxOf(0L, now - it) / 1000.0 }
     val label = when {
         age == null -> "Latest photo"

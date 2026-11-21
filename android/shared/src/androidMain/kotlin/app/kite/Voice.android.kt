@@ -13,21 +13,14 @@ import android.os.Vibrator
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
-import app.kite.core.SpokenText
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import java.util.Locale
 
-/**
- * Kite's voice: the phone's text-to-speech in the driver's English, turning other audio down
- * while it talks and handing it back after (music comes back up between instructions).
- */
-object Voice {
+/** Android's text-to-speech: other audio is turned down while it talks (music comes back up between instructions). */
+actual object Speech {
     private var tts: TextToSpeech? = null
     private var ready = false
     private val pending = mutableListOf<String>()
-    private val am by lazy { KiteApp.app.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    private val am by lazy { AndroidHost.app.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     private val main = Handler(Looper.getMainLooper())
     private val attrs = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
@@ -35,17 +28,16 @@ object Voice {
     private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
         .setAudioAttributes(attrs).build()
     private var speaking = 0
-    /** Screenshot runs: never a sound. */
-    var silent = false
-    /**
-     * The phone has nothing to speak with: no text-to-speech app, or none with an English voice.
-     * GrapheneOS can come like that. The drive screen says so, instead of a drive in silence.
-     */
-    var missing by mutableStateOf(false)
+    private var report: (Boolean) -> Unit = {}
 
-    fun warmUp() {
+    actual fun warmUp(voiceMissing: (Boolean) -> Unit) {
+        report = voiceMissing
+        warmUp()
+    }
+
+    private fun warmUp() {
         if (tts != null) return
-        tts = TextToSpeech(KiteApp.app) { status ->
+        tts = TextToSpeech(AndroidHost.app) { status ->
             if (status != TextToSpeech.SUCCESS) { noVoice(); return@TextToSpeech }
             val t = tts ?: return@TextToSpeech
             // Off the main thread: this callback comes on it, and asking the speech app for its voices
@@ -65,7 +57,7 @@ object Voice {
                     t.setLanguage(Locale.US) >= TextToSpeech.LANG_AVAILABLE
             }.getOrDefault(false)
             if (!ok) { noVoice(); return }
-            main.post { missing = false }
+            main.post { report(false) }
             // The best-sounding voice installed for that language that works offline.
             runCatching {
                 t.voices?.filter { it.locale == t.voice?.locale && !it.isNetworkConnectionRequired && "notinstalled" !in it.features }
@@ -83,7 +75,7 @@ object Voice {
             // Kite may have given up on this one meanwhile (no voice found): only the current one counts.
             if (tts !== t) return@post
             ready = true
-            pending.forEach { say(it) }
+            pending.forEach { speak(it, false) }
             pending.clear()
         }
     }
@@ -96,12 +88,13 @@ object Voice {
             tts = null
             ready = false
             pending.clear()
-            missing = true
+            report(true)
         }
     }
 
     /** The phone's own page for choosing a text-to-speech voice. */
-    fun openSettings(c: Context) {
+    actual fun openSettings() {
+        val c = AndroidHost.app
         val open = { action: String -> runCatching { c.startActivity(android.content.Intent(action).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess }
         if (!open("com.android.settings.TTS_SETTINGS")) open(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
     }
@@ -113,14 +106,10 @@ object Voice {
         }, 300)
     }
 
-    val isSpeaking: Boolean get() = tts?.isSpeaking == true
+    actual val isSpeaking: Boolean get() = tts?.isSpeaking == true
 
-    /** Says [text]; [urgent] cuts off whatever is being said first. */
-    fun say(text: String, urgent: Boolean = false) {
-        val said = SpokenText.forVoice(text)
-        // Logged even when silent, so a test drive can be checked afterwards.
-        Log.i("KiteVoice", "say: $said")
-        if (silent) return
+    actual fun speak(text: String, urgent: Boolean) {
+        val said = text
         val t = tts
         if (t == null || !ready) { warmUp(); pending.add(said); return }
         am.requestAudioFocus(focus)
@@ -128,7 +117,7 @@ object Voice {
         t.speak(said, if (urgent) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "kite${System.nanoTime()}")
     }
 
-    fun stop() {
+    actual fun stop() {
         pending.clear()
         tts?.stop()
         speaking = 0
@@ -136,22 +125,21 @@ object Voice {
     }
 
     /** A phone (or WhatsApp, Signal...) call is going on. */
-    val onCall: Boolean
+    actual val onCall: Boolean
         get() = am.mode == AudioManager.MODE_IN_CALL || am.mode == AudioManager.MODE_IN_COMMUNICATION || am.mode == AudioManager.MODE_RINGTONE
 
     private val tone by lazy { runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 85) }.getOrNull() }
 
     /** A short tone before a camera warning, the way Waze does it. */
-    fun chime() {
-        if (silent) return
+    actual fun chime() {
         am.requestAudioFocus(focus)
         tone?.startTone(ToneGenerator.TONE_PROP_BEEP2, 220)
         main.postDelayed({ if (!isSpeaking) am.abandonAudioFocusRequest(focus) }, 600)
     }
 
     /** A warning buzz, like the iPhone's. */
-    fun buzz() {
-        val v = KiteApp.app.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
+    actual fun buzz() {
+        val v = AndroidHost.app.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
         if (Build.VERSION.SDK_INT >= 29) v.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_DOUBLE_CLICK))
         else v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 40, 80, 40), -1))
     }
