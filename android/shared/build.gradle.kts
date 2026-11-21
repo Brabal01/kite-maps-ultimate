@@ -47,6 +47,9 @@ kotlin {
             implementation("androidx.activity:activity-compose:1.12.0")
             implementation("androidx.webkit:webkit:1.17.0")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+            // The map's drawing engine for Android (the iPhone's Metal one comes with maplibre-compose).
+            // OpenGL, like Kite always used: it works on every phone and the emulator.
+            implementation("org.maplibre.nativeffi:maplibre-native-ffi-runtime-opengl:0.202610.0")
         }
     }
 

@@ -28,7 +28,8 @@ actual fun filesDir(): String =
     ((NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, true).firstOrNull() as? String)
         ?: NSTemporaryDirectory()) + "/Kite"
 
-actual fun klog(tag: String, message: String) { NSLog("%@: %@", tag, message) }
+// Kotlin strings can't go through NSLog's "..." arguments, so the line is made first (with any % doubled).
+actual fun klog(tag: String, message: String) { NSLog("$tag: $message".replace("%", "%%")) }
 
 actual fun systemCountry(): String = NSLocale.currentLocale.countryCode ?: ""
 
