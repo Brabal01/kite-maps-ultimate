@@ -910,6 +910,8 @@ final class AppModel: ObservableObject {
     private func followBrowse(_ loc: CLLocation, entering: Bool) {
         guard browseFollowing, browseLook != .north, nav == nil, let map else { return }
         guard entering || (selected == nil && results.isEmpty && directions == nil) else { return }
+        // The screenshots' made-up drive stays where it was put.
+        if !entering, cruise?.isDemo == true { return }
         let course = loc.course >= 0 && loc.speed > 2 ? loc.course : map.direction
         let cam: MLNMapCamera
         if entering {
@@ -993,13 +995,15 @@ final class AppModel: ObservableObject {
         followBrowse(loc, entering: true)
     }
 
-    /** The driving view with no route, for the build's screenshots: a car doing 56 mph north. */
-    func demoCruise() {
-        guard let here = location.last?.coordinate else { return }
-        let loc = CLLocation(coordinate: here, altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5,
-                             course: 340, speed: 25, timestamp: Date())
+    /** The driving view with no route, for the build's screenshots: a car doing 56 mph along [line]. */
+    func demoCruise(on line: [LatLng], at meters: Double, road: String?, ref: String?) {
+        guard line.count >= 2 else { return }
+        let p = Geo.point(along: line, meters: meters)
+        let course = Geo.bearing(p, Geo.point(along: line, meters: meters + 30))
+        let loc = CLLocation(coordinate: CLLocationCoordinate2D(latitude: p.lat, longitude: p.lng), altitude: 0,
+                             horizontalAccuracy: 5, verticalAccuracy: 5, course: course, speed: 25, timestamp: Date())
         startCruise(loc)
-        cruise?.showDemo(loc, road: "Dunkeld Road", ref: "A9", limitKmh: 96.6)
+        cruise?.showDemo(loc, road: road ?? ref ?? "A9", ref: ref, limitKmh: 96.6)
         mapTick += 1
     }
 

@@ -806,10 +806,20 @@ enum DemoScript {
         }
         if step == "cruise" {
             // 0.7.17: the driving view by itself, on the A9 out of Perth, in miles.
+            // Put on the real road: a point a couple of kilometres along the route to Pitlochry.
             model.settings.units = .yards
-            for _ in 0..<20 where model.location.last == nil { await wait(1) }
-            await wait(4)
-            model.demoCruise()
+            let to = Place(id: "demo-pitlochry", name: "Pitlochry", location: LatLng(56.7030, -3.7340), source: "demo")
+            model.select(to)
+            await wait(2)
+            model.openDirections(to: to)
+            for _ in 0..<30 where model.directions?.route == nil { await wait(1) }
+            guard let route = model.directions?.route else { return }
+            let at = min(2_000, Geo.length(route.polyline) / 2)
+            let step = route.maneuvers.last { $0.alongMeters <= at }
+            model.closeDirections()
+            model.closePlace()
+            await wait(2)
+            model.demoCruise(on: route.polyline, at: at, road: step?.road, ref: "A9")
             return
         }
         if step == "uk" {

@@ -107,4 +107,20 @@ class MatcherTests {
         assertEquals(emptyList<String>(), CleanAirZones.on(listOf(LatLng(50.90, -1.40), LatLng(50.93, -1.39)), false).map { it.name })
         assertEquals(emptyList<String>(), CleanAirZones.on(listOf(LatLng(51.60, -0.60), LatLng(51.70, -0.55)), false).map { it.name })
     }
+
+    @Test fun roadAhead() {
+        // A road going north then bending east, cut in two pieces, the second one drawn backwards.
+        val a = listOf(LatLng(50.9000, -1.4000), LatLng(50.9010, -1.4000))
+        val b = listOf(LatLng(50.9010, -1.3970), LatLng(50.9010, -1.4000))
+        val p = RoadAhead.path(listOf(b, a), LatLng(50.9001, -1.40005), 0.0)!!
+        // Starts 40 m on up the road, and follows the bend (ends east of the corner, still on the road).
+        assertEquals(50.9001 + 40 / 111_200.0, p.first().lat, 0.00005)
+        assertTrue(p.last().lng > -1.3999)
+        assertEquals(50.9010, p.last().lat, 0.00002)
+        assertEquals(160.0, Geo.length(p), 3.0)
+        // Going the other way (south): only about 10 m of road left behind the start, no room for the name.
+        assertNull(RoadAhead.path(listOf(b, a), LatLng(50.9001, -1.40005), 180.0))
+        // Off the road.
+        assertNull(RoadAhead.path(listOf(a), LatLng(50.9005, -1.3990), 0.0))
+    }
 }

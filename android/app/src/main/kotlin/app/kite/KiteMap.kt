@@ -414,6 +414,15 @@ class KiteMap(private val model: AppModel, private val context: Context) {
 
         // The road you're on, written on the road just ahead of the car like a painted marking
         // (Matteo's pick over a box on the screen). Lies flat and follows the road's bends.
+        // The map's own named roads, drawn too faintly to see: read back in the driving view with no
+        // route, so the name follows the road you're on round its bends.
+        if (style.getSource("openmaptiles") != null) {
+            style.addLayer(LineLayer("vela-road-query", "openmaptiles").apply {
+                sourceLayer = "transportation_name"
+                // Not quite 0: a layer that draws nothing at all can't be asked what's under it.
+                setProperties(lineOpacity(0.01f), lineWidth(3f))
+            })
+        }
         src("vela-road-name")
         style.addLayer(SymbolLayer("vela-road-name", "vela-road-name").withProperties(
             textField(get("label")), symbolPlacement(Property.SYMBOL_PLACEMENT_LINE_CENTER),
@@ -529,9 +538,22 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         } else if (c != null && model.browseFollowing) {
             val f = c.fix
             val road = c.road ?: c.ref
-            if (f != null && f.courseKnown && f.speed > 2 && road != null) {
-                line = listOf(Geo.destination(f.coord, f.course, 40.0), Geo.destination(f.coord, f.course, 200.0))
-                name = road
+            val m = map
+            if (f != null && f.courseKnown && f.speed > 2 && road != null && m != null) {
+                // Along the map's own line for the road you're on, so it stays on the road round a bend;
+                // nothing when the map doesn't have it here (never floating off over a field).
+                val pt = m.projection.toScreenLocation(org.maplibre.android.geometry.LatLng(f.lat, f.lng))
+                val density = context.resources.displayMetrics.density
+                val box = RectF(pt.x - 300 * density, pt.y - 450 * density, pt.x + 300 * density, pt.y + 250 * density)
+                val match = any(eq(get("name"), c.road ?: ""), eq(get("ref"), c.ref ?: ""))
+                val lines = mutableListOf<List<LatLng>>()
+                for (feat in m.queryRenderedFeatures(box, match, "vela-road-query")) {
+                    when (val g = feat.geometry()) {
+                        is LineString -> lines.add(g.coordinates().map { LatLng(it.latitude(), it.longitude()) })
+                        is org.maplibre.geojson.MultiLineString -> g.coordinates().forEach { l -> lines.add(l.map { LatLng(it.latitude(), it.longitude()) }) }
+                    }
+                }
+                RoadAhead.path(lines, f.coord, f.course)?.let { line = it; name = road }
             }
         }
         val key = (name ?: "") + (line.firstOrNull()?.let { "${(it.lat * 20_000).toInt()},${(it.lng * 20_000).toInt()}" } ?: "")

@@ -104,4 +104,17 @@ final class MatcherTests: XCTestCase {
         XCTAssertEqual(names([LatLng(50.90, -1.40), LatLng(50.93, -1.39)]), [])
         XCTAssertEqual(names([LatLng(51.60, -0.60), LatLng(51.70, -0.55)]), [])
     }
+
+    func testRoadAhead() {
+        // A road going north then bending east, cut in two pieces, the second one drawn backwards.
+        let a = [LatLng(50.9000, -1.4000), LatLng(50.9010, -1.4000)]
+        let b = [LatLng(50.9010, -1.3970), LatLng(50.9010, -1.4000)]
+        guard let p = RoadAhead.path([b, a], at: LatLng(50.9001, -1.40005), heading: 0) else { return XCTFail("no path") }
+        XCTAssertEqual(p[0].lat, 50.9001 + 40 / 111_200.0, accuracy: 0.00005)
+        XCTAssertGreaterThan(p[p.count - 1].lng, -1.3999)
+        XCTAssertEqual(p[p.count - 1].lat, 50.9010, accuracy: 0.00002)
+        XCTAssertEqual(Geo.length(p), 160, accuracy: 3)
+        XCTAssertNil(RoadAhead.path([b, a], at: LatLng(50.9001, -1.40005), heading: 180))
+        XCTAssertNil(RoadAhead.path([a], at: LatLng(50.9005, -1.3990), heading: 0))
+    }
 }

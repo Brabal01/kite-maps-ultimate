@@ -502,6 +502,16 @@ struct VelaMapView: UIViewRepresentable {
 
             // The road you're on, written on the road just ahead of the car like a painted marking
             // (Matteo's pick over a box on the screen). Lies flat and follows the road's bends.
+            // The map's own named roads, drawn too faintly to see: read back in the driving view with no
+            // route, so the name follows the road you're on round its bends.
+            if let omt = style.source(withIdentifier: "openmaptiles") as? MLNVectorTileSource {
+                let q = MLNLineStyleLayer(identifier: "vela-road-query", source: omt)
+                q.sourceLayerIdentifier = "transportation_name"
+                // Not quite 0: a layer that draws nothing at all can't be asked what's under it.
+                q.lineOpacity = NSExpression(forConstantValue: 0.01)
+                q.lineWidth = NSExpression(forConstantValue: 3)
+                style.addLayer(q)
+            }
             let roadNameSrc = MLNShapeSource(identifier: "vela-road-name", shape: nil, options: nil)
             style.addSource(roadNameSrc)
             let roadName = MLNSymbolStyleLayer(identifier: "vela-road-name", source: roadNameSrc)
@@ -615,10 +625,27 @@ struct VelaMapView: UIViewRepresentable {
                     if b - a > 80 { line = Geo.slice(n.route.polyline, from: a, to: b, cumulative: cum); name = road }
                 }
             } else if let c = model.cruise, model.browseFollowing, let fix = c.fix, fix.course >= 0, fix.speed > 2,
-                      let road = c.road ?? c.ref {
+                      let road = c.road ?? c.ref, let map = model.map {
+                // Along the map's own line for the road you're on, so it stays on the road round a bend;
+                // nothing when the map doesn't have it here (never floating off over a field).
                 let here = LatLng(fix.coordinate.latitude, fix.coordinate.longitude)
-                line = [Geo.destination(here, bearing: fix.course, meters: 40), Geo.destination(here, bearing: fix.course, meters: 200)]
-                name = road
+                let pt = map.convert(fix.coordinate, toPointTo: map)
+                let box = CGRect(x: pt.x - 300, y: pt.y - 450, width: 600, height: 700).intersection(map.bounds)
+                var lines: [[LatLng]] = []
+                if !box.isNull {
+                    let match = NSPredicate(format: "name == %@ OR ref == %@", c.road ?? "", c.ref ?? "")
+                    func coords(_ p: MLNPolyline) -> [LatLng] {
+                        Array(UnsafeBufferPointer(start: p.coordinates, count: Int(p.pointCount))).map { LatLng($0.latitude, $0.longitude) }
+                    }
+                    for f in map.visibleFeatures(in: box, styleLayerIdentifiers: ["vela-road-query"], predicate: match) {
+                        if let m = f as? MLNMultiPolylineFeature { lines += m.polylines.map(coords) }
+                        else if let p = f as? MLNPolylineFeature { lines.append(coords(p)) }
+                    }
+                }
+                if let path = RoadAhead.path(lines, at: here, heading: fix.course) {
+                    line = path
+                    name = road
+                }
             }
             let key = (name ?? "") + (line.first.map { "\(Int($0.lat * 20_000)),\(Int($0.lng * 20_000))" } ?? "")
             guard key != lastRoadNameKey else { return }

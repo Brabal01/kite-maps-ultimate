@@ -58,6 +58,7 @@ final class Cruise: ObservableObject {
 
     /** Made-up values for the build's screenshots: real fixes are ignored from then on. */
     private var demo = false
+    var isDemo: Bool { demo }
 
     func showDemo(_ loc: CLLocation, road: String, ref: String?, limitKmh: Double) {
         demo = true
