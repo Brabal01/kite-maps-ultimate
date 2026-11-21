@@ -23,3 +23,6 @@ fi
 PLATFORM_NAME=$PLATFORM ARCHS=arm64 BUILT_PRODUCTS_DIR="$ROOT/Frameworks" UNLOCALIZED_RESOURCES_FOLDER_PATH=res \
   ./gradlew --no-daemon -PnoAndroid :shared:syncComposeResourcesForIos
 ls "$ROOT/Frameworks" "$ROOT/Frameworks/res/compose-resources/composeResources"
+# The Kotlin compiler's helper keeps running (and holding gigabytes) for hours after the build;
+# on the Mac runners that starves the iPhone simulator used for the screenshots. Stop it.
+pkill -f KotlinCompileDaemon || true
