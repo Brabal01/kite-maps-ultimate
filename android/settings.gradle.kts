@@ -15,8 +15,6 @@ pluginManagement {
         gradlePluginPortal()
     }
     plugins {
-        id("com.android.application") version "9.4.1"
-        id("com.android.kotlin.multiplatform.library") version "9.4.1"
         id("org.jetbrains.compose") version "1.12.2"
         id("org.jetbrains.kotlin.jvm") version "2.4.20"
         id("org.jetbrains.kotlin.multiplatform") version "2.4.20"
