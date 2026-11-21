@@ -39,3 +39,14 @@ kotlin {
         }
     }
 }
+
+// The live turn-by-turn checks (src/jvmMain/.../probe): `./gradlew :core:probe --args="turns"`.
+tasks.register<JavaExec>("probe") {
+    group = "verification"
+    description = "Live checks of Kite's turn-by-turn against the real servers (uk, audit, turns, merges, ramps)."
+    val jvm = kotlin.jvm().compilations.getByName("main")
+    dependsOn(jvm.compileTaskProvider)
+    classpath = files(jvm.output.allOutputs, jvm.runtimeDependencyFiles)
+    mainClass.set("app.kite.probe.ProbeKt")
+    standardOutput = System.out
+}
