@@ -88,8 +88,9 @@ fun crc32(bytes: ByteArray): Long {
 }
 
 /**
- * A small printf with the US number style: %d, %s, %f with precision (%.5f), %x/%X with zero
- * padding (%02X), and %%. Enough for the URLs and labels Kite builds.
+ * A small printf with the US number style: %d, %s, %b, %c, %f with precision (%.5f), %x/%X with
+ * zero padding (%02X), left alignment (%-12s) and %%. Enough for the URLs and labels Kite builds.
+ * Never throws: anything it doesn't know is written as plain text, so a log line can't stop Kite.
  */
 fun fmt(pattern: String, vararg args: Any?): String {
     val sb = StringBuilder()
@@ -102,9 +103,11 @@ fun fmt(pattern: String, vararg args: Any?): String {
         if (i < pattern.length && pattern[i] == '%') { sb.append('%'); i++; continue }
         var zero = false
         var plus = false
-        while (i < pattern.length && (pattern[i] == '0' || pattern[i] == '+' || pattern[i] == ',')) {
+        var left = false
+        while (i < pattern.length && (pattern[i] == '0' || pattern[i] == '+' || pattern[i] == ',' || pattern[i] == '-')) {
             if (pattern[i] == '0') zero = true
             if (pattern[i] == '+') plus = true
+            if (pattern[i] == '-') left = true
             i++
         }
         var width = 0
@@ -114,19 +117,21 @@ fun fmt(pattern: String, vararg args: Any?): String {
             i++; prec = 0
             while (i < pattern.length && pattern[i].isDigit()) { prec = prec * 10 + (pattern[i] - '0'); i++ }
         }
+        if (i >= pattern.length) { sb.append('%'); break }
         val conv = pattern[i++]
         val a = args.getOrNull(arg++)
-        var s = when (conv) {
-            'd' -> (a as Number).toLong().toString()
-            'f' -> fixed((a as Number).toDouble(), if (prec < 0) 6 else prec)
-            'x' -> (a as Number).toLong().let { if (it < 0) (it and 0xffffffffL) else it }.toString(16)
-            'X' -> (a as Number).toLong().let { if (it < 0) (it and 0xffffffffL) else it }.toString(16).uppercase()
-            's' -> a.toString().let { if (prec >= 0 && it.length > prec) it.substring(0, prec) else it }
-            else -> error("fmt: %$conv")
+        val n = a as? Number
+        var s = when {
+            conv == 'd' && n != null -> n.toLong().toString()
+            conv == 'f' && n != null -> fixed(n.toDouble(), if (prec < 0) 6 else prec)
+            conv == 'x' && n != null -> n.toLong().let { if (it < 0) (it and 0xffffffffL) else it }.toString(16)
+            conv == 'X' && n != null -> n.toLong().let { if (it < 0) (it and 0xffffffffL) else it }.toString(16).uppercase()
+            conv == 'b' -> (if (a is Boolean) a else a != null).toString()
+            else -> a.toString().let { if (conv == 's' && prec >= 0 && it.length > prec) it.substring(0, prec) else it }
         }
         if (plus && conv in "df" && !s.startsWith("-")) s = "+$s"
         if (s.length < width) {
-            s = if (zero && conv != 's') {
+            s = if (left) s + " ".repeat(width - s.length) else if (zero && conv != 's') {
                 val neg = s.startsWith("-") || s.startsWith("+")
                 if (neg) s[0] + "0".repeat(width - s.length) + s.substring(1) else "0".repeat(width - s.length) + s
             } else " ".repeat(width - s.length) + s

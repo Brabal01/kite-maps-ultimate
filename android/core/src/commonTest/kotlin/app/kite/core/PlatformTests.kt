@@ -8,6 +8,7 @@ class PlatformTests {
         assertEquals("(50.93000,-1.38500,51.00000,-1.30000)", fmt("(%.5f,%.5f,%.5f,%.5f)", 50.93, -1.385, 51.0, -1.3))
         assertEquals("-1.385000,50.930000", fmt("%.6f,%.6f", -1.385, 50.93))
         assertEquals("%0A", fmt("%%%02X", 10))
+        assertEquals("on true |ab   |", fmt("on %b |%-5s|", true, "ab"))
         assertEquals("\\u001f", fmt("\\u%04x", 31))
         assertEquals("a/12/0.1235", fmt("%s/%d/%.4f", "a", 12, 0.123456))
         assertEquals("0.0", fmt("%.1f", -0.04))
