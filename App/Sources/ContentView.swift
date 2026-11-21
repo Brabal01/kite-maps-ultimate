@@ -814,8 +814,9 @@ enum DemoScript {
             model.openDirections(to: to)
             for _ in 0..<30 where model.directions?.route == nil { await wait(1) }
             guard let route = model.directions?.route else { return }
-            let at = min(1_600, Geo.length(route.polyline) / 2)
-            let step = route.maneuvers.last { $0.alongMeters <= at }
+            // 100 m into the first named road with room ahead, so the name has a road to be written on.
+            let step = route.maneuvers.first { ($0.road ?? "").isEmpty == false && $0.distanceMeters >= 500 }
+            let at = step.map { $0.alongMeters + 100 } ?? min(1_600, Geo.length(route.polyline) / 2)
             model.closeDirections()
             model.closePlace()
             await wait(2)
