@@ -993,6 +993,16 @@ final class AppModel: ObservableObject {
         followBrowse(loc, entering: true)
     }
 
+    /** The driving view with no route, for the build's screenshots: a car doing 56 mph north. */
+    func demoCruise() {
+        guard let here = location.last?.coordinate else { return }
+        let loc = CLLocation(coordinate: here, altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5,
+                             course: 340, speed: 25, timestamp: Date())
+        startCruise(loc)
+        cruise?.showDemo(loc, road: "Dunkeld Road", ref: "A9", limitKmh: 96.6)
+        mapTick += 1
+    }
+
     /** A spot on the map, close up (a report along the route). */
     func showSpot(_ p: LatLng) {
         browseFollowing = false

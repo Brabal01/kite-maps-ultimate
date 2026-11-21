@@ -804,6 +804,14 @@ enum DemoScript {
             if step == "northup" { model.cycleDriveLook(); model.cycleDriveLook() }
             return
         }
+        if step == "cruise" {
+            // 0.7.17: the driving view by itself, on the A9 out of Perth, in miles.
+            model.settings.units = .yards
+            for _ in 0..<20 where model.location.last == nil { await wait(1) }
+            await wait(4)
+            model.demoCruise()
+            return
+        }
         if step == "uk" {
             // Driving north out of Perth on the A9, in miles and yards, with camera alerts up.
             model.settings.units = .yards
@@ -851,6 +859,9 @@ enum DemoScript {
         await wait(5)
         guard !["place", "lookaround", "copy"].contains(step) else { return }
         if step == "wazeroute" { RouteWazeSummary.demo = [(.police, 2), (.accident, 1), (.hazard, 3)] }
+        if step == "zones" {
+            RouteCharges.demo = [RoadCharge(name: "London ULEZ", note: "Older cars pay a daily charge: most petrol cars from before 2006 and diesels from before late 2015. Pay online.", zone: true)]
+        }
         if step == "charges" {
             RouteCharges.demo = [RoadCharge(name: "Dartford Crossing", note: "No barriers. Charged 6 am to 10 pm. Pay the Dart Charge online by midnight the day after.")]
         }
@@ -858,7 +869,11 @@ enum DemoScript {
         if step == "stops", let second = model.visibleResults.dropFirst().first { model.addStop(second) }
         await wait(8)
         if step == "addstop" { model.addingStop = true; return }
-        if step == "charges" { model.detent = .full; return }
+        if step == "charges" || step == "zones" { model.detent = .full; return }
+        if step == "avoid", let line = model.directions?.route?.polyline, line.count > 2 {
+            model.avoidAsk = AvoidAsk(point: line[line.count / 2], road: "Russell Boulevard")
+            return
+        }
         guard ["nav", "camalert", "wazealert", "trafficalert", "allalerts", "endtrip", "faster"].contains(step) else { return }
         model.startNavigation()
         if step == "faster" {

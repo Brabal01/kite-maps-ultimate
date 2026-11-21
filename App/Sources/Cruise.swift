@@ -56,9 +56,21 @@ final class Cruise: ObservableObject {
         speech.stopSpeaking(at: .immediate)
     }
 
+    /** Made-up values for the build's screenshots: real fixes are ignored from then on. */
+    private var demo = false
+
+    func showDemo(_ loc: CLLocation, road: String, ref: String?, limitKmh: Double) {
+        demo = true
+        fix = loc
+        speedMps = loc.speed
+        self.road = road
+        self.ref = ref
+        self.limitKmh = limitKmh
+    }
+
     /** Every GPS fix while the driving view is up. */
     func handle(_ loc: CLLocation) {
-        guard loc.horizontalAccuracy >= 0, loc.horizontalAccuracy <= 65 else { return }
+        guard !demo, loc.horizontalAccuracy >= 0, loc.horizontalAccuracy <= 65 else { return }
         fix = loc
         speedMps = max(0, loc.speed)
         // Parked: two minutes under walking pace ends it (a red light or a queue is shorter than that).
