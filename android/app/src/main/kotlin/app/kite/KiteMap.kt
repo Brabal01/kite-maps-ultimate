@@ -428,7 +428,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
             textField(get("label")), symbolPlacement(Property.SYMBOL_PLACEMENT_LINE_CENTER),
             textPitchAlignment(Property.TEXT_PITCH_ALIGNMENT_MAP), textRotationAlignment(Property.TEXT_ROTATION_ALIGNMENT_MAP),
             textKeepUpright(true), textFont(arrayOf("Noto Sans Bold")),
-            textSize(interpolate(linear(), zoom(), stop(14, 13f), stop(16, 17f), stop(18, 22f))),
+            textSize(interpolate(linear(), zoom(), stop(13, 15f), stop(15, 18f), stop(17, 22f), stop(18, 26f))),
             textLetterSpacing(0.08f), textTransform(Property.TEXT_TRANSFORM_UPPERCASE), textColor(c(0x0E3B36)),
             textHaloColor("rgba(255,255,255,0.95)"), textHaloWidth(2f), textAllowOverlap(true), textIgnorePlacement(true)))
 

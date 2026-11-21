@@ -522,7 +522,7 @@ struct VelaMapView: UIViewRepresentable {
             roadName.keepsTextUpright = NSExpression(forConstantValue: true)
             roadName.textFontNames = NSExpression(forConstantValue: ["Noto Sans Bold"])
             roadName.textFontSize = NSExpression(format: "mgl_interpolate:withCurveType:parameters:stops:($zoomLevel, 'linear', nil, %@)",
-                                                 [14: 13, 16: 17, 18: 22])
+                                                 [13: 15, 15: 18, 17: 22, 18: 26])
             roadName.textLetterSpacing = NSExpression(forConstantValue: 0.08)
             roadName.textTransform = NSExpression(forConstantValue: "uppercase")
             roadName.textColor = NSExpression(forConstantValue: UIColor(hex: 0x0E3B36))
