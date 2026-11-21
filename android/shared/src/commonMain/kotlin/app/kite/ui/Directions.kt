@@ -2,8 +2,9 @@
 
 package app.kite.ui
 
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
+import kotlinx.coroutines.IO
+import kotlinx.datetime.toLocalDateTime
+
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
@@ -35,7 +36,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -51,8 +51,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.Calendar
-import java.util.Date
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -80,7 +78,7 @@ fun DirectionsOverlay(model: AppModel) {
             }
         }
     }
-    androidx.activity.compose.BackHandler { model.closeDirections() }
+    androidx.compose.ui.backhandler.BackHandler { model.closeDirections() }
 }
 
 @Composable
@@ -201,8 +199,8 @@ fun routeCards(d: DirectionsState): List<Route> = if (!d.transit && d.route != n
 fun closingWarning(d: DirectionsState): ClosingCheck.Warning? {
     val r = d.route ?: return null
     if (d.transit || d.previewOnly) return null
-    val c = Calendar.getInstance()
-    return ClosingCheck.warning(d.destination.statusText, c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE), r.durationSeconds)
+    val now = kotlin.time.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
+    return ClosingCheck.warning(d.destination.statusText, now.hour * 60 + now.minute, r.durationSeconds)
 }
 
 /** How tall the sheet sits at rest, so everything above the fold (cards, Go, modes) is in view. */
@@ -284,7 +282,7 @@ private fun RouteCard(r: Route, on: Boolean, pick: () -> Unit) {
 fun TripHeader(model: AppModel) {
     val d = model.directions ?: return
     val dark = LocalDark.current
-    val ctx = LocalContext.current
+    val ctx = Phone
     val cards = routeCards(d)
     if (cards.isNotEmpty()) {
         // A choice of routes: the choices first, then Go, then the ways to travel.
@@ -321,7 +319,7 @@ fun TripHeader(model: AppModel) {
                     }
                     else -> Column(Modifier.heightIn(min = 52.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(d.errors[d.mode] ?: "No route found.", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Vela.muted(dark))
-                        if (model.location.denied) PillButton("Open Settings", Icons.Filled.MyLocation, filled = true) { LocationService.openSettings(ctx) }
+                        if (model.location.denied) PillButton("Open Settings", Icons.Filled.MyLocation, filled = true) { LocationService.openSettings() }
                         else if (d.errors[d.mode] != null) PillButton("Try again", Icons.Filled.Refresh) { model.reloadRoutes() }
                     }
                 }
@@ -381,7 +379,7 @@ private fun RowScope.ModeTile(icon: ImageVector, on: Boolean, loading: Boolean, 
 fun TripBody(model: AppModel) {
     val d = model.directions ?: return
     val dark = LocalDark.current
-    val ctx = LocalContext.current
+    val ctx = Phone
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val r = d.route
@@ -534,14 +532,19 @@ fun StepsList(route: Route, from: Int = 0) {
     }
 }
 
-private fun clock(t: Long) = Fmt.time(Date(t))
+private fun clock(t: Long) = Fmt.time(t)
 
 /** The Transit tab: each trip as a row of line chips with its times, the picked one's legs below. */
 @Composable
 fun TransitBody(model: AppModel, state: DirectionsState) {
-    val ctx = LocalContext.current
     var kind by remember { mutableIntStateOf(if (state.transitTime == null) 0 else if (state.arriveBy) 2 else 1) }
     var whenAt by remember { mutableLongStateOf(state.transitTime ?: nowMillis()) }
+    var picking by remember { mutableStateOf(false) }
+    if (picking) DateTimePicker(whenAt, { picking = false }) { t ->
+        picking = false
+        whenAt = max(t, nowMillis() - 3_600_000)
+        model.setTransitTime(kind, whenAt)
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             listOf("Leave now", "Depart at", "Arrive by").forEachIndexed { i, label ->
@@ -551,19 +554,10 @@ fun TransitBody(model: AppModel, state: DirectionsState) {
         if (kind != 0) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Time", fontSize = KType.subheadline, color = primaryText, modifier = Modifier.weight(1f))
-                Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(Date(whenAt)),
+                Text(LocalFormat.dateTime(whenAt),
                     fontSize = KType.subheadline, fontWeight = FontWeight.SemiBold, color = primaryText,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Vela.chip(LocalDark.current)).tap {
-                        val c = Calendar.getInstance().apply { timeInMillis = whenAt }
-                        DatePickerDialog(ctx, { _, y, mo, day ->
-                            c.set(y, mo, day)
-                            TimePickerDialog(ctx, { _, h, min ->
-                                c.set(Calendar.HOUR_OF_DAY, h); c.set(Calendar.MINUTE, min)
-                                whenAt = max(c.timeInMillis, nowMillis() - 3_600_000)
-                                model.setTransitTime(kind, whenAt)
-                            }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), android.text.format.DateFormat.is24HourFormat(ctx)).show()
-                        }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
-                    }.padding(horizontal = 10.dp, vertical = 6.dp))
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Vela.chip(LocalDark.current)).tap { picking = true }
+                        .padding(horizontal = 10.dp, vertical = 6.dp))
             }
         }
     }
@@ -607,7 +601,7 @@ fun TripRow(trip: TransitTrip, picked: Boolean) {
                     if (i > 0) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = secondaryText, modifier = Modifier.size(12.dp))
                     if (leg.isWalk) Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.AutoMirrored.Filled.DirectionsWalk, null, tint = secondaryText, modifier = Modifier.size(16.dp))
-                        if (leg.durationSeconds >= 60) Text("${Math.round(leg.durationSeconds / 60)}", fontSize = KType.caption2, color = secondaryText)
+                        if (leg.durationSeconds >= 60) Text("${kotlin.math.round(leg.durationSeconds / 60).toLong()}", fontSize = KType.caption2, color = secondaryText)
                     } else LineChip(leg)
                 }
             }

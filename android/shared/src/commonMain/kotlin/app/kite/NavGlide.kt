@@ -1,17 +1,16 @@
 package app.kite
 
-import android.view.Choreographer
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.kite.core.*
-import org.maplibre.android.camera.CameraPosition
-import org.maplibre.android.camera.CameraUpdateFactory
-import org.maplibre.android.maps.MapLibreMap
-import org.maplibre.android.style.sources.GeoJsonSource
-import org.maplibre.geojson.Feature
-import org.maplibre.geojson.Point
+import androidx.compose.runtime.withFrameNanos
+import app.kite.map.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlin.math.*
 
 /**
@@ -19,8 +18,11 @@ import kotlin.math.*
  * Between fixes it keeps the arrow rolling along the route at the current speed, then eases
  * onto each new fix, so driving looks smooth like Google Maps or Waze.
  */
-class NavGlide : Choreographer.FrameCallback {
-    var map: MapLibreMap? = null
+class NavGlide {
+    var map: MapHandle? = null
+    /** The map screen's own scope, whose frame clock paces the glide (one step per screen frame). */
+    var frames: CoroutineScope? = null
+    private var loop: Job? = null
     /** The map's height in dp. */
     var heightDp = 800f
     /**
@@ -79,8 +81,6 @@ class NavGlide : Choreographer.FrameCallback {
     private var shownAcross = 600.0
     private var shownPitch = 50.0
 
-    private fun nowS() = System.nanoTime() / 1e9
-
     /** Called on every GPS fix while navigating. */
     fun fix(n: Navigator, loc: Fix, across: Double, pitch: Double = 50.0, jump: Boolean) {
         nav = n
@@ -92,7 +92,7 @@ class NavGlide : Choreographer.FrameCallback {
             shownAlong = null
         }
         onRoute = p?.let { !it.offRoute && it.offsetMeters < 40 } ?: false
-        fixAt = System.nanoTime()
+        fixAt = nanoNow()
         fixAlong = p?.alongMeters ?: 0.0
         fixCoord = loc.coord
         fixSpeed = if (loc.speed > 0.5) loc.speed else 0.0
@@ -113,7 +113,7 @@ class NavGlide : Choreographer.FrameCallback {
     }
 
     fun stop() {
-        if (running) Choreographer.getInstance().removeFrameCallback(this)
+        loop?.cancel(); loop = null
         running = false
         nav = null
         shownAlong = null
@@ -126,28 +126,32 @@ class NavGlide : Choreographer.FrameCallback {
     }
 
     private fun clearPuck() {
-        (map?.style?.getSource(PUCK) as? GeoJsonSource)?.setGeoJson(org.maplibre.geojson.FeatureCollection.fromFeatures(emptyList()))
+        (map?.style?.getSource(PUCK) as? GeoJsonSource)?.setGeoJson(emptyList())
     }
 
     private fun start() {
         if (running) return
+        val scope = frames ?: return
         running = true
         lastFrame = 0
-        Choreographer.getInstance().postFrameCallback(this)
+        loop = scope.launch {
+            while (isActive && running) withFrameNanos { doFrame(it) }
+        }
     }
 
-    override fun doFrame(frameTimeNanos: Long) {
+    private fun doFrame(frameTimeNanos: Long) {
         if (!running) return
         val dt = if (lastFrame == 0L) 0.0 else min(0.1, (frameTimeNanos - lastFrame) / 1e9)
         lastFrame = frameTimeNanos
         step(dt)
-        if (running) Choreographer.getInstance().postFrameCallback(this)
     }
+
+    private fun nanoNow() = elapsedRealtime() * 1_000_000
 
     private fun step(dt: Double) {
         val n = nav; val m = map
         if (n == null || m == null) { stop(); return }
-        val ahead = fixSpeed * min(2.0, max(0.0, (System.nanoTime() - fixAt) / 1e9))
+        val ahead = fixSpeed * min(2.0, max(0.0, (nanoNow() - fixAt) / 1e9))
         val k = if (dt == 0.0) 1.0 else 1 - exp(-dt / 0.35)
 
         val coordNow: LatLng
@@ -185,12 +189,11 @@ class NavGlide : Choreographer.FrameCallback {
         } else {
             if (carOnScreen) carOnScreen = false
             // On the map, moved only now and then: each new spot makes the map fade the arrow in again.
-            val now = System.nanoTime()
+            val now = nanoNow()
             val last = puckPushed
             val turned = abs(((shownBearing - puckPushedBearing + 540) % 360) - 180)
             if (last == null || now - puckPushedAt > 1_000_000_000L || last.distanceTo(coordNow) > 25 || turned > 20) {
-                (style.getSource(PUCK) as? GeoJsonSource)?.setGeoJson(
-                    Feature.fromGeometry(Point.fromLngLat(coordNow.lng, coordNow.lat)).apply { addNumberProperty("bearing", shownBearing) })
+                (style.getSource(PUCK) as? GeoJsonSource)?.setGeoJson(Feature.point(coordNow, mapOf("bearing" to shownBearing)))
                 puckPushed = coordNow; puckPushedAt = now; puckPushedBearing = shownBearing; puckOnMap = true
             }
         }
@@ -198,7 +201,6 @@ class NavGlide : Choreographer.FrameCallback {
         northBlend += (northTarget - northBlend) * (if (dt == 0.0) 1.0 else 1 - exp(-dt / 0.3))
         if (abs(northTarget - northBlend) < 0.001) northBlend = northTarget
         if (n.following) {
-            val d = KiteApp.app.resources.displayMetrics.density.toDouble()
             // North up: the map turns to face north and the car moves up to the middle, as the road
             // ahead can be any way round. Otherwise it faces the way you go with the car low down.
             var toNorth = (-shownBearing) % 360
@@ -212,8 +214,8 @@ class NavGlide : Choreographer.FrameCallback {
             // A pitched camera sees farther than the same zoom flat: zoom in a little to match the iPhone's distance.
             val zoom = MapCam.zoomFor(shownAcross, coordNow.lat, 400f) + 0.35
             m.moveCamera(CameraUpdateFactory.newCameraPosition(
-                CameraPosition.Builder().target(coordNow.ml()).zoom(zoom).tilt(shownPitch).bearing(heading)
-                    .padding(0.0, topInset(heightDp) * (1 - northBlend) * d, 0.0, BOTTOM_INSET * d).build()))
+                CameraPosition.Builder().target(coordNow).zoom(zoom).tilt(shownPitch).bearing(heading)
+                    .padding(0.0, topInset(heightDp) * (1 - northBlend), 0.0, BOTTOM_INSET.toDouble()).build()))
         }
     }
 

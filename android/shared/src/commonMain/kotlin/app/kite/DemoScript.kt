@@ -3,12 +3,11 @@ package app.kite
 import app.kite.core.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.maplibre.android.camera.CameraUpdateFactory
+import app.kite.map.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 
 /**
@@ -39,8 +38,8 @@ object DemoScript {
 
     private fun center(model: AppModel, lat: Double, lng: Double, zoom: Double, bearing: Double = 0.0) {
         kite?.keepCamera()
-        model.map?.moveCamera(CameraUpdateFactory.newCameraPosition(org.maplibre.android.camera.CameraPosition.Builder()
-            .target(org.maplibre.android.geometry.LatLng(lat, lng)).zoom(zoom).bearing(bearing).build()))
+        model.map?.moveCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder()
+            .target(LatLng(lat, lng)).zoom(zoom).bearing(bearing).build()))
     }
 
     private val home get() = Place("demo-home", "Home", LatLng(51.4600, -0.9750), "demo", address = "Home")
@@ -69,8 +68,8 @@ object DemoScript {
             }
             val next = if (off in 1..20) {
                 off++
-                val r = Math.toRadians(offBearing)
-                LatLng(pos.lat + speed * kotlin.math.cos(r) / 110_540, pos.lng + speed * kotlin.math.sin(r) / (111_320 * kotlin.math.cos(Math.toRadians(pos.lat))))
+                val r = toRadians(offBearing)
+                LatLng(pos.lat + speed * kotlin.math.cos(r) / 110_540, pos.lng + speed * kotlin.math.sin(r) / (111_320 * kotlin.math.cos(toRadians(pos.lat))))
             } else Geo.point(line, kotlin.math.min(along + speed, total), cum)
             val course = Geo.bearing(pos, next)
             pos = next
@@ -106,23 +105,20 @@ object DemoScript {
             "browse", "icons" -> return
             "browse3d", "browse2d" -> {
                 // Off a route: the map button follows you in 3D (one tap) or 2D (two taps).
-                val ctx = KiteApp.app
-                model.cycleBrowseLook(ctx)
-                if (step == "browse2d") { delay(2000); model.cycleBrowseLook(ctx) }
+                model.cycleBrowseLook()
+                if (step == "browse2d") { delay(2000); model.cycleBrowseLook() }
                 return
             }
             "mapsettings" -> { model.tab = AppTab.SETTINGS; return }
             "puckflat", "puckpitch" -> {
                 // The car arrow alone on the map, to check it draws the same flat and tilted.
                 val m = model.map ?: return
-                val at = org.maplibre.android.geometry.LatLng(51.4543, -0.9731)
+                val at = LatLng(51.4543, -0.9731)
                 kite?.keepCamera()
-                m.moveCamera(CameraUpdateFactory.newCameraPosition(org.maplibre.android.camera.CameraPosition.Builder()
+                m.moveCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder()
                     .target(at).zoom(17.0).tilt(if (step == "puckpitch") 50.0 else 0.0).bearing(30.0).build()))
                 val style = m.style ?: return
-                (style.getSource(NavGlide.PUCK) as? org.maplibre.android.style.sources.GeoJsonSource)?.setGeoJson(
-                    org.maplibre.geojson.Feature.fromGeometry(org.maplibre.geojson.Point.fromLngLat(at.longitude, at.latitude))
-                        .apply { addNumberProperty("bearing", 30.0) })
+                (style.getSource(NavGlide.PUCK) as? GeoJsonSource)?.setGeoJson(Feature.point(at, mapOf("bearing" to 30.0)))
                 return
             }
             "welcome" -> { st.welcomed = false; return }
@@ -321,7 +317,7 @@ fun DemoIcons() {
     androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize()) {
         for (bg in listOf(androidx.compose.ui.graphics.Color(0xFFF2F0EC), androidx.compose.ui.graphics.Color(0xFF1E293B))) {
             androidx.compose.foundation.layout.Row(androidx.compose.ui.Modifier.weight(1f).fillMaxWidth().background(bg)) {
-                pics.forEach { androidx.compose.foundation.Image(it.asImageBitmap(), null, androidx.compose.ui.Modifier.size(96.dp)) }
+                pics.forEach { androidx.compose.foundation.Image(it, null, androidx.compose.ui.Modifier.size(96.dp)) }
             }
         }
     }

@@ -40,6 +40,8 @@ actual fun elapsedRealtime(): Long = SystemClock.elapsedRealtime()
 
 actual fun cacheDir(): String = AndroidHost.app.cacheDir.path
 
+actual fun filesDir(): String = AndroidHost.app.filesDir.path
+
 actual fun klog(tag: String, message: String) { Log.i(tag, message) }
 
 actual fun systemCountry(): String = Locale.getDefault().country

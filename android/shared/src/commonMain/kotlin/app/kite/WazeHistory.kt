@@ -2,7 +2,7 @@ package app.kite
 
 import app.kite.core.*
 import kotlinx.coroutines.*
-import java.io.File
+import kotlinx.coroutines.IO
 
 /**
  * Every police report Kite has seen from Waze, kept on this phone for the heat map. Waze only
@@ -13,7 +13,7 @@ object WazeHistory {
 
     var sightings: List<Sighting> = emptyList(); private set
     private val ids = mutableSetOf<String>()
-    private val file by lazy { File(KiteApp.app.filesDir, "waze-police.json") }
+    private val file by lazy { filesDir() + "/waze-police.json" }
     /** Called after new reports are added, so the map can redraw the heat map. */
     var onChange: (() -> Unit)? = null
     private const val LIMIT = 6000
@@ -23,7 +23,7 @@ object WazeHistory {
         if (loaded) return
         loaded = true
         val cutoff = nowMillis() - 90L * 86_400_000
-        sightings = runCatching { Json.parse(file.readText()).asMaps() }.getOrNull()?.mapNotNull {
+        sightings = runCatching { Json.parse(Disk.read(file)!!.decodeToString()).asMaps() }.getOrNull()?.mapNotNull {
             Sighting(it["id"].text() ?: return@mapNotNull null, it["lat"].num() ?: return@mapNotNull null,
                 it["lng"].num() ?: return@mapNotNull null, it["t"].long() ?: return@mapNotNull null)
         }?.filter { it.t > cutoff } ?: emptyList()
@@ -93,9 +93,7 @@ object WazeHistory {
         val data = Json.write(sightings.map { mapOf("id" to it.id, "lat" to it.lat, "lng" to it.lng, "t" to it.t) })
         CoroutineScope(writer).launch {
             runCatching {
-                val tmp = File(file.parentFile, "waze-police.tmp")
-                tmp.writeText(data)
-                tmp.renameTo(file)
+                Disk.write(file, data.encodeToByteArray())
             }
         }
     }

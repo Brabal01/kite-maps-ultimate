@@ -2,7 +2,9 @@
 
 package app.kite.ui
 
-import androidx.activity.compose.BackHandler
+import kotlinx.coroutines.IO
+
+import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -36,7 +38,6 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -299,7 +300,7 @@ private fun SettingsMenu(open: (SettingsScreen) -> Unit) {
         item(SettingsScreen.MAP, "Theme, units, map zoom, parking button", null, Icons.Filled.Contrast, 0x334155)
         item(SettingsScreen.PLACES, "Home and work", null, Icons.Filled.Home, 0x16A34A)
         item(SettingsScreen.PRIVACY, "Use Kite without Google", if (s.noGoogle) "On" else null, Icons.Filled.Lock, 0x475569)
-        item(SettingsScreen.ABOUT, "Version ${BuildConfig.VERSION_NAME}", null, Icons.Filled.Info, 0x64748B, last = true)
+        item(SettingsScreen.ABOUT, "Version ${Phone.appVersion.substringBefore(" (")}", null, Icons.Filled.Info, 0x64748B, last = true)
     }
 }
 
@@ -435,7 +436,7 @@ private fun PrivacySettings() {
 
 @Composable
 private fun AboutSettings(openDiagnostics: () -> Unit) {
-    val ctx = LocalContext.current
+    val ctx = Phone
     val dark = LocalDark.current
     @Composable
     fun link(text: String, url: String) {
@@ -444,7 +445,7 @@ private fun AboutSettings(openDiagnostics: () -> Unit) {
     SettingsGroup {
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp)) {
             Text("Version", fontSize = KType.body, color = primaryText, modifier = Modifier.weight(1f))
-            Text(BuildConfig.VERSION_NAME, color = secondaryText)
+            Text(Phone.appVersion.substringBefore(" ("), color = secondaryText)
         }
         HorizontalDivider()
         link("Kite Maps on GitHub", "https://github.com/matteofx1/kite-maps")

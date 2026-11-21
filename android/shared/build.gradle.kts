@@ -28,7 +28,8 @@ kotlin {
             "kotlin.uuid.ExperimentalUuidApi", "kotlin.time.ExperimentalTime",
             "kotlinx.cinterop.ExperimentalForeignApi", "kotlinx.cinterop.BetaInteropApi",
             "androidx.compose.material3.ExperimentalMaterial3Api", "androidx.compose.foundation.ExperimentalFoundationApi",
-            "androidx.compose.foundation.layout.ExperimentalLayoutApi",
+            "androidx.compose.foundation.layout.ExperimentalLayoutApi", "androidx.compose.ui.ExperimentalComposeUiApi",
+            "org.jetbrains.compose.resources.ExperimentalResourceApi",
         )
         freeCompilerArgs.add("-Xexpect-actual-classes")
     }

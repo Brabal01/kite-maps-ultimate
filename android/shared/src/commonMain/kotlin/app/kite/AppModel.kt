@@ -9,10 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import app.kite.core.*
 import kotlinx.coroutines.*
-import org.maplibre.android.camera.CameraPosition
-import org.maplibre.android.camera.CameraUpdateFactory
-import org.maplibre.android.geometry.LatLngBounds
-import org.maplibre.android.maps.MapLibreMap
+import app.kite.map.*
 import kotlin.math.*
 
 /** The dock's pages. */
@@ -164,8 +161,13 @@ class AppModel {
     private var cruiseClosed = false
     private var cruiseClosedStill: Long? = null
 
-    var map: MapLibreMap? = null
+    var map: MapHandle? = null
         set(v) { field = v; glide.map = v }
+    /** The map's own drawing, once the map screen has made it. */
+    var kiteMap: KiteMap? = null
+
+    /** A PNG of the map as it is on screen, for "Share diagnostics". */
+    suspend fun mapPicture(): ByteArray? = kiteMap?.picture()
     /** The map view's size in dp, for framing. */
     var mapWidthDp = 400f
     var mapHeightDp = 800f
@@ -229,10 +231,10 @@ class AppModel {
     val viewport: Pair<LatLng, Double?>
         get() {
             val m = map ?: return Pair(userLatLng ?: LatLng(51.5074, -0.1278), null)
-            val c = m.cameraPosition.target ?: return Pair(userLatLng ?: LatLng(51.5074, -0.1278), null)
-            val b = m.projection.visibleRegion.latLngBounds
+            val c = m.cameraPosition.target
+            val b = m.visibleBounds ?: return Pair(c, null)
             val span = LatLng(b.latitudeSouth, b.longitudeWest).distanceTo(LatLng(b.latitudeNorth, b.longitudeEast)) / 1.4
-            return Pair(LatLng(c.latitude, c.longitude), if (span.isFinite() && span > 0) span else null)
+            return Pair(c, if (span.isFinite() && span > 0) span else null)
         }
 
     fun search(text: String? = null, title: String? = null) {
@@ -326,7 +328,7 @@ class AppModel {
                     dropPin(target.at, "Shared location")
                 }
                 is MapLinks.Target.Search -> {
-                    target.near?.let { n -> map?.moveCamera(CameraUpdateFactory.newLatLngZoom(org.maplibre.android.geometry.LatLng(n.lat, n.lng), 14.0)) }
+                    target.near?.let { n -> map?.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(n.lat, n.lng), 14.0)) }
                     search(target.text)
                 }
                 null -> {
@@ -371,7 +373,7 @@ class AppModel {
         browseFollowing = false
         browseLook = MapLook.NORTH
         val zoom = max(MapCam.zoomFor(900.0, p.location.lat, mapWidthDp), min(m.cameraPosition.zoom, 18.0).let { if (it > 16) it else 0.0 })
-        MapCam.animate(m, CameraPosition.Builder().target(p.location.ml()).zoom(zoom).tilt(0.0).bearing(0.0).build(),
+        MapCam.animate(m, CameraPosition.Builder().target(p.location).zoom(zoom).tilt(0.0).bearing(0.0).build(),
             padding = intArrayOf(0, 120, 0, (mapHeightDp * 0.45f).toInt()), ms = 600)
     }
 
@@ -426,8 +428,7 @@ class AppModel {
 
     /** "Costa" and "Costa Coffee", "St Mary's Church" and "St. Mary's": every word of one name is in the other. */
     private fun similarNames(a: String, b: String): Boolean {
-        fun words(s: String) = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD)
-            .replace(Regex("\\p{M}"), "").split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
+        fun words(s: String) = foldAccents(s.lowercase()).split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
         val x = words(a); val y = words(b)
         if (x.isEmpty() || y.isEmpty()) return false
         // Whole words, so "Costa" isn't "Costas" and "Royal Hotel" isn't "Royal Cafe".
@@ -481,7 +482,7 @@ class AppModel {
             return
         }
         val p = Place(id = "parking:${nowMillis() / 1000}", name = "Parked car", location = me, source = "osm",
-            category = "Parked at ${Fmt.time(java.util.Date())}")
+            category = "Parked at ${Fmt.time(nowMillis())}")
         settings.parking = p
         notice = "Parking spot saved. Tap the P button to find your car."
         scope.launch {
@@ -929,7 +930,7 @@ class AppModel {
      * The map button off a route. North up with the map turned by hand: face north first, like the
      * compass it replaces. Otherwise on to the next of 3D, 2D and north up.
      */
-    fun cycleBrowseLook(ctx: android.content.Context) {
+    fun cycleBrowseLook() {
         if (browseLook == MapLook.NORTH && mapHeading != 0.0) {
             map?.let { m -> MapCam.animate(m, CameraPosition.Builder(m.cameraPosition).bearing(0.0).build(), ms = 300) }
             return
@@ -942,7 +943,7 @@ class AppModel {
         }
         val loc = location.last
         if (loc == null) {
-            if (location.denied) LocationService.openSettings(ctx) else location.start()
+            if (location.denied) LocationService.openSettings() else location.start()
             return
         }
         browseFollowing = true
@@ -961,17 +962,17 @@ class AppModel {
         val tilted = browseLook == MapLook.TILTED
         val zoom = if (entering) MapCam.zoomFor(if (tilted) 700.0 else 900.0, f.lat, mapWidthDp) else m.cameraPosition.zoom
         val tilt = if (tilted) (if (entering) 50.0 else max(m.cameraPosition.tilt, 30.0)) else 0.0
-        val pos = CameraPosition.Builder().target(f.coord.ml()).zoom(zoom).tilt(tilt).bearing(course).build()
+        val pos = CameraPosition.Builder().target(f.coord).zoom(zoom).tilt(tilt).bearing(course).build()
         MapCam.animate(m, pos, ms = if (entering) 600 else 900)
     }
 
     // Map
 
-    fun centerOnUser(ctx: android.content.Context) {
+    fun centerOnUser() {
         val m = map
         val loc = location.last
         if (m == null || loc == null) {
-            if (location.denied) LocationService.openSettings(ctx) else location.start()
+            if (location.denied) LocationService.openSettings() else location.start()
             return
         }
         // In 3D or 2D, Centre on me picks up following again.
@@ -980,13 +981,12 @@ class AppModel {
             followBrowse(loc, entering = true)
             return
         }
-        MapCam.animate(m, CameraPosition.Builder().target(loc.coord.ml()).zoom(MapCam.zoomFor(1200.0, loc.lat, mapWidthDp))
+        MapCam.animate(m, CameraPosition.Builder().target(loc.coord).zoom(MapCam.zoomFor(1200.0, loc.lat, mapWidthDp))
             .tilt(0.0).bearing(0.0).build(), ms = 500)
     }
 
     private fun resetCamera() {
         val m = map ?: return
-        m.setPadding(0, 0, 0, 0)
         val c = m.cameraPosition
         MapCam.animate(m, CameraPosition.Builder(c).tilt(0.0).bearing(0.0).padding(0.0, 0.0, 0.0, 0.0).build(), ms = 500)
     }
@@ -995,7 +995,7 @@ class AppModel {
     fun showSpot(p: LatLng) {
         val m = map ?: return
         browseFollowing = false
-        MapCam.animate(m, CameraPosition.Builder().target(p.ml()).zoom(15.0).build(), ms = 500)
+        MapCam.animate(m, CameraPosition.Builder().target(p).zoom(15.0).build(), ms = 500)
     }
 
     fun frame(points: List<LatLng>, bottomFraction: Float = 0.45f, top: Int = 130) {
@@ -1005,12 +1005,12 @@ class AppModel {
         browseFollowing = false
         if (nav == null) browseLook = MapLook.NORTH
         if (points.size == 1) {
-            MapCam.animate(m, CameraPosition.Builder().target(points[0].ml()).zoom(MapCam.zoomFor(1200.0, points[0].lat, mapWidthDp))
+            MapCam.animate(m, CameraPosition.Builder().target(points[0]).zoom(MapCam.zoomFor(1200.0, points[0].lat, mapWidthDp))
                 .tilt(0.0).bearing(0.0).build(), ms = 300)
             return
         }
-        val b = LatLngBounds.Builder().apply { points.forEach { include(it.ml()) } }.build()
-        MapCam.fit(m, b, intArrayOf(40, top, 40, (mapHeightDp * bottomFraction + 20).toInt()), ms = 600)
+        val b = LatLngBounds.Builder().apply { points.forEach { include(it) } }.build()
+        MapCam.fit(m, scope, b, intArrayOf(40, top, 40, (mapHeightDp * bottomFraction + 20).toInt()), ms = 600)
     }
 
     companion object {

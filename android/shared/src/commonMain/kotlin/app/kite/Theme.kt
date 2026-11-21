@@ -2,6 +2,9 @@
 
 package app.kite
 
+import app.kite.resources.Res
+import app.kite.resources.nunito
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,9 +37,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kite.core.*
-import java.text.DateFormat
-import java.util.Date
-import java.util.Locale
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -76,12 +76,13 @@ object Vela {
 val LocalDark = staticCompositionLocalOf { true }
 
 /** The rounded type, like the iPhone's SF Rounded. */
-@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
-val Rounded: FontFamily = FontFamily(
-    listOf(400, 500, 600, 700, 800, 900).map { w ->
-        Font(R.font.nunito, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+val Rounded: FontFamily
+    @Composable get() {
+        val fonts = listOf(400, 500, 600, 700, 800, 900).map { w ->
+            org.jetbrains.compose.resources.Font(Res.font.nunito, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+        }
+        return remember(fonts) { FontFamily(fonts) }
     }
-)
 
 /** Text sizes matching iOS's at the "xLarge" type size the iPhone app never goes below. */
 object KType {
@@ -145,7 +146,7 @@ val primaryText: Color @Composable get() = Vela.primary(LocalDark.current)
 val secondaryText: Color @Composable get() = Vela.muted(LocalDark.current)
 
 object Fmt {
-    private val country: String get() = Locale.getDefault().country
+    private val country: String get() = systemCountry()
     private val autoImperial: Boolean get() = country in setOf("US", "GB", "LR", "MM", "UK")
 
     val metric: Boolean
@@ -232,13 +233,13 @@ object Fmt {
     }
 
     /** "4 min" on foot, from metres in a straight line (a little slower than walking pace for the corners). */
-    fun walkMinutes(meters: Double): String = "${maxOf(1, Math.round(meters / 70).toInt())} min"
+    fun walkMinutes(meters: Double): String = "${maxOf(1, (meters / 70).roundToInt())} min"
 
-    fun arrival(s: Double): String = time(Date(nowMillis() + (s * 1000).toLong()))
+    fun arrival(s: Double): String = time(nowMillis() + (s * 1000).toLong())
 
-    fun time(d: Date): String = android.text.format.DateFormat.getTimeFormat(KiteApp.app).format(d)
+    fun time(epochMillis: Long): String = LocalFormat.time(epochMillis)
 
-    fun count(n: Int): String = java.text.NumberFormat.getIntegerInstance().format(n)
+    fun count(n: Int): String = LocalFormat.count(n)
 }
 
 @Composable

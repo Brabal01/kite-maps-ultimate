@@ -2,11 +2,6 @@
 
 package app.kite.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -21,45 +16,11 @@ import androidx.compose.runtime.*
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import app.kite.core.Place
+import app.kite.Phone
 import app.kite.core.plain
-
-/** Opens a link in whatever app handles it (browser, dialer, another maps app). */
-fun Context.open(url: String) {
-    runCatching {
-        val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        // Kite opens map links itself now: a link meant for Google Maps or the browser mustn't come
-        // straight back to Kite ("Walk around in Google Maps" did).
-        val handlers = packageManager.queryIntentActivities(i, 0).map { it.activityInfo.packageName }
-        if (packageName in handlers) {
-            val others = handlers.filter { it != packageName }.distinct()
-            when {
-                "com.google.android.apps.maps" in others -> i.setPackage("com.google.android.apps.maps")
-                others.size == 1 -> i.setPackage(others[0])
-                others.isEmpty() -> return@runCatching
-                else -> {
-                    startActivity(Intent.createChooser(i, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(android.content.ComponentName(this, app.kite.MainActivity::class.java))))
-                    return@runCatching
-                }
-            }
-        }
-        startActivity(i)
-    }
-}
-
-fun Context.share(text: String) {
-    runCatching {
-        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), null)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    }
-}
-
-fun Context.copy(text: String) {
-    (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Kite", text))
-}
+import app.kite.core.urlEnc
 
 fun telUrl(phone: String?): String? = phone?.let { "tel:" + it.filter { c -> c in "+0123456789" } }
 fun webUrl(site: String?): String? = site?.let { if (it.startsWith("http")) it else "https://$it" }
@@ -73,7 +34,7 @@ enum class OtherApp(val label: String) {
         return when (this) {
             GOOGLE -> p.shareUrl
             WAZE -> "https://waze.com/ul?ll=$ll&navigate=yes"
-            APPLE -> "https://maps.apple.com/?ll=$ll&q=" + java.net.URLEncoder.encode(p.name, "UTF-8").replace("+", "%20")
+            APPLE -> "https://maps.apple.com/?ll=$ll&q=" + urlEnc(p.name)
         }
     }
 }
@@ -83,7 +44,6 @@ enum class OtherApp(val label: String) {
 @Composable
 fun Copyable(text: String?, onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
     if (text.isNullOrEmpty()) { content(); return }
-    val ctx = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var showing by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
@@ -94,7 +54,7 @@ fun Copyable(text: String?, onClick: (() -> Unit)? = null, content: @Composable 
         DropdownMenu(showing, { showing = false }) {
             DropdownMenuItem(text = { Text(if (copied) "Copied" else "Copy") },
                 leadingIcon = { Icon(if (copied) Icons.Filled.Check else Icons.Filled.ContentCopy, null) },
-                onClick = { ctx.copy(text); copied = true; showing = false })
+                onClick = { Phone.copy(text); copied = true; showing = false })
         }
     }
 }

@@ -2,13 +2,6 @@
 
 package app.kite.ui
 
-import android.content.ClipboardManager
-import android.content.Context
-import android.content.Intent
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -35,7 +28,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
@@ -47,13 +39,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kite.*
 import app.kite.core.*
-import java.util.Locale
 
 /** The map page: a big "Where to?" bar, Home and Work one tap away, and the results or place sheet. */
 @Composable
 fun BrowseOverlay(model: AppModel) {
     val dark = LocalDark.current
-    val ctx = LocalContext.current
+    val ctx = Phone
     val s = AppSettings
     var focused by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
@@ -83,7 +74,7 @@ fun BrowseOverlay(model: AppModel) {
                     }
                     // 3D, 2D or north up, always there. On north up with the map turned by hand,
                     // the needle shows which way north is and a tap faces north again.
-                    MapLookButton(model.browseLook, model.mapHeading, 48.dp) { model.cycleBrowseLook(ctx) }
+                    MapLookButton(model.browseLook, model.mapHeading, 48.dp) { model.cycleBrowseLook() }
                 }
             }
             Spacer(Modifier.weight(1f))
@@ -128,7 +119,7 @@ fun BrowseOverlay(model: AppModel) {
     // The back button closes things one at a time, like the iPhone's back arrows.
     // Screenshot run only: the search box open, to check nothing sits on its panel.
     if (DemoScript.step == "searchfocus") LaunchedEffect(Unit) { kotlinx.coroutines.delay(8000); focused = true }
-    androidx.activity.compose.BackHandler(enabled = focused || hasSheet) {
+    androidx.compose.ui.backhandler.BackHandler(enabled = focused || hasSheet) {
         if (focused) { focus.clearFocus(); focused = false } else model.clearSearch()
     }
 }
@@ -138,10 +129,10 @@ fun BrowseOverlay(model: AppModel) {
 @Composable
 private fun LocateButton(model: AppModel) {
     val dark = LocalDark.current
-    val ctx = LocalContext.current
+    val ctx = Phone
     var menu by remember { mutableStateOf(false) }
     Box {
-        Box(Modifier.size(52.dp).glass(CircleShape).combinedClickable(onClick = { model.centerOnUser(ctx) }, onLongClick = { menu = true }),
+        Box(Modifier.size(52.dp).glass(CircleShape).combinedClickable(onClick = { model.centerOnUser() }, onLongClick = { menu = true }),
             contentAlignment = Alignment.Center) {
             Icon(Icons.Filled.MyLocation, "Centre on me", tint = Vela.accentText(dark), modifier = Modifier.size(24.dp))
         }
@@ -162,13 +153,10 @@ private fun LocateButton(model: AppModel) {
 @Composable
 fun SearchBar(model: AppModel, focused: Boolean, onFocus: (Boolean) -> Unit, unfocus: () -> Unit) {
     val dark = LocalDark.current
-    val ctx = LocalContext.current
     val requester = remember { FocusRequester() }
     LaunchedEffect(focused) { if (focused) runCatching { requester.requestFocus() } }
-    val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        val text = r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-        if (!text.isNullOrBlank()) { model.query = text; model.search(text) }
-    }
+    var listening by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) { onDispose { Dictation.stop() } }
     Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(54.dp).glass(CircleShape).padding(start = 12.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         if (focused || model.results.isNotEmpty() || model.selected != null) {
@@ -179,7 +167,7 @@ fun SearchBar(model: AppModel, focused: Boolean, onFocus: (Boolean) -> Unit, unf
             Icon(Icons.Filled.Search, null, tint = Vela.muted(dark), modifier = Modifier.padding(start = 8.dp).size(24.dp))
         }
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-            if (model.query.isEmpty()) Text("Where to?", fontSize = 19.sp, fontWeight = FontWeight.Medium, color = Vela.muted(dark))
+            if (model.query.isEmpty()) Text(if (listening) "Listening\u2026" else "Where to?", fontSize = 19.sp, fontWeight = FontWeight.Medium, color = Vela.muted(dark))
             BasicTextField(model.query, { q -> model.query = q; if (focused) model.typed(q) },
                 Modifier.fillMaxWidth().focusRequester(requester).onFocusChanged { if (it.isFocused != focused) onFocus(it.isFocused) },
                 singleLine = true,
@@ -197,17 +185,20 @@ fun SearchBar(model: AppModel, focused: Boolean, onFocus: (Boolean) -> Unit, unf
             else -> Box(Modifier.size(48.dp).clip(CircleShape).tap {
                 unfocus()
                 // Phones without Google (like GrapheneOS) may have no speech service at all: say so plainly.
-                if (!SpeechRecognizer.isRecognitionAvailable(ctx)) {
-                    model.notice = "Voice search needs a speech app on this phone. Type where you're going instead."
-                } else try {
-                    voice.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                        .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        .putExtra(RecognizerIntent.EXTRA_PROMPT, "Where to?"))
-                } catch (_: Exception) {
-                    model.notice = "Voice search needs a speech app on this phone. Type where you're going instead."
+                if (listening) { Dictation.stop(); listening = false }
+                else if (!Dictation.available()) {
+                    model.notice = if (isIos) "Voice search isn't available right now. Type where you're going instead."
+                        else "Voice search needs a speech app on this phone. Type where you're going instead."
+                } else {
+                    listening = true
+                    Dictation.listen { text ->
+                        listening = false
+                        if (!text.isNullOrBlank()) { model.query = text; model.search(text) }
+                    }
                 }
             }, contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Mic, "Search by voice", tint = primaryText, modifier = Modifier.size(24.dp))
+                Icon(if (listening) Icons.Filled.Stop else Icons.Filled.Mic, if (listening) "Stop listening" else "Search by voice",
+                    tint = if (listening) Vela.accent(dark) else primaryText, modifier = Modifier.size(24.dp))
             }
         }
     }
@@ -215,11 +206,9 @@ fun SearchBar(model: AppModel, focused: Boolean, onFocus: (Boolean) -> Unit, unf
 
 @Composable
 fun SuggestionsPanel(model: AppModel, done: () -> Unit) {
-    val ctx = LocalContext.current
     val s = AppSettings
-    val clip = remember { ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
     // Only checks whether the clipboard looks like a link (its type), without reading it.
-    val copiedLink = remember { clip.primaryClipDescription?.let { it.hasMimeType("text/plain") || it.hasMimeType("text/uri-list") } == true }
+    val copiedLink = remember { Phone.hasCopiedText() }
     Column(Modifier.padding(horizontal = 12.dp).heightIn(max = 460.dp).glass(RoundedCornerShape(20.dp))
         .verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
         val sug = model.suggestions
@@ -236,7 +225,7 @@ fun SuggestionsPanel(model: AppModel, done: () -> Unit) {
                     Text("Open a copied map link", color = primaryText, modifier = Modifier.weight(1f))
                     Text("Paste", color = androidx.compose.ui.graphics.Color.White, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.clip(CircleShape).background(Vela.routeBlue).tap {
-                            val text = clip.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString()
+                            val text = Phone.paste()
                             if (!text.isNullOrBlank()) { done(); model.openLink(text) }
                         }.padding(horizontal = 14.dp, vertical = 6.dp))
                 }

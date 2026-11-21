@@ -57,7 +57,7 @@ fun CruiseOverlay(model: AppModel, cruise: Cruise) {
         }
         CruiseBar(cruise.ref) { model.endCruise(closed = true) }
     }
-    androidx.activity.compose.BackHandler { model.endCruise(closed = true) }
+    androidx.compose.ui.backhandler.BackHandler { model.endCruise(closed = true) }
 }
 
 /** ✕, then "Driving" and the road's number: no arrival time, since there's no route. */

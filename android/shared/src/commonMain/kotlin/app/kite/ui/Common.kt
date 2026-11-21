@@ -32,7 +32,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
@@ -46,6 +45,9 @@ import androidx.compose.ui.unit.sp
 import app.kite.*
 import app.kite.core.*
 import kotlin.math.abs
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 
 /** A tap target with no ripple flash, for rows that change color themselves. */
 fun Modifier.tap(onClick: () -> Unit): Modifier = this.clickable(onClick = onClick)
@@ -277,18 +279,17 @@ fun NoticeBanner(text: String, dismiss: () -> Unit) {
 /** Why the map can't do its job right now: location turned off, or no internet. */
 @Composable
 fun StatusCards() {
-    val ctx = LocalContext.current
     val loc = LocationService
     val fix = loc.last
     when {
         loc.denied || DemoScript.step == "locationoff" -> StatusCard(Icons.Filled.LocationOff, Vela.closed, "Location is off",
-            "Kite needs it to show where you are and to guide you.", "Turn on") { LocationService.openSettings(ctx) }
+            "Kite needs it to show where you are and to guide you.", "Turn on") { LocationService.openSettings() }
         loc.authorized && loc.systemOff -> StatusCard(Icons.Filled.LocationOff, Vela.closed, "Location is off",
             "Turn on Location on this phone to see where you are and get directions.", "Turn on") {
-            ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            Phone.openLocationSettings()
         }
         loc.authorized && loc.reducedAccuracy -> StatusCard(Icons.Filled.MyLocation, Color(0xFFF59E0B), "Precise location is off",
-            "Allow precise location for Kite in Settings to improve your position.", "Settings") { LocationService.openSettings(ctx) }
+            "Allow precise location for Kite in Settings to improve your position.", "Settings") { LocationService.openSettings() }
         loc.authorized && fix != null && fix.accuracy > 200 -> StatusCard(Icons.Filled.MyLocation, Color(0xFFF59E0B), "Location is uncertain",
             "GPS accuracy is about ${fix.accuracy.toInt()} m. Move outdoors for a better fix.", null) {}
         !Connectivity.online -> StatusCard(Icons.Filled.WifiOff, Color(0xFFF59E0B), "No internet connection",
@@ -418,18 +419,29 @@ fun IconRow(icon: ImageVector, text: String, sub: String? = null, trailing: Stri
  * off the screen.
  */
 @Composable
-fun FullScreenDialog(onDismiss: () -> Unit, dismissOnBack: Boolean = true, content: @Composable () -> Unit) {
-    androidx.compose.ui.window.Dialog(onDismiss, androidx.compose.ui.window.DialogProperties(
-        usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnBackPress = dismissOnBack)) {
-        val window = (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
-        SideEffect {
-            window?.let { w ->
-                w.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
-                if (android.os.Build.VERSION.SDK_INT >= 28) w.attributes = w.attributes.apply {
-                    layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                }
-            }
-        }
-        content()
+expect fun FullScreenDialog(onDismiss: () -> Unit, dismissOnBack: Boolean = true, content: @Composable () -> Unit)
+
+/** Pick a day, then a time, in the phone's own style (12 or 24 hour clock). Gives back the moment picked. */
+@Composable
+fun DateTimePicker(initial: Long, dismiss: () -> Unit, picked: (Long) -> Unit) {
+    val zone = kotlinx.datetime.TimeZone.currentSystemDefault()
+    val start = kotlin.time.Instant.fromEpochMilliseconds(initial).toLocalDateTime(zone)
+    // The date picker works in UTC days: hand it the local day as a UTC midnight.
+    val dayState = rememberDatePickerState(initialSelectedDateMillis = start.date.atStartOfDayIn(kotlinx.datetime.TimeZone.UTC).toEpochMilliseconds())
+    val timeState = rememberTimePickerState(start.hour, start.minute, LocalFormat.is24Hour)
+    var step by remember { mutableIntStateOf(0) }
+    if (step == 0) {
+        DatePickerDialog(dismiss, confirmButton = { TextButton({ step = 1 }) { Text("Next") } },
+            dismissButton = { TextButton(dismiss) { Text("Cancel") } }) { DatePicker(dayState) }
+    } else {
+        AlertDialog(dismiss,
+            confirmButton = {
+                TextButton({
+                    val day = dayState.selectedDateMillis?.let { kotlin.time.Instant.fromEpochMilliseconds(it).toLocalDateTime(kotlinx.datetime.TimeZone.UTC).date } ?: start.date
+                    picked(kotlinx.datetime.LocalDateTime(day, kotlinx.datetime.LocalTime(timeState.hour, timeState.minute)).toInstant(zone).toEpochMilliseconds())
+                }) { Text("Done") }
+            },
+            dismissButton = { TextButton(dismiss) { Text("Cancel") } },
+            text = { TimePicker(timeState) })
     }
 }

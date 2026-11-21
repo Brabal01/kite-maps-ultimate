@@ -19,7 +19,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -103,7 +102,7 @@ fun ResultsList(model: AppModel, modifier: Modifier = Modifier) {
 
 @Composable
 fun ResultRow(model: AppModel, place: Place) {
-    val ctx = LocalContext.current
+    val ctx = Phone
     Column(Modifier.fillMaxWidth().tap { model.select(place) }.padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(place.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = primaryText)

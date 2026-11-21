@@ -1,8 +1,6 @@
 package app.kite
 
-import org.maplibre.android.maps.Style
-import org.maplibre.android.style.layers.*
-import org.maplibre.android.style.layers.PropertyFactory.*
+import app.kite.map.*
 
 /**
  * Paints OpenFreeMap Liberty in Kite's colors: a calm Waze-like night palette and the classic day
@@ -44,9 +42,9 @@ object MapStyler {
             val id = layer.id
             if (id.startsWith("vela") || id.startsWith("hr-heat")) continue
             if (id == "natural_earth" || id == "road_area_pattern") { layer.setProperties(visibility(Property.NONE)); continue }
-            when (layer) {
-                is BackgroundLayer -> layer.setProperties(backgroundColor(p.land))
-                is FillLayer -> when (id) {
+            when {
+                layer.isBackground -> layer.setProperties(backgroundColor(p.land))
+                layer.isFill -> when (id) {
                     "water" -> layer.setProperties(fillColor(p.water))
                     "park" -> layer.setProperties(fillColor(p.park), fillOutlineColor(p.park), fillOpacity(1f))
                     "landcover_grass", "landcover_wood", "landcover_wetland" -> {
@@ -58,8 +56,8 @@ object MapStyler {
                     "aeroway_fill" -> layer.setProperties(fillColor(p.airport))
                     else -> if (id.startsWith("landuse") || id.startsWith("landcover")) layer.setProperties(fillColor(p.landuse), fillOpacity(p.landuseOpacity))
                 }
-                is FillExtrusionLayer -> if (id == "building-3d") layer.setProperties(fillExtrusionColor(p.building))
-                is LineLayer -> {
+                layer.isFillExtrusion -> if (id == "building-3d") layer.setProperties(fillExtrusionColor(p.building))
+                layer.isLine -> {
                     when {
                         id.startsWith("waterway") -> layer.setProperties(lineColor(p.water))
                         id == "park_outline" || id.startsWith("landcover") || id.startsWith("park") -> layer.setProperties(visibility(Property.NONE))
@@ -75,7 +73,7 @@ object MapStyler {
                         else -> layer.setProperties(lineColor(p.minor))
                     }
                 }
-                is SymbolLayer -> {
+                layer.isSymbol -> {
                     if (id.startsWith("highway-name")) {
                         layer.setProperties(textColor(p.roadLabel), textHaloColor(p.roadHalo), textHaloWidth(1.6f))
                     } else if (p.label != null && p.halo != null) {
@@ -110,7 +108,7 @@ object MapStyler {
             val id = layer.id
             if (id.startsWith("vela") || id.startsWith("hr-heat")) continue
             if (clutter(id)) { layer.setProperties(visibility(if (on) Property.NONE else Property.VISIBLE)); continue }
-            if (layer is SymbolLayer && id.contains("shield")) {
+            if (layer.isSymbol && id.contains("shield")) {
                 if (savedShieldSpacing[id] == null) {
                     savedShieldSpacing[id] = layer.symbolSpacing
                     savedShieldPadding[id] = layer.iconPadding
@@ -119,12 +117,12 @@ object MapStyler {
                 else { restore(layer, savedShieldSpacing[id]!!); restore(layer, savedShieldPadding[id]!!) }
                 continue
             }
-            if (layer is LineLayer && sideRoad(id)) {
+            if (layer.isLine && sideRoad(id)) {
                 if (savedLineOpacity[id] == null) savedLineOpacity[id] = layer.lineOpacity
                 if (on) layer.setProperties(lineOpacity(0.6f)) else restore(layer, savedLineOpacity[id]!!)
                 continue
             }
-            if (layer is SymbolLayer && (id == "highway-name-major" || id == "highway-name-minor")) {
+            if (layer.isSymbol && (id == "highway-name-major" || id == "highway-name-minor")) {
                 if (savedLabelSizes[id] == null) savedLabelSizes[id] = layer.textSize
                 if (on) layer.setProperties(textSize(if (id == "highway-name-major") 17f else 15f))
                 else restore(layer, savedLabelSizes[id]!!)
@@ -132,22 +130,6 @@ object MapStyler {
         }
     }
 
-    /**
-     * Puts back a value read from the style. One the style gave as an expression (a size that grows
-     * with zoom, say) comes back as JSON, which the map only takes once turned into an expression again.
-     */
-    private fun restore(layer: Layer, v: PropertyValue<*>) {
-        val value = v.value
-        runCatching {
-            when (value) {
-                null -> layer.setProperties(PropertyValue<Any?>(v.name, null))
-                is Number, is String, is Boolean, is Array<*> -> layer.setProperties(v)
-                else -> {
-                    val json = value.toString()
-                    if (json.startsWith("[")) layer.setProperties(PropertyValue(v.name, org.maplibre.android.style.expressions.Expression.raw(json)))
-                    else json.toFloatOrNull()?.let { layer.setProperties(PropertyValue(v.name, it)) }
-                }
-            }
-        }
-    }
+    /** Puts back a value saved from the style (null: the style had none, so back to the default). */
+    private fun restore(layer: Layer, v: PropertyValue<*>) { layer.setProperties(v) }
 }

@@ -2,6 +2,7 @@
 
 package app.kite.ui
 
+import kotlin.math.roundToInt
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -24,7 +25,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -34,14 +34,13 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.kite.*
 import app.kite.core.*
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
-import java.util.Locale
 
 @Composable
 fun PlaceHeader(model: AppModel, place: Place) {
     val dark = LocalDark.current
-    val ctx = LocalContext.current
+    val ctx = Phone
     Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) {
@@ -78,7 +77,7 @@ fun PlaceHeader(model: AppModel, place: Place) {
 
 @Composable
 fun PlaceBody(model: AppModel, place: Place) {
-    val ctx = LocalContext.current
+    val ctx = Phone
     var tab by remember(place.id) { mutableIntStateOf(0) }
     var driveSeconds by remember(place.id) { mutableStateOf<Double?>(null) }
     LaunchedEffect(place.id) {
@@ -120,7 +119,7 @@ fun PlaceBody(model: AppModel, place: Place) {
 
 @Composable
 private fun PlaceActions(model: AppModel, place: Place, driveSeconds: Double?) {
-    val ctx = LocalContext.current
+    val ctx = Phone
     val dark = LocalDark.current
     var more by remember { mutableStateOf(false) }
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -168,7 +167,7 @@ private fun isStop(p: Place): Boolean {
 
 @Composable
 private fun PlaceOverview(place: Place) {
-    val ctx = LocalContext.current
+    val ctx = Phone
     var hoursOpen by remember(place.id) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         place.editorialSummary?.let { s -> Copyable(s) { Text(s, color = primaryText) } }
@@ -278,10 +277,10 @@ fun DepartureBoard(place: Place) {
 }
 
 private fun countdown(t: Long): String {
-    val mins = Math.round((t - nowMillis()) / 60_000.0).toInt()
+    val mins = ((t - nowMillis()) / 60_000.0).roundToInt()
     if (mins <= 0) return "Now"
     if (mins < 60) return "$mins min"
-    return Fmt.time(java.util.Date(t))
+    return Fmt.time(t)
 }
 
 @Composable
@@ -301,7 +300,7 @@ fun PhotoStrip(all: List<String>, height: Dp = 130.dp, opensViewer: Boolean = fa
 }
 
 fun isGooglePhoto(u: String): Boolean {
-    val host = runCatching { java.net.URI(u).host?.lowercase() }.getOrNull() ?: return false
+    val host = u.substringAfter("://", "").substringBefore("/").substringBefore("?").substringAfter("@").substringBefore(":").lowercase().ifEmpty { return false }
     return "google" in host || "gstatic" in host || "ggpht" in host
 }
 
@@ -382,7 +381,7 @@ fun vehicleIcon(v: TransitLeg.Vehicle) = when (v) {
  */
 @Composable
 fun ReviewsList(place: Place) {
-    val ctx = LocalContext.current
+    val ctx = Phone
     val dark = LocalDark.current
     // Google's list of reviews stopped answering apps (checked 2026-11-21): the one review Google
     // sends with the place, and the full list on Google's own page.
@@ -394,7 +393,7 @@ fun ReviewsList(place: Place) {
                 Text(fmt("%.1f", rating), fontSize = 40.sp, fontWeight = FontWeight.ExtraBold, color = primaryText)
                 Column {
                     Text(starsText(rating), fontSize = 18.sp, color = Color(0xFFF59E0B))
-                    place.reviewCount?.let { Text("%,d reviews on Google".format(it), fontSize = KType.subheadline, color = secondaryText) }
+                    place.reviewCount?.let { Text("${LocalFormat.count(it)} reviews on Google", fontSize = KType.subheadline, color = secondaryText) }
                 }
             }
         }

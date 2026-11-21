@@ -1,43 +1,38 @@
 package app.kite
 
-import android.annotation.SuppressLint
-import android.content.Context
-import android.graphics.Color
-import android.graphics.PointF
-import android.graphics.RectF
-import android.location.Location
-import android.util.Log
-import android.view.HapticFeedbackConstants
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import app.kite.core.*
+import app.kite.map.*
+import app.kite.map.Expression.Companion.any
+import app.kite.map.Expression.Companion.coalesce
+import app.kite.map.Expression.Companion.color
+import app.kite.map.Expression.Companion.eq
+import app.kite.map.Expression.Companion.get
+import app.kite.map.Expression.Companion.has
+import app.kite.map.Expression.Companion.interpolate
+import app.kite.map.Expression.Companion.lineProgress
+import app.kite.map.Expression.Companion.linear
+import app.kite.map.Expression.Companion.literal
+import app.kite.map.Expression.Companion.not
+import app.kite.map.Expression.Companion.step
+import app.kite.map.Expression.Companion.stop
+import app.kite.map.Expression.Companion.switchCase
+import app.kite.map.Expression.Companion.toColor
+import app.kite.map.Expression.Companion.zoom
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.*
-import org.maplibre.android.camera.CameraPosition
-import org.maplibre.android.location.LocationComponentActivationOptions
-import org.maplibre.android.location.LocationComponentOptions
-import org.maplibre.android.location.modes.CameraMode
-import org.maplibre.android.location.modes.RenderMode
-import org.maplibre.android.maps.MapLibreMap
-import org.maplibre.android.maps.MapView
-import org.maplibre.android.maps.Style
-import org.maplibre.android.style.expressions.Expression
-import org.maplibre.android.style.expressions.Expression.*
-import org.maplibre.android.style.layers.*
-import org.maplibre.android.style.layers.PropertyFactory.*
-import org.maplibre.android.style.sources.GeoJsonOptions
-import org.maplibre.android.style.sources.GeoJsonSource
-import org.maplibre.android.style.sources.RasterSource
-import org.maplibre.android.style.sources.TileSet
-import org.maplibre.geojson.Feature
-import org.maplibre.geojson.FeatureCollection
-import org.maplibre.geojson.LineString
-import org.maplibre.geojson.Point
+import org.maplibre.compose.map.MapState
+import org.maplibre.compose.style.BaseStyle
 import kotlin.math.*
 
 /**
  * The full-screen map: OpenFreeMap Liberty painted in Kite's colors, plus Kite's own layers
  * (result pins, routes with traffic, the navigation puck, live traffic, satellite). The same
- * layers, in the same order, as the iPhone app's map.
+ * layers, in the same order, on both phones.
  */
-class KiteMap(private val model: AppModel, private val context: Context) {
+class KiteMap(private val model: AppModel) {
     companion object {
         const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
         /** How see-through cameras and reports off your route are while driving. */
@@ -45,18 +40,23 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         /** Reports that always keep their own icon, never joining a numbered bubble. */
         val NEVER_GROUPED = setOf(WazeAlert.Kind.POLICE, WazeAlert.Kind.ACCIDENT)
         private fun c(hex: Long, a: Float = 1f) = Color.argb((a * 255).toInt(), ((hex shr 16) and 0xFF).toInt(), ((hex shr 8) and 0xFF).toInt(), (hex and 0xFF).toInt())
-        private fun hex(l: Long) = String.format("#%06X", l and 0xFFFFFF)
+        private fun hex(l: Long) = fmt("#%06X", l and 0xFFFFFF)
     }
 
     var dark = true
         private set
-    private var map: MapLibreMap? = null
-    private var view: MapView? = null
+    private var map: MapHandle? = null
+    private var style: Style? = null
+    /** The style the map loads: empty until Kite's is ready, then Kite's (built once per launch). */
+    var baseStyle by mutableStateOf<BaseStyle>(BaseStyle.Json("{\"version\":8,\"sources\":{},\"layers\":[]}"))
+        private set
+    private var building: Job? = null
     private val scope get() = model.scope
     private var styleReady = false
     private var movedToUser = false
     private var pinDroppedAt = 0L
     private val originalLabels = mutableMapOf<String, Triple<PropertyValue<*>, PropertyValue<*>, PropertyValue<*>>>()
+    private var roadQuery: Job? = null
     private var lastResultsKey = ""
     private var lastRouteKey = ""
     private var lastMineKey = ""
@@ -94,107 +94,128 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     private var wazeFetch: Job? = null
     private var wazeFailedAt = 0L
     private var wazeAskedAt = 0L
-    val heatTiles = HighwayHeat(model.scope)
     private var wazeRetryQueued = false
     private var lastWazeKey = ""
     private data class RailBox(val s: Double, val w: Double, val n: Double, val e: Double, val z: Int)
     private var railBox: RailBox? = null
-    private var locationOn = false
+    private fun now() = nowMillis()
 
-    private fun now() = System.currentTimeMillis()
-
-    fun attach(v: MapView) {
-        view = v
-        v.getMapAsync { m ->
-            map = m
-            model.map = m
-            m.uiSettings.isCompassEnabled = false
-            m.uiSettings.isLogoEnabled = false
-            m.uiSettings.setAttributionMargins(24, 0, 0, 24)
-            m.uiSettings.isAttributionEnabled = true
-            m.cameraPosition = CameraPosition.Builder().target(org.maplibre.android.geometry.LatLng(51.5074, -0.1278)).zoom(11.0).build()
-            m.setStyle(Style.Builder().fromUri(STYLE_URL)) { style -> styleLoaded(m, style) }
-            m.addOnMapClickListener { tapped(m, it) }
-            m.addOnMapLongClickListener { pressed(m, it); true }
-            m.addOnCameraMoveStartedListener { reason ->
-                if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) model.nav?.let { if (it.following) it.following = false }
-            }
-            // Off a route in 3D or 2D, dragging or turning the map stops following; zooming doesn't.
-            m.addOnMoveListener(object : MapLibreMap.OnMoveListener {
-                override fun onMoveBegin(detector: org.maplibre.android.gestures.MoveGestureDetector) {
-                    if (model.nav == null && model.browseFollowing) model.browseFollowing = false
+    /**
+     * Builds Kite's style once: Liberty (fresh, or the copy saved last time when offline) with
+     * Kite's layers and colours, then hands it to the map to load.
+     */
+    fun buildStyle() {
+        if (building != null || style != null) return
+        building = scope.launch {
+            val cache = cacheDir() + "/liberty-style.json"
+            var base: Map<String, Any?>? = null
+            for (attempt in 0 until 20) {
+                val fresh = withContext(Dispatchers.Default) {
+                    runCatching { Http.get(STYLE_URL).takeIf { it.code == 200 }?.body }.getOrNull()
                 }
-                override fun onMove(detector: org.maplibre.android.gestures.MoveGestureDetector) {}
-                override fun onMoveEnd(detector: org.maplibre.android.gestures.MoveGestureDetector) {}
-            })
-            m.addOnRotateListener(object : MapLibreMap.OnRotateListener {
-                override fun onRotateBegin(detector: org.maplibre.android.gestures.RotateGestureDetector) {
-                    if (model.nav == null && model.browseFollowing) model.browseFollowing = false
-                }
-                override fun onRotate(detector: org.maplibre.android.gestures.RotateGestureDetector) {}
-                override fun onRotateEnd(detector: org.maplibre.android.gestures.RotateGestureDetector) {}
-            })
-            m.addOnCameraIdleListener {
-                loadCameras(m); loadWazeCameras(m); loadSurveillance(m); loadWaze(m); loadLiveCams(m); render(); updateHeat(m); loadRail(m); noteHeading(m)
+                base = fresh?.let { Json.obj(it) }?.also { Disk.write(cache, fresh) }
+                    ?: Disk.read(cache)?.let { Json.obj(it) }
+                if (base != null) break
+                delay(min(30_000L, 2_000L * (attempt + 1)))
             }
-            m.addOnCameraMoveListener { noteHeading(m) }
-            WazeHistory.onChange = { render() }
-            LiveCamStore.onChange = { render() }
-            LocationService.last?.let { moveToUserOnce(it) }
+            val b = base ?: return@launch
+            val st = Style(b)
+            for (l in st.layers) if (l.isSymbol) originalLabels[l.id] = Triple(l.textColor, l.textHaloColor, l.textHaloWidth)
+            MapStyler.reset()
+            MapIcons.register(st, dark)
+            addVelaLayers(st)
+            style = st
+            styleReady = false
+            repaint(force = true)
+            baseStyle = BaseStyle.Json(st.json())
         }
     }
 
-    // Style
+    /** The map on screen has started (or come back): keep a handle to it for the camera and the style. */
+    fun attach(state: MapState, mapScope: CoroutineScope) {
+        val m = MapHandle(state, mapScope)
+        map = m
+        model.map = m
+        model.glide.frames = mapScope
+        m.style = style
+        if (!movedToUser) state.setCameraPosition(CameraPosition(LatLng(51.5074, -0.1278), 11.0).let {
+            org.maplibre.compose.camera.CameraPosition(org.maplibre.spatialk.geojson.Position(it.target.lng, it.target.lat), it.zoom) })
+        WazeHistory.onChange = { render() }
+        LiveCamStore.onChange = { render() }
+        LocationService.last?.let { moveToUserOnce(it) }
+    }
 
-    private fun styleLoaded(m: MapLibreMap, style: Style) {
-        originalLabels.clear()
-        for (l in style.layers) if (l is SymbolLayer) originalLabels[l.id] = Triple(l.textColor, l.textHaloColor, l.textHaloWidth)
-        MapStyler.reset()
-        MapIcons.register(style, dark)
-        addVelaLayers(style)
+    fun detach() {
+        style?.detach()
+        styleReady = false
+        map = null
+        model.map = null
+    }
+
+    /** The map has loaded Kite's style: changes go to it from now on. */
+    fun styleLoaded() {
+        val m = map ?: return
+        val st = style ?: return
+        st.goLive(m.state)
+        m.style = st
         styleReady = true
-        heatTiles.styleReloaded()
         styledDriving = null
-        repaint()
-        lastResultsKey = ""; lastRouteKey = ""; lastMineKey = ""; lastPuckKey = ""; lastHeadKey = ""; lastNextRoadKey = ""; lastCameraKey = ""; lastSignalsKey = ""; lastWazeKey = ""; lastLiveKey = ""
-        enableLocation(style)
-        render()
-        loadCameras(m); loadWazeCameras(m); loadWaze(m); loadLiveCams(m); updateHeat(m)
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun enableLocation(style: Style) {
-        val m = map ?: return
-        if (!LocationService.authorized) return
-        val lc = m.locationComponent
-        if (!lc.isLocationComponentActivated) {
-            val opts = LocationComponentOptions.builder(context)
-                .foregroundTintColor(c(0x14B8A6)).backgroundTintColor(Color.WHITE)
-                .accuracyColor(c(0x14B8A6)).accuracyAlpha(0.15f)
-                .bearingTintColor(c(0x14B8A6)).pulseEnabled(false).build()
-            lc.activateLocationComponent(LocationComponentActivationOptions.builder(context, style)
-                .locationComponentOptions(opts).useDefaultLocationEngine(false).build())
-        }
-        lc.isLocationComponentEnabled = model.nav == null
-        lc.cameraMode = CameraMode.NONE
-        lc.renderMode = RenderMode.NORMAL
-        locationOn = true
+        lastResultsKey = ""; lastRouteKey = ""; lastMineKey = ""; lastPuckKey = ""; lastHeadKey = ""; lastNextRoadKey = ""; lastCameraKey = ""; lastSignalsKey = ""; lastWazeKey = ""; lastLiveKey = ""; lastMeKey = ""
         LocationService.last?.let { pushFix(it) }
+        render()
+        loadCameras(m); loadWazeCameras(m); loadWaze(m); loadLiveCams(m)
     }
 
-    /** Hands a GPS fix to the map's own blue dot. */
-    fun pushFix(f: Fix) {
+    /** The camera stopped moving: fetch what the new view needs and redraw. */
+    fun cameraIdle() {
         val m = map ?: return
-        val style = m.style ?: return
-        if (!locationOn) { if (LocationService.authorized) enableLocation(style); if (!locationOn) return }
-        val lc = m.locationComponent
-        if (!lc.isLocationComponentActivated) return
-        lc.forceLocationUpdate(Location("kite").apply {
-            latitude = f.lat; longitude = f.lng; accuracy = f.accuracy.toFloat(); time = f.timeMillis
-            if (f.courseKnown) bearing = f.course.toFloat()
-            if (f.speedKnown) speed = f.speed.toFloat()
-        })
+        loadCameras(m); loadWazeCameras(m); loadSurveillance(m); loadWaze(m); loadLiveCams(m); render(); loadRail(m); noteHeading(m)
+    }
+
+    fun cameraMoved() { map?.let { noteHeading(it) } }
+
+    /** Dragging or turning the map by hand. */
+    fun gestureStarted(pan: Boolean) {
+        if (pan || true) if (model.nav == null && model.browseFollowing) model.browseFollowing = false
+    }
+
+    /** Any move of the map by hand while navigating stops following the car. */
+    fun gestureMove() { model.nav?.let { if (it.following) it.following = false } }
+
+    private var lastMeKey = ""
+
+    /** Your blue dot (off a route; while navigating the car arrow shows instead). */
+    fun pushFix(f: Fix) {
+        val st = style ?: return
         moveToUserOnce(f)
+        val show = model.nav == null && LocationService.authorized
+        val key = if (show) fmt("%.6f,%.6f,%.0f,%.0f", f.lat, f.lng, f.accuracy, if (f.courseKnown) f.course else -1.0) else ""
+        if (key == lastMeKey) return
+        lastMeKey = key
+        if (!show) { setShape(st, "vela-me", emptyList()); return }
+        // Metres to screen points at zoom 0, so the map can grow the accuracy ring with the zoom.
+        val r0 = f.accuracy * 512 / (40_075_016.686 * cos(f.lat * PI / 180))
+        setShape(st, "vela-me", listOf(point(f.coord, mapOf("r0" to r0, "bearing" to if (f.courseKnown && f.speed > 0.5) f.course else null))))
+    }
+
+    /** A PNG of the map as it is on screen (for "Share diagnostics"), or null if it can't be made within a few seconds. */
+    suspend fun picture(): ByteArray? {
+        val m = map ?: return null
+        val st = style ?: return null
+        val cam = m.state.cameraPosition
+        return withTimeoutOrNull(8000) {
+            runCatching {
+                val shot = org.maplibre.compose.map.DefaultMapRuntime.instance.createSnapshotter(BaseStyle.Json(st.json()))
+                try {
+                    val img = shot.capture(androidx.compose.ui.unit.DpSize(model.mapWidthDp.dp, model.mapHeightDp.dp)) {
+                        cameraPosition = cam
+                        density = androidx.compose.ui.unit.Density(MapIcons.density)
+                    }
+                    val px = IntArray(img.width * img.height).also { img.readPixels(it) }
+                    withContext(Dispatchers.Default) { Png.encode(px, img.width, img.height) }
+                } finally { shot.close() }
+            }.getOrNull()
+        }
     }
 
     /** Screenshot runs: the demo has put the map somewhere, so the first fix mustn't move it back. */
@@ -202,10 +223,11 @@ class KiteMap(private val model: AppModel, private val context: Context) {
 
     private fun moveToUserOnce(f: Fix) {
         val m = map ?: return
+        if (!styleReady) return
         if (movedToUser) return
         movedToUser = true
         if (model.results.isNotEmpty() || model.selected != null || model.directions != null) return
-        m.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngZoom(f.coord.ml(), 15.0))
+        m.moveCamera(CameraUpdateFactory.newLatLngZoom(f.coord, 15.0))
     }
 
     fun applyDark(d: Boolean) {
@@ -214,32 +236,32 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         repaint()
     }
 
-    private fun repaint() {
-        val style = map?.style ?: return
-        if (!styleReady) return
+    private fun repaint(force: Boolean = false) {
+        val style = style ?: return
+        if (!styleReady && !force) return
         if (!dark) {
-            for (l in style.layers) if (l is SymbolLayer) originalLabels[l.id]?.let { l.setProperties(it.first, it.second, it.third) }
+            for (l in style.layers) if (l.isSymbol) originalLabels[l.id]?.let { l.setProperties(it.first, it.second, it.third) }
         }
         MapStyler.apply(style, dark)
         MapIcons.swapPuck(style, dark)
-        (style.getLayer("vela-rail-case") as? LineLayer)?.setProperties(lineColor(if (dark) c(0x000000, 0.9f) else c(0xFFFFFF, 0.9f)))
+        style.getLayer("vela-rail-case")?.setProperties(lineColor(if (dark) c(0x000000, 0.9f) else c(0xFFFFFF, 0.9f)))
         val text = if (dark) c(0xE8EAED) else c(0x202124)
         val halo = if (dark) c(0x0B1526) else Color.WHITE
         for (id in listOf("vela-mine", "vela-results", "vela-selected")) {
-            (style.getLayer(id) as? SymbolLayer)?.setProperties(textColor(text), textHaloColor(halo), textHaloWidth(1.5f))
+            style.getLayer(id)?.setProperties(textColor(text), textHaloColor(halo), textHaloWidth(1.5f))
         }
         lastResultsKey = ""
         lastRouteKey = ""
     }
 
-    private fun firstSymbolLayer(style: Style): String? = style.layers.firstOrNull { it is SymbolLayer }?.id
+    private fun firstSymbolLayer(style: Style): String? = style.layers.firstOrNull { it.isSymbol }?.id
 
     private fun line(id: String, src: String, color: Int, width: Float) = LineLayer(id, src).withProperties(
         lineColor(color), lineWidth(width), lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND))
 
     /** Icons close together join into one bubble up to zoom 13 (a whole town in view); closer in, every icon shows. */
     private fun Style.groupedSource(id: String) {
-        if (getSource(id) == null) addSource(GeoJsonSource(id, FeatureCollection.fromFeatures(emptyList()),
+        if (getSource(id) == null) addSource(GeoJsonSource(id, emptyList(),
             GeoJsonOptions().withCluster(true).withClusterRadius(44).withClusterMaxZoom(13)))
     }
 
@@ -258,24 +280,23 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     private fun addVelaLayers(style: Style) {
         fun grouped(id: String) = style.groupedSource(id)
         fun src(id: String, metrics: Boolean = false) {
-            if (style.getSource(id) == null) style.addSource(GeoJsonSource(id, FeatureCollection.fromFeatures(emptyList()),
-                GeoJsonOptions().withLineMetrics(metrics)))
+            if (style.getSource(id) == null) style.addSource(GeoJsonSource(id, emptyList(), GeoJsonOptions().withLineMetrics(metrics)))
         }
         // Satellite (Esri World Imagery) under the roads, off unless picked in Layers.
-        style.addSource(RasterSource("vela-sat", TileSet("tiles", "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}")
-            .apply { maxZoom = 19f; attribution = "Imagery © Esri" }, 256))
+        style.addSource(RasterSource("vela-sat", "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            19, "Imagery © Esri"))
         val satLayer = RasterLayer("vela-sat", "vela-sat").withProperties(visibility(Property.NONE))
         style.layers.firstOrNull { it.id.startsWith("tunnel_") }?.let { style.addLayerBelow(satLayer, it.id) } ?: style.addLayer(satLayer)
 
-        style.addSource(RasterSource("vela-terrain", TileSet("tiles", "https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}")
-            .apply { maxZoom = 16f; attribution = "Hillshade © Esri" }, 256))
+        style.addSource(RasterSource("vela-terrain", "https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",
+            16, "Hillshade © Esri"))
         val hill = RasterLayer("vela-terrain", "vela-terrain").withProperties(rasterOpacity(if (dark) 0.22f else 0.32f), visibility(Property.NONE))
         style.layers.firstOrNull { it.id.startsWith("tunnel_") || it.id.startsWith("road_") }?.let { style.addLayerBelow(hill, it.id) } ?: style.addLayer(hill)
 
         // Google's live traffic tiles, the same keyless overlay Vela draws.
         val trafficURL = "https://www.google.com/maps/vt/pb=!1m4!1m3!1i{z}!2i{x}!3i{y}!2m9!1e2!2straffic!3i999999" +
             "!4m2!1sincidents!2s1!4m2!1sincidents_text!2s1!3m8!2sen!3sus!5e1105!12m4!1e68!2m2!1sset!2sRoadmap!4e0!5m1!1e0"
-        style.addSource(RasterSource("vela-traffic", TileSet("tiles", trafficURL).apply { maxZoom = 16f }, 256))
+        style.addSource(RasterSource("vela-traffic", trafficURL, 16))
         val trafficLayer = RasterLayer("vela-traffic", "vela-traffic").withProperties(rasterOpacity(0.6f), rasterFadeDuration(900f), visibility(Property.NONE))
         (style.getLayer("building-3d") ?: style.getLayer("building"))?.let { style.addLayerAbove(trafficLayer, it.id) } ?: style.addLayer(trafficLayer)
 
@@ -346,6 +367,11 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         src("vela-waze-heat")
         val heat = HeatmapLayer("vela-waze-heat", "vela-waze-heat").withProperties(visibility(Property.NONE))
         style.getLayer("vela-route-alt-edge")?.let { style.addLayerBelow(heat, "vela-route-alt-edge") } ?: insert(heat)
+        // Highway Radar's police heat map: tiles the map asks Kite for, coloured on the phone (see HighwayHeat).
+        style.addSource(RasterSource("hr-heat", HighwayHeat.TILES, HighwayHeat.MAX_ZOOM, minZoom = HighwayHeat.MIN_ZOOM))
+        style.addLayerBelow(RasterLayer("hr-heat", "hr-heat").withProperties(
+            rasterOpacity(interpolate(linear(), zoom(), stop(10, 0.9f), stop(13, 0.8f), stop(16, 0.6f))),
+            rasterFadeDuration(0f), visibility(Property.NONE)), "vela-waze-heat")
         src("vela-waze")
         style.addLayer(SymbolLayer("vela-waze", "vela-waze").withProperties(
             iconImage(get("icon")), iconAllowOverlap(true),
@@ -416,7 +442,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         // (Matteo's pick over a box on the screen). Lies flat and follows the road's bends.
         // The map's own named roads, drawn too faintly to see: read back in the driving view with no
         // route, so the name follows the road you're on round its bends.
-        if (style.getSource("openmaptiles") != null) {
+        if (style.hasSource("openmaptiles")) {
             style.addLayer(LineLayer("vela-road-query", "openmaptiles").apply {
                 sourceLayer = "transportation_name"
                 // Not quite 0: a layer that draws nothing at all can't be asked what's under it.
@@ -431,6 +457,20 @@ class KiteMap(private val model: AppModel, private val context: Context) {
             textSize(interpolate(linear(), zoom(), stop(13, 15f), stop(15, 18f), stop(17, 22f), stop(18, 26f))),
             textLetterSpacing(0.08f), textTransform(Property.TEXT_TRANSFORM_UPPERCASE), textColor(c(0x0E3B36)),
             textHaloColor("rgba(255,255,255,0.95)"), textHaloWidth(2f), textAllowOverlap(true), textIgnorePlacement(true)))
+
+        // Your blue dot off a route: how sure the GPS is as a soft ring, then the dot, with a pointer
+        // the way you're going once you're moving.
+        src("vela-me")
+        style.addLayer(CircleLayer("vela-me-accuracy", "vela-me").withProperties(
+            circleColor(c(0x14B8A6)), circleOpacity(0.15f),
+            circleRadius(Expression(listOf("interpolate", listOf("exponential", 2), listOf("zoom"),
+                0, listOf("get", "r0"), 22, listOf("*", listOf("get", "r0"), 4_194_304))))))
+        style.addLayer(SymbolLayer("vela-me-heading", "vela-me").withProperties(
+            iconImage("me-heading"), iconRotate(get("bearing")), iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
+            iconPitchAlignment(Property.ICON_PITCH_ALIGNMENT_MAP), iconAllowOverlap(true), iconIgnorePlacement(true))
+            .apply { setFilter(has("bearing")) })
+        style.addLayer(SymbolLayer("vela-me", "vela-me").withProperties(
+            iconImage("me-dot"), iconAllowOverlap(true), iconIgnorePlacement(true)))
 
         src(NavGlide.PUCK)
         style.addLayer(SymbolLayer(NavGlide.PUCK, NavGlide.PUCK).withProperties(
@@ -454,21 +494,12 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     }
 
     private fun setShape(style: Style, id: String, features: List<Feature>) {
-        (style.getSource(id) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(features))
+        (style.getSource(id) as? GeoJsonSource)?.setGeoJson(features)
     }
 
-    private fun point(p: LatLng, props: Map<String, Any?> = emptyMap()) = Feature.fromGeometry(Point.fromLngLat(p.lng, p.lat)).also { f ->
-        props.forEach { (k, v) -> when (v) {
-            is String -> f.addStringProperty(k, v)
-            is Number -> f.addNumberProperty(k, v)
-            is Boolean -> f.addBooleanProperty(k, v)
-        } }
-    }
+    private fun point(p: LatLng, props: Map<String, Any?> = emptyMap()) = Feature.point(p, props)
 
-    fun polyline(pts: List<LatLng>, props: Map<String, Any?> = emptyMap()) =
-        Feature.fromGeometry(LineString.fromLngLats(pts.map { Point.fromLngLat(it.lng, it.lat) })).also { f ->
-            props.forEach { (k, v) -> when (v) { is String -> f.addStringProperty(k, v); is Number -> f.addNumberProperty(k, v) } }
-        }
+    fun polyline(pts: List<LatLng>, props: Map<String, Any?> = emptyMap()) = Feature.line(pts, props)
 
     private fun visible(style: Style, id: String, on: Boolean) {
         style.getLayer(id)?.setProperties(visibility(if (on) Property.VISIBLE else Property.NONE))
@@ -476,15 +507,13 @@ class KiteMap(private val model: AppModel, private val context: Context) {
 
     fun render() {
         val m = map ?: return
-        val style = m.style ?: return
+        val style = style ?: return
         if (!styleReady) return
         val s = model.settings
         val navigating = model.nav != null
         // The driving view with no route gets the driving map too, without the route line.
         val driving = navigating || model.cruise != null
-        if (m.locationComponent.isLocationComponentActivated) {
-            if (m.locationComponent.isLocationComponentEnabled == navigating) m.locationComponent.isLocationComponentEnabled = !navigating
-        } else if (LocationService.authorized) enableLocation(style)
+        LocationService.last?.let { pushFix(it) } ?: run { if (lastMeKey != "") { lastMeKey = ""; setShape(style, "vela-me", emptyList()) } }
         // Not before the welcome screen's choice: "Open data only" means nothing ever went to Google.
         visible(style, "vela-traffic", s.traffic && !navigating && !s.noGoogle && s.welcomed)
         // The Surveillance layer just switched on: fetch it now, not at the next pan (only on the
@@ -497,8 +526,8 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         if (styledDriving != driving) {
             MapStyler.drive(style, driving)
             styledDriving = driving
-            (style.getLayer("vela-route-line") as? LineLayer)?.setProperties(lineWidth(if (navigating) 12f else 10f))
-            (style.getLayer("vela-route-edge") as? LineLayer)?.setProperties(lineWidth(if (navigating) 22f else 15f))
+            style.getLayer("vela-route-line")?.setProperties(lineWidth(if (navigating) 12f else 10f))
+            style.getLayer("vela-route-edge")?.setProperties(lineWidth(if (navigating) 22f else 15f))
         }
         for (id in listOf("building", "building-3d")) visible(style, id, !s.satellite && !driving)
         renderResults(style)
@@ -509,7 +538,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         renderSignals(style)
         renderRoadName(style)
         renderWaze(style)
-        updateHeat(m)
+        updateHeat()
         renderMine(style)
         if (s.transitLines) loadRail(m)
     }
@@ -522,6 +551,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     private fun renderRoadName(style: Style) {
         var line: List<LatLng> = emptyList()
         var name: String? = null
+        var asked = false
         val n = model.nav
         val c = model.cruise
         if (n != null) {
@@ -542,20 +572,25 @@ class KiteMap(private val model: AppModel, private val context: Context) {
             if (f != null && f.courseKnown && f.speed > 2 && road != null && m != null) {
                 // Along the map's own line for the road you're on, so it stays on the road round a bend;
                 // nothing when the map doesn't have it here (never floating off over a field).
-                val pt = m.projection.toScreenLocation(org.maplibre.android.geometry.LatLng(f.lat, f.lng))
-                val density = context.resources.displayMetrics.density
-                val box = RectF(pt.x - 300 * density, pt.y - 450 * density, pt.x + 300 * density, pt.y + 250 * density)
-                val match = any(eq(get("name"), c.road ?: ""), eq(get("ref"), c.ref ?: ""))
-                val lines = mutableListOf<List<LatLng>>()
-                for (feat in m.queryRenderedFeatures(box, match, "vela-road-query")) {
-                    when (val g = feat.geometry()) {
-                        is LineString -> lines.add(g.coordinates().map { LatLng(it.latitude(), it.longitude()) })
-                        is org.maplibre.geojson.MultiLineString -> g.coordinates().forEach { l -> lines.add(l.map { LatLng(it.latitude(), it.longitude()) }) }
+                val pt = m.toScreenLocation(f.coord)
+                if (pt != null) {
+                    asked = true
+                    if (roadQuery?.isActive != true) roadQuery = scope.launch {
+                        val found = m.queryRenderedFeatures(pt.x - 300, pt.y - 450, pt.x + 300, pt.y + 250, "vela-road-query")
+                        val lines = found.filter { (c.road != null && it.string("name") == c.road) || (c.ref != null && it.string("ref") == c.ref) }
+                            .flatMap { it.lines }
+                        roadQuery = null
+                        val path = RoadAhead.path(lines, f.coord, f.course)
+                        showRoadName(style, if (path != null) road else null, path ?: emptyList())
                     }
                 }
-                RoadAhead.path(lines, f.coord, f.course)?.let { line = it; name = road }
             }
         }
+        if (asked) return
+        showRoadName(style, name, line)
+    }
+
+    private fun showRoadName(style: Style, name: String?, line: List<LatLng>) {
         val key = (name ?: "") + (line.firstOrNull()?.let { "${(it.lat * 20_000).toInt()},${(it.lng * 20_000).toInt()}" } ?: "")
         if (key == lastRoadNameKey) return
         lastRoadNameKey = key
@@ -647,13 +682,14 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     }
 
     /** Highway Radar's police heat map for what's on screen, when it's switched on. */
-    fun updateHeat(m: MapLibreMap) {
+    fun updateHeat() {
         val s = model.settings
-        heatTiles.update(m, styleReady && s.wazeOn && s.wazeHeatmap && s.wazePolice, "vela-waze-heat")
+        val st = style ?: return
+        visible(st, "hr-heat", styleReady && s.wazeOn && s.wazeHeatmap && s.wazePolice)
     }
 
     /** Live Waze reports for the view and a margin, asked again after two minutes or when the map leaves the box. */
-    fun loadWaze(m: MapLibreMap) {
+    fun loadWaze(m: MapHandle) {
         val s = model.settings
         if (s.wazeOn && (s.wazeHeatmap || s.policeRisk)) {
             // Only around where you are: Waze is never asked about saved Home and Work.
@@ -669,7 +705,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
             }
             return
         }
-        val b = m.projection.visibleRegion.latLngBounds
+        val b = m.visibleBounds ?: return
         wazeBox?.let { r ->
             if (b.latitudeSouth >= r.s && b.longitudeWest >= r.w && b.latitudeNorth <= r.n && b.longitudeEast <= r.e && now() - wazeAt < 120_000) return
         }
@@ -687,11 +723,11 @@ class KiteMap(private val model: AppModel, private val context: Context) {
             val fromMap = closures.await()
             wazeFetch = null
             if (fakeWaze) return@launch
-            if (fromMap == null && live == null) { Log.i("KiteTrace", "waze browse: both failed (Waze: ${Waze.lastStatus?.summary ?: "no answer"}; ${WazeWeb.note})"); wazeFailedAt = now(); return@launch }
+            if (fromMap == null && live == null) { klog("KiteTrace", "waze browse: both failed (Waze: ${Waze.lastStatus?.summary ?: "no answer"}; ${WazeWeb.note})"); wazeFailedAt = now(); return@launch }
             val merged = linkedMapOf<String, WazeAlert>()
             for (a in (fromMap ?: emptyList()) + (live ?: emptyList())) merged[a.id] = a
             val found = merged.values.toList()
-            Log.i("KiteTrace", "waze browse: live map ${fromMap?.size ?: "failed"}, drivers' reports ${if (askLive) live?.size ?: "failed" else "not asked"}" +
+            klog("KiteTrace", "waze browse: live map ${fromMap?.size ?: "failed"}, drivers' reports ${if (askLive) live?.size ?: "failed" else "not asked"}" +
                 if (fromMap == null) " (Waze: ${Waze.lastStatus?.summary ?: "no answer"}; ${WazeWeb.note})" else "")
             wazeAlerts = found
             wazeBox = if (live != null) liveBox else box
@@ -704,27 +740,27 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     }
 
     /** Transit lines for the view and a margin around it, when the layer is on. */
-    fun loadRail(m: MapLibreMap) {
+    fun loadRail(m: MapHandle) {
         if (!model.settings.transitLines || m.cameraPosition.zoom < 10 || railFetch != null || model.nav != null) return
-        val b = m.projection.visibleRegion.latLngBounds
+        val b = m.visibleBounds ?: return
         val z = m.cameraPosition.zoom.toInt()
         railBox?.let { r -> if (b.latitudeSouth >= r.s && b.longitudeWest >= r.w && b.latitudeNorth <= r.n && b.longitudeEast <= r.e && abs(z - r.z) <= 2) return }
         val dLat = (b.latitudeNorth - b.latitudeSouth) * 0.5; val dLng = (b.longitudeEast - b.longitudeWest) * 0.5
         val box = RailBox(b.latitudeSouth - dLat, b.longitudeWest - dLng, b.latitudeNorth + dLat, b.longitudeEast + dLng, z)
         railFetch = scope.launch {
             val lines = runCatching { Transitous.lines(box.s, box.w, box.n, box.e, min(z, 14)) }.getOrNull()
-            Log.i("KiteTrace", "transit lines: ${lines?.size ?: "failed"} at zoom $z (${Transitous.linesNote})")
+            klog("KiteTrace", "transit lines: ${lines?.size ?: "failed"} at zoom $z (${Transitous.linesNote})")
             railFetch = null
             if (lines != null) {
                 railBox = box
-                m.style?.let { setShape(it, "vela-rail", lines.map { l -> polyline(l.points, mapOf("color" to hex(l.color))) }) }
+                style?.let { setShape(it, "vela-rail", lines.map { l -> polyline(l.points, mapOf("color" to hex(l.color))) }) }
                 loadRail(m)
             }
         }
     }
 
-    private fun cells(m: MapLibreMap, done: Set<String>): List<Pair<Int, Int>>? {
-        val b = m.projection.visibleRegion.latLngBounds; val cell = 0.1
+    private fun cells(m: MapHandle, done: Set<String>): List<Pair<Int, Int>>? {
+        val b = m.visibleBounds ?: return null; val cell = 0.1
         val y0 = floor(b.latitudeSouth / cell).toInt(); val y1 = floor(b.latitudeNorth / cell).toInt()
         val x0 = floor(b.longitudeWest / cell).toInt(); val x1 = floor(b.longitudeEast / cell).toInt()
         if (y1 < y0 || x1 < x0 || (y1 - y0 + 1) * (x1 - x0 + 1) > 12) return null
@@ -734,7 +770,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     }
 
     /** Separate OSM surveillance layer, opt-in; bounded to the same cells as camera lookups. */
-    fun loadSurveillance(m: MapLibreMap) {
+    fun loadSurveillance(m: MapHandle) {
         if (!model.settings.surveillanceCameras || m.cameraPosition.zoom < 12 || surveillanceFetch != null) return
         val missing = cells(m, surveillanceCells) ?: return
         val ys = missing.map { it.first }; val xs = missing.map { it.second }; val cell = 0.1
@@ -749,7 +785,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     }
 
     /** Ask Overpass for the cameras in view, a few 0.1° cells at a time, each cell once. */
-    fun loadCameras(m: MapLibreMap) {
+    fun loadCameras(m: MapHandle) {
         val s = model.settings
         if (!(s.speedCameras || s.plateCameras) || m.cameraPosition.zoom < 12 || cameraFetch != null) return
         val missing = cells(m, cameraCells) ?: return
@@ -765,11 +801,11 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     }
 
     /** Waze's speed cameras for what's on screen, once zoomed in to a town; each piece of its map once a week. */
-    fun loadWazeCameras(m: MapLibreMap) {
+    fun loadWazeCameras(m: MapHandle) {
         val s = model.settings
         WazeCameras.enabled = s.wazeOn
         if (!s.speedCameras || !s.wazeOn || m.cameraPosition.zoom < 13 || wazeCameraFetch != null) return
-        val b = m.projection.visibleRegion.latLngBounds
+        val b = m.visibleBounds ?: return
         wazeCameraFetch = scope.launch {
             val fresh = runCatching { WazeCameras.load(b.latitudeSouth, b.longitudeWest, b.latitudeNorth, b.longitudeEast) }.getOrDefault(false)
             wazeCameraFetch = null
@@ -787,7 +823,7 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         lastResultsKey = key
         setShape(style, "vela-results", list.mapIndexedNotNull { i, p ->
             if (p.id == target?.id) return@mapIndexedNotNull null
-            val rating = p.rating?.let { String.format(java.util.Locale.US, "%.1f", it) }
+            val rating = p.rating?.let { fmt("%.1f", it) }
             point(p.location, mapOf("id" to p.id, "icon" to MapIcons.iconName(p), "label" to listOfNotNull(p.name, rating).joinToString("\n"), "rank" to i))
         })
         val sel = mutableListOf<Feature>()
@@ -861,12 +897,12 @@ class KiteMap(private val model: AppModel, private val context: Context) {
             nextRoadName(m)?.let { nextRoad = Geo.point(r.polyline, min(end + 55, total), cum) to it }
         }
         setShape(style, "vela-turn-arrow", arrow)
-        val headKey = head?.let { (t, b) -> String.format(java.util.Locale.US, "%.6f,%.6f,%.0f", t.lat, t.lng, b) } ?: ""
+        val headKey = head?.let { (t, b) -> fmt("%.6f,%.6f,%.0f", t.lat, t.lng, b) } ?: ""
         if (headKey != lastHeadKey) {
             lastHeadKey = headKey
             setShape(style, "vela-turn-head", head?.let { (t, b) -> listOf(point(t, mapOf("bearing" to b))) } ?: emptyList())
         }
-        val nextRoadKey = nextRoad?.let { (at, name) -> String.format(java.util.Locale.US, "%.6f,%.6f,%s", at.lat, at.lng, name) } ?: ""
+        val nextRoadKey = nextRoad?.let { (at, name) -> fmt("%.6f,%.6f,%s", at.lat, at.lng, name) } ?: ""
         if (nextRoadKey != lastNextRoadKey) {
             lastNextRoadKey = nextRoadKey
             setShape(style, "vela-next-road", nextRoad?.let { (at, name) -> listOf(point(at, mapOf("label" to name))) } ?: emptyList())
@@ -895,25 +931,28 @@ class KiteMap(private val model: AppModel, private val context: Context) {
 
     // Gestures
 
-    private fun box(m: MapLibreMap, p: org.maplibre.android.geometry.LatLng): RectF {
-        val pt: PointF = m.projection.toScreenLocation(p)
-        val r = 22 * context.resources.displayMetrics.density
-        return RectF(pt.x - r, pt.y - r, pt.x + r, pt.y + r)
+    /** A box 22 dp round a tapped spot, in dp on the screen. */
+    private fun box(m: MapHandle, p: LatLng): FloatArray? {
+        val pt = m.toScreenLocation(p) ?: return null
+        val r = 22f
+        return floatArrayOf(pt.x - r, pt.y - r, pt.x + r, pt.y + r)
     }
+
+    private suspend fun MapHandle.at(b: FloatArray, vararg layers: String) = queryRenderedFeatures(b[0], b[1], b[2], b[3], *layers)
 
     private var lastLiveKey = ""
     /** The box the drawn live camera dots cover, so panning inside it redraws nothing. */
     private var liveCamBox: Box? = null
 
     /** Live camera dots for what's on screen (plus a margin), never while driving. */
-    private fun renderLiveCams(m: MapLibreMap, style: Style) {
+    private fun renderLiveCams(m: MapHandle, style: Style) {
         val s = model.settings
         // Road cameras only from a city's zoom (there are thousands); webcams from a region's.
         val zoom = m.cameraPosition.zoom
         val roadNow = s.showsRoadCams && zoom >= LiveCams.ROAD_MIN_ZOOM
         val webNow = s.showsWebcams && zoom >= LiveCams.WEBCAM_MIN_ZOOM
         val on = model.nav == null && (roadNow || webNow)
-        val b = m.projection.visibleRegion.latLngBounds
+        val b = m.visibleBounds ?: return
         val dLat = (b.latitudeNorth - b.latitudeSouth) * 0.5
         val dLng = (b.longitudeEast - b.longitudeWest) * 0.5
         val inside = liveCamBox?.let { b.latitudeSouth >= it.s && b.latitudeNorth <= it.n && b.longitudeWest >= it.w && b.longitudeEast <= it.e } ?: false
@@ -932,76 +971,80 @@ class KiteMap(private val model: AppModel, private val context: Context) {
     }
 
     /** The road camera list (once a day) and Windy's webcams around what's on screen. */
-    fun loadLiveCams(m: MapLibreMap) {
+    fun loadLiveCams(m: MapHandle) {
         val s = model.settings
         if (model.nav != null || !s.liveCams) return
         if (s.showsRoadCams || s.liveCamsOnRoute) LiveCamStore.ensureLoaded()
         if (!s.showsWebcams || m.cameraPosition.zoom < LiveCams.WEBCAM_MIN_ZOOM) return
-        val b = m.projection.visibleRegion.latLngBounds
+        val b = m.visibleBounds ?: return
         val c = LatLng((b.latitudeSouth + b.latitudeNorth) / 2, (b.longitudeWest + b.longitudeEast) / 2)
         val span = LatLng(b.latitudeSouth, b.longitudeWest).distanceTo(LatLng(b.latitudeNorth, b.longitudeEast)) / 1000
         LiveCamStore.loadWindy(c, span)
     }
 
-    private fun str(f: Feature, k: String): String? = f.getProperty(k)?.takeIf { it.isJsonPrimitive }?.asString
+    private fun str(f: FoundFeature, k: String): String? = f.string(k)
 
-    private fun tapped(m: MapLibreMap, at: org.maplibre.android.geometry.LatLng): Boolean {
-        if (model.nav != null || now() - pinDroppedAt < 1000) return false
-        val box = box(m, at)
+    /** A tap on the map: the thing tapped opens (looked up once the map says what's there). */
+    fun tapped(at: LatLng) {
+        val m = map ?: return
+        if (model.nav != null || now() - pinDroppedAt < 1000) return
+        scope.launch { tapped(m, at) }
+    }
+
+    private suspend fun tapped(m: MapHandle, at: LatLng): Boolean {
+        val box = box(m, at) ?: return false
         if (model.directions != null) {
-            val hits = m.queryRenderedFeatures(box, "vela-route-bubble-0", "vela-route-alt", "vela-route-alt-edge")
-            hits.firstOrNull { it.hasProperty("idx") }?.let { model.selectRoute(it.getNumberProperty("idx").toInt()); return true }
+            val hits = m.at(box, "vela-route-bubble-0", "vela-route-alt", "vela-route-alt-edge")
+            hits.firstOrNull { it.has("idx") }?.let { f -> f.number("idx")?.let { model.selectRoute(it.toInt()); return true } }
             val d = model.directions ?: return true
             if (hits.isNotEmpty()) {
-                val tappedAt = at.kite()
+                val tappedAt = at
                 val i = d.current.indexOfFirst { r -> r.id != d.route?.id && r.polyline.any { it.distanceTo(tappedAt) < 300 } }
                 if (i >= 0) { model.selectRoute(i); return true }
             }
             // A tap on the picked route itself: offer to avoid that road (GitHub idea, 0.7.17).
-            if (m.queryRenderedFeatures(box, "vela-route-line", "vela-route-edge").isNotEmpty()) model.askAvoid(at.kite())
+            if (m.at(box, "vela-route-line", "vela-route-edge").isNotEmpty()) model.askAvoid(at)
             return true
         }
         // Police and crashes sit on top and never join a bubble: a tap that touches one opens it,
         // even with a bubble right next to it.
-        m.queryRenderedFeatures(box, "vela-waze").firstOrNull()?.let { f ->
+        m.at(box, "vela-waze").firstOrNull()?.let { f ->
             val id = str(f, "id")
-            wazeAlerts.firstOrNull { it.id == id }?.let { view?.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK); model.wazeInfo = it; return true }
+            wazeAlerts.firstOrNull { it.id == id }?.let { haptic(); model.wazeInfo = it; return true }
         }
         // A numbered bubble: zoom in until it splits into its icons.
-        m.queryRenderedFeatures(box, "vela-waze-group-bubble", "vela-cameras-bubble", "vela-livecams-bubble").firstOrNull()?.let { f ->
-            (f.geometry() as? Point)?.let { p ->
-                m.animateCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngZoom(
-                    org.maplibre.android.geometry.LatLng(p.latitude(), p.longitude()), min(m.cameraPosition.zoom + 2, 15.0)))
+        m.at(box, "vela-waze-group-bubble", "vela-cameras-bubble", "vela-livecams-bubble").firstOrNull()?.let { f ->
+            f.point?.let { p ->
+                m.animateCamera(CameraUpdateFactory.newLatLngZoom(p, min(m.cameraPosition.zoom + 2, 15.0)))
                 return true
             }
         }
-        m.queryRenderedFeatures(box, "vela-waze-group").firstOrNull()?.let { f ->
+        m.at(box, "vela-waze-group").firstOrNull()?.let { f ->
             val id = str(f, "id")
-            wazeAlerts.firstOrNull { it.id == id }?.let { view?.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK); model.wazeInfo = it; return true }
+            wazeAlerts.firstOrNull { it.id == id }?.let { haptic(); model.wazeInfo = it; return true }
         }
-        m.queryRenderedFeatures(box, "vela-livecams").firstOrNull()?.let { f ->
+        m.at(box, "vela-livecams").firstOrNull()?.let { f ->
             str(f, "id")?.let { LiveCamStore.cam(it) }?.let {
-                view?.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                haptic()
                 model.liveCamRoute = emptyList()
                 model.liveCam = it
                 return true
             }
         }
-        m.queryRenderedFeatures(box, "vela-cameras").firstOrNull()?.let { f ->
+        m.at(box, "vela-cameras").firstOrNull()?.let { f ->
             str(f, "surveillanceId")?.toLongOrNull()?.let { id -> surveillance[id]?.let { model.surveillanceInfo = it; return true } }
         }
-        m.queryRenderedFeatures(box, "vela-mine").firstOrNull()?.let { f ->
+        m.at(box, "vela-mine").firstOrNull()?.let { f ->
             str(f, "id")?.let { model.myPlace(it) }?.let { model.select(it); return true }
         }
-        m.queryRenderedFeatures(box, "vela-results").firstOrNull()?.let { f ->
+        m.at(box, "vela-results").firstOrNull()?.let { f ->
             val id = str(f, "id")
             model.results.firstOrNull { it.id == id }?.let { model.select(it); return true }
         }
-        m.queryRenderedFeatures(box, "poi_r1", "poi_r7", "poi_r20", "poi_transit", "airport").firstOrNull()?.let { poi ->
+        m.at(box, "poi_r1", "poi_r7", "poi_r20", "poi_transit", "airport").firstOrNull()?.let { poi ->
             val name = str(poi, "name:en") ?: str(poi, "name")
-            val g = poi.geometry() as? Point
             if (name != null) {
-                model.resolveTapped(name, g?.let { LatLng(it.latitude(), it.longitude()) } ?: at.kite())
+                model.resolveTapped(name, poi.point ?: at)
                 return true
             }
         }
@@ -1010,14 +1053,15 @@ class KiteMap(private val model: AppModel, private val context: Context) {
         return true
     }
 
-    private fun pressed(m: MapLibreMap, at: org.maplibre.android.geometry.LatLng) {
+    /** A long press drops a pin. */
+    fun pressed(at: LatLng) {
         pinDroppedAt = now()
         if (model.nav != null || model.directions != null) return
-        view?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-        model.dropPin(at.kite())
+        haptic(long = true)
+        model.dropPin(at)
     }
 
-    private fun noteHeading(m: MapLibreMap) {
+    private fun noteHeading(m: MapHandle) {
         val h = m.cameraPosition.bearing
         val north = (h % 360) == 0.0
         if (abs(h - model.mapHeading) > 2 || north != (model.mapHeading == 0.0)) model.mapHeading = if (north) 0.0 else h

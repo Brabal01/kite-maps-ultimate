@@ -1,7 +1,7 @@
 package app.kite
 
 import app.kite.core.*
-import app.kite.ui.InstructionBanner
+import app.kite.ui.Banner
 
 /** What the lock screen shows during a drive: the next turn and when you'll arrive. */
 data class TurnState(
@@ -43,7 +43,7 @@ object TurnStates {
         return TurnState(title, text,
             symbol = m?.let { symbol(it.type) } ?: "arrow.up",
             distance = p?.let { Fmt.distance(it.distanceToNext) } ?: "",
-            instruction = if (n.arrived) "You've arrived" else InstructionBanner.headline(m),
+            instruction = if (n.arrived) "You've arrived" else Banner.headline(m),
             road = if (n.arrived) null else m?.road,
             arrival = Fmt.arrival(left),
             arrived = n.arrived)

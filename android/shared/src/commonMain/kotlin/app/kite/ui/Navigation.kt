@@ -2,6 +2,8 @@
 
 package app.kite.ui
 
+import kotlinx.coroutines.IO
+
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 
 import kotlinx.coroutines.async
@@ -41,7 +43,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -75,7 +76,7 @@ private fun hex(v: Long) = Color(0xFF000000 or v)
 @Composable
 fun NavigationOverlay(model: AppModel, nav: Navigator) {
     val dark = LocalDark.current
-    val ctx = LocalContext.current
+    val ctx = Phone
     var showSteps by remember { mutableStateOf(false) }
     var showAlong by remember { mutableStateOf(false) }
     var confirmEnd by remember { mutableStateOf(false) }
@@ -125,7 +126,7 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
         // lying flat on the tilted map.
         // In 2D it lies round, and north up it moves up to the middle and turns the way you're going.
         if (model.glide.carOnScreen) {
-            val puck = remember(dark) { MapIcons.puck(dark).asImageBitmap() }
+            val puck = remember(dark) { MapIcons.puck(dark) }
             val density = LocalDensity.current
             Box(Modifier.fillMaxWidth().offset {
                 IntOffset(0, with(density) { (NavGlide.carY(h.value, model.glide.carNorth).dp - 38.dp).roundToPx() })
@@ -158,7 +159,7 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
                 // row: the card matters more, and the GPS and rerouting notes come back once it's gone.
                 if (Voice.missing && nav.voiceMode != VoiceMode.OFF && !nav.arrived && mainAlert == null) {
                     // No voice on this phone (GrapheneOS can come without one): say so, with the way to fix it.
-                    Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp)).tap { Voice.openSettings(ctx) }.padding(horizontal = 16.dp, vertical = 12.dp),
+                    Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp)).tap { Speech.openSettings() }.padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Icon(Icons.AutoMirrored.Filled.VolumeOff, null, tint = Vela.closed, modifier = Modifier.size(30.dp))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -250,7 +251,7 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
             }
         }
     }
-    androidx.activity.compose.BackHandler { if (confirmEnd) confirmEnd = false else if (!nav.arrived) confirmEnd = true else model.endNavigation() }
+    androidx.compose.ui.backhandler.BackHandler { if (confirmEnd) confirmEnd = false else if (!nav.arrived) confirmEnd = true else model.endNavigation() }
 
     if (showAlong) AlongRouteSheet(nav) { showAlong = false }
     if (showSteps) {
@@ -597,7 +598,7 @@ fun TripBar(nav: Navigator, onEnd: () -> Unit, onSteps: () -> Unit) {
 /** "9:18" and " pm" (nothing on a 24 hour clock), so the time stays big and the pm small. */
 internal fun arrivalParts(s: Double): Pair<String, String> {
     val full = Fmt.arrival(s)
-    val syms = java.text.DateFormatSymbols.getInstance().amPmStrings
+    val syms = LocalFormat.amPm
     for (sym in syms) if (sym.isNotEmpty() && full.contains(sym)) {
         return full.replace(sym, "").trim { it.isWhitespace() || it == '\u202F' || it == '\u00A0' } to " " + sym.lowercase()
     }
@@ -606,7 +607,7 @@ internal fun arrivalParts(s: Double): Pair<String, String> {
 
 /** "8" min, or "1:20" hr once it's an hour or more. */
 internal fun timeParts(s: Double): Pair<String, String> {
-    val mins = maxOf(1, Math.round(s / 60).toInt())
+    val mins = maxOf(1, kotlin.math.round(s / 60).toLong().toInt())
     return if (mins < 60) "$mins" to "min" else fmt("%d:%02d", mins / 60, mins % 60) to "hr"
 }
 
@@ -872,7 +873,7 @@ fun AlsoAheadPill(nav: Navigator, alerts: List<NavAlert>, onTap: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         // Two at most, with "+1" for any more. On a small phone the words "Also ahead" go first,
         // then the second warning, so the pill never runs off the screen.
-        val width = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+        val width = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.width.toDp().value.toInt() }
         val shown = if (width < 360) 1 else 2
         if (width >= 400) Text("Also ahead", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = secondaryText)
         for (a in alerts.take(shown)) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -926,13 +927,13 @@ fun AircraftCard(aircraft: PoliceAircraft, meters: Double) {
 
 @Composable
 fun WazeBadge(kind: WazeAlert.Kind, size: Dp = 28.dp) {
-    val bmp = remember(kind) { MapIcons.waze(kind).asImageBitmap() }
+    val bmp = remember(kind) { MapIcons.waze(kind) }
     Image(bmp, null, Modifier.size(size))
 }
 
 @Composable
 fun CameraBadge(kind: RoadCamera.Kind, size: Dp = 28.dp) {
-    val bmp = remember(kind) { (if (kind == RoadCamera.Kind.SPEED) MapIcons.speedCamera() else MapIcons.plateCamera()).asImageBitmap() }
+    val bmp = remember(kind) { (if (kind == RoadCamera.Kind.SPEED) MapIcons.speedCamera() else MapIcons.plateCamera()) }
     Image(bmp, null, Modifier.size(size))
 }
 
@@ -1183,7 +1184,7 @@ fun RoundaboutDiagram(shape: RoundaboutShape?, exit: Int, clockwise: Boolean, mo
         val ring = w * 0.2f
         val edge = w * 0.47f
         fun pt(deg: Double, r: Float): Offset {
-            val a = Math.toRadians(deg)
+            val a = toRadians(deg)
             return Offset(c.x + (sin(a) * r).toFloat(), c.y - (cos(a) * r).toFloat())
         }
         val faint = ink.copy(alpha = 0.26f)
@@ -1207,7 +1208,7 @@ fun RoundaboutDiagram(shape: RoundaboutShape?, exit: Int, clockwise: Boolean, mo
         drawPath(path, lit, style = Stroke(w * 0.1f, cap = StrokeCap.Round, join = StrokeJoin.Round))
         // The arrowhead on the way out.
         val tip = pt(out, edge - w * 0.07f)
-        val a = Math.toRadians(out)
+        val a = toRadians(out)
         val dir = Offset(sin(a).toFloat(), -cos(a).toFloat())
         val side = Offset(-dir.y, dir.x)
         val hw = w * 0.12f; val len = w * 0.14f
@@ -1227,7 +1228,7 @@ fun RoundaboutDiagram(shape: RoundaboutShape?, exit: Int, clockwise: Boolean, mo
 }
 
 /** "+3 min" for a stop's detour; "On the way" when it costs next to nothing. */
-fun detourShort(s: Double): String = if (s < 60) "On the way" else "+${Math.round(s / 60)} min"
+fun detourShort(s: Double): String = if (s < 60) "On the way" else "+${kotlin.math.round(s / 60).toLong()} min"
 
 fun detourColor(s: Double): Color = when {
     s < 180 -> Vela.open

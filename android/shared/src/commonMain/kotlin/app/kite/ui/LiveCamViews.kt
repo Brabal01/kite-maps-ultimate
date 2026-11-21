@@ -1,6 +1,5 @@
 package app.kite.ui
 
-import android.graphics.Bitmap
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -29,11 +28,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,7 +45,7 @@ import kotlinx.coroutines.launch
 
 /** A live camera's photo, loaded when shown; [reload] asks again. The same as the iPhone's loader. */
 class LiveCamPhotoState {
-    var bitmap by mutableStateOf<Bitmap?>(null)
+    var bitmap by mutableStateOf<ImageBitmap?>(null)
     var taken by mutableStateOf<Long?>(null)
     var failed by mutableStateOf(false)
     var refreshing by mutableStateOf(false)
@@ -101,7 +99,7 @@ fun LiveCamPhoto(state: LiveCamPhotoState, modifier: Modifier = Modifier, corner
         val bmp = state.bitmap
         when {
             bmp != null -> {
-                Image(bmp.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 if (showsAge) Box(Modifier.align(Alignment.TopStart).padding(8.dp)) { PhotoAgePill(state.taken) }
             }
             // The small route tile: its "In 10 mi" badge sits at the bottom, so just the icon, up out of its way.
@@ -125,7 +123,7 @@ fun LiveCamPhoto(state: LiveCamPhotoState, modifier: Modifier = Modifier, corner
 @Composable
 fun LiveCamCard(model: AppModel, cam: LiveCam) {
     val dark = LocalDark.current
-    val context = LocalContext.current
+    val context = Phone
     val scope = rememberCoroutineScope()
     val state = remember { LiveCamPhotoState() }
     var fullScreen by remember { mutableStateOf(false) }
@@ -202,7 +200,7 @@ fun LiveCamFullScreen(cam: LiveCam, state: LiveCamPhotoState, close: () -> Unit)
         var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             state.bitmap?.let { bmp ->
-                Image(bmp.asImageBitmap(), cam.name, contentScale = ContentScale.Fit,
+                Image(bmp, cam.name, contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
                         .pointerInput(Unit) {
                             detectTransformGestures { _, pan, zoom, _ ->

@@ -1,17 +1,43 @@
 package app.kite
 
-import android.graphics.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color as CColor
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.LinearGradientShader
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.PaintingStyle
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.graphics.vector.VectorGroup
 import androidx.compose.ui.graphics.vector.VectorPath
 import app.kite.core.Place
 import app.kite.core.WazeAlert
-import org.maplibre.android.maps.Style
-import org.maplibre.android.style.layers.PropertyFactory
+import app.kite.map.Color
+import app.kite.map.RectF
+import app.kite.map.Style
+
+/** Drawing onto an icon, with Android Canvas's names so the icon code reads as before. */
+class IconCanvas internal constructor(private val c: androidx.compose.ui.graphics.Canvas) {
+    fun save() = c.save()
+    fun restore() = c.restore()
+    fun translate(x: Float, y: Float) = c.translate(x, y)
+    fun scale(x: Float, y: Float) = c.scale(x, y)
+    fun drawRoundRect(r: RectF, rx: Float, ry: Float, p: Paint) = c.drawRoundRect(r.left, r.top, r.right, r.bottom, rx, ry, p)
+    fun drawCircle(x: Float, y: Float, radius: Float, p: Paint) = c.drawCircle(Offset(x, y), radius, p)
+    fun drawOval(r: RectF, p: Paint) = c.drawOval(r.left, r.top, r.right, r.bottom, p)
+    fun drawRect(r: RectF, p: Paint) = c.drawRect(r.left, r.top, r.right, r.bottom, p)
+    fun drawLine(x0: Float, y0: Float, x1: Float, y1: Float, p: Paint) = c.drawLine(Offset(x0, y0), Offset(x1, y1), p)
+    fun drawPath(path: Path, p: Paint) = c.drawPath(path, p)
+}
+
+fun Path.arcTo(r: RectF, start: Float, sweep: Float, forceMoveTo: Boolean) = arcTo(r.rect(), start, sweep, forceMoveTo)
 
 /** The images Kite's map layers draw: category pins, the red picked pin, the puck, route bubbles. */
 object MapIcons {
@@ -37,25 +63,29 @@ object MapIcons {
         return kinds.firstOrNull { k -> k.words.any { cat.contains(it) } }?.name ?: "cat-default"
     }
 
-    private val density get() = KiteApp.app.resources.displayMetrics.density
+    /** The screen's density (pixels per dp), set by the map when it starts. */
+    var density = 2.75f
 
     /** A bitmap [w] x [h] dp, drawn in dp units, at the screen's density. */
-    private fun image(w: Float, h: Float, draw: (Canvas) -> Unit): Bitmap {
+    private fun image(w: Float, h: Float, draw: (IconCanvas) -> Unit): ImageBitmap {
         val d = density
-        val b = Bitmap.createBitmap((w * d).toInt().coerceAtLeast(1), (h * d).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
-        b.density = KiteApp.app.resources.displayMetrics.densityDpi
-        val cv = Canvas(b)
+        val b = ImageBitmap((w * d).toInt().coerceAtLeast(1), (h * d).toInt().coerceAtLeast(1))
+        val cv = IconCanvas(androidx.compose.ui.graphics.Canvas(b))
         cv.scale(d, d)
         draw(cv)
         return b
     }
 
-    private fun paint(color: Int, style: Paint.Style = Paint.Style.FILL, width: Float = 0f) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        this.color = color; this.style = style; strokeWidth = width; strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND
+    private enum class Fill { FILL, STROKE }
+
+    private fun paint(color: Int, style: Fill = Fill.FILL, width: Float = 0f) = Paint().apply {
+        isAntiAlias = true
+        this.color = CColor(color); this.style = if (style == Fill.STROKE) PaintingStyle.Stroke else PaintingStyle.Fill
+        strokeWidth = width; strokeJoin = StrokeJoin.Round; strokeCap = StrokeCap.Round
     }
 
     /** Draws a Material icon (24-unit art) filling [r]. */
-    fun drawIcon(cv: Canvas, icon: ImageVector, r: RectF, color: Int) {
+    fun drawIcon(cv: IconCanvas, icon: ImageVector, r: RectF, color: Int) {
         val p = paint(color)
         cv.save()
         cv.translate(r.left, r.top)
@@ -63,8 +93,8 @@ object MapIcons {
         fun walk(g: VectorGroup) {
             for (n in g) when (n) {
                 is VectorPath -> {
-                    val path = PathParser().addPathNodes(n.pathData).toPath().asAndroidPath()
-                    path.fillType = if (n.pathFillType == androidx.compose.ui.graphics.PathFillType.EvenOdd) Path.FillType.EVEN_ODD else Path.FillType.WINDING
+                    val path = PathParser().addPathNodes(n.pathData).toPath()
+                    path.fillType = n.pathFillType
                     cv.drawPath(path, p)
                 }
                 is VectorGroup -> walk(n)
@@ -105,9 +135,9 @@ object MapIcons {
         val p = Path().apply { moveTo(32f, 7f); lineTo(57f, 46f); lineTo(7f, 46f); close() }
         // A soft shadow drawn by hand (a paint's own shadow comes out wrong on some phones' maps).
         cv.save(); cv.translate(0f, 2f)
-        cv.drawPath(p, paint(c(0x000000, 0.18f), Paint.Style.STROKE, 14f))
+        cv.drawPath(p, paint(c(0x000000, 0.18f), Fill.STROKE, 14f))
         cv.restore()
-        cv.drawPath(p, paint(c(0x0F766E), Paint.Style.STROKE, 8f))
+        cv.drawPath(p, paint(c(0x0F766E), Fill.STROKE, 8f))
         cv.drawPath(p, paint(Color.WHITE))
     }
 
@@ -129,7 +159,7 @@ object MapIcons {
         cv.drawRoundRect(RectF(12f, 18f, 30f, 27f), 2f, 2f, w)
         cv.drawCircle(31f, 22.5f, 4.2f, w)
         cv.drawCircle(31f, 22.5f, 2f, paint(purple))
-        val arm = paint(Color.WHITE, Paint.Style.STROKE, 2.4f).apply { strokeCap = Paint.Cap.BUTT }
+        val arm = paint(Color.WHITE, Fill.STROKE, 2.4f).apply { strokeCap = StrokeCap.Butt }
         cv.drawLine(17f, 18f, 17f, 12f, arm)
         cv.drawLine(12f, 12f, 24f, 12f, arm)
     }
@@ -156,7 +186,7 @@ object MapIcons {
     fun waze(k: WazeAlert.Kind) = badge(c(wazeColor(k))) { cv, _ -> drawIcon(cv, wazeIcon(k), RectF(12f, 12f, 34f, 34f), Color.WHITE) }
 
     /** A 46-unit badge drawn at 34.5 dp: white rim, colored field, then the glyph. */
-    private fun badge(color: Int, glyph: (Canvas, Int) -> Unit) = image(34.5f, 34.5f) { cv ->
+    private fun badge(color: Int, glyph: (IconCanvas, Int) -> Unit) = image(34.5f, 34.5f) { cv ->
         cv.scale(0.75f, 0.75f)
         cv.drawRoundRect(RectF(2f, 2f, 44f, 44f), 11f, 11f, paint(Color.WHITE))
         cv.drawRoundRect(RectF(4.5f, 4.5f, 41.5f, 41.5f), 9f, 9f, paint(color))
@@ -166,7 +196,7 @@ object MapIcons {
     private fun dot(icon: ImageVector, color: Int) = image(28f, 28f) { cv ->
         val r = RectF(1.5f, 1.5f, 26.5f, 26.5f)
         cv.drawOval(r, paint(color))
-        cv.drawOval(r, paint(Color.WHITE, Paint.Style.STROKE, 2f))
+        cv.drawOval(r, paint(Color.WHITE, Fill.STROKE, 2f))
         drawIcon(cv, icon, RectF(7.5f, 7.5f, 20.5f, 20.5f), Color.WHITE)
     }
 
@@ -179,24 +209,25 @@ object MapIcons {
             close()
         }
         cv.drawPath(p, paint(c(0xEA4335)))
-        cv.drawPath(p, paint(c(0xA50E0E), Paint.Style.STROKE, 1.5f))
+        cv.drawPath(p, paint(c(0xA50E0E), Fill.STROKE, 1.5f))
         cv.drawOval(RectF(12f, 12f, 22f, 22f), paint(c(0x7A0B0B)))
     }
 
     private fun originDot() = image(22f, 22f) { cv ->
         cv.drawOval(RectF(1f, 1f, 21f, 21f), paint(Color.WHITE))
-        cv.drawOval(RectF(4f, 4f, 18f, 18f), paint(c(0x14B8A6), Paint.Style.STROKE, 4f))
+        cv.drawOval(RectF(4f, 4f, 18f, 18f), paint(c(0x14B8A6), Fill.STROKE, 4f))
     }
 
     /** The car while navigating, in Kite's teal: just the arrow, with no disc or ring around it (the light look). */
     fun puck(@Suppress("UNUSED_PARAMETER") dark: Boolean) = image(76f, 76f) { cv ->
         val outline = Path().apply { moveTo(38f, 13f); lineTo(58f, 60f); lineTo(38f, 50f); lineTo(18f, 60f); close() }
         cv.save(); cv.translate(0f, 2f)
-        cv.drawPath(outline, paint(c(0x000000, 0.2f), Paint.Style.STROKE, 8f))
+        cv.drawPath(outline, paint(c(0x000000, 0.2f), Fill.STROKE, 8f))
         cv.restore()
-        cv.drawPath(outline, paint(Color.WHITE, Paint.Style.STROKE, 5f))
-        cv.drawPath(outline, Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = LinearGradient(38f, 13f, 52f, 60f, c(0x99F6E4), c(0x0D9488), Shader.TileMode.CLAMP)
+        cv.drawPath(outline, paint(Color.WHITE, Fill.STROKE, 5f))
+        cv.drawPath(outline, Paint().apply {
+            isAntiAlias = true
+            shader = LinearGradientShader(Offset(38f, 13f), Offset(52f, 60f), listOf(CColor(c(0x99F6E4)), CColor(c(0x0D9488))))
         })
         val shade = Path().apply { moveTo(38f, 13f); lineTo(58f, 60f); lineTo(38f, 50f); close() }
         cv.drawPath(shade, paint(c(0x064E3B, 0.3f)))
@@ -205,18 +236,16 @@ object MapIcons {
     /** A chevron along the route line, pointing the way you go. */
     fun routeChevron() = image(14f, 16f) { cv ->
         val p = Path().apply { moveTo(4f, 3f); lineTo(10f, 8f); lineTo(4f, 13f) }
-        cv.drawPath(p, paint(c(0x0B3B36), Paint.Style.STROKE, 3f))
+        cv.drawPath(p, paint(c(0x0B3B36), Fill.STROKE, 3f))
     }
 
     /** A pill for the route time bubbles; MapLibre stretches its middle to fit the text. */
     private fun bubble(fill: Int, stroke: Int) = image(30f, 26f) { cv ->
         val r = RectF(1f, 1f, 29f, 25f)
         cv.drawRoundRect(r, 12f, 12f, paint(fill))
-        cv.drawRoundRect(r, 12f, 12f, paint(stroke, Paint.Style.STROKE, 1.5f))
+        cv.drawRoundRect(r, 12f, 12f, paint(stroke, Fill.STROKE, 1.5f))
     }
 
     /** The puck again, for after a light/dark switch. */
     fun swapPuck(style: Style, dark: Boolean) { style.addImage("puck", puck(dark)) }
-
-    @Suppress("unused") private val keep = PropertyFactory::class
 }

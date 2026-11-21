@@ -24,6 +24,10 @@ actual fun elapsedRealtime(): Long = (NSProcessInfo.processInfo.systemUptime * 1
 actual fun cacheDir(): String =
     (NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, true).firstOrNull() as? String) ?: NSTemporaryDirectory()
 
+actual fun filesDir(): String =
+    ((NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, true).firstOrNull() as? String)
+        ?: NSTemporaryDirectory()) + "/Kite"
+
 actual fun klog(tag: String, message: String) { NSLog("%@: %@", tag, message) }
 
 actual fun systemCountry(): String = NSLocale.currentLocale.countryCode ?: ""

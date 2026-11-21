@@ -21,12 +21,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.res.painterResource
+import org.jetbrains.compose.resources.painterResource
+import app.kite.resources.Res
+import app.kite.resources.kite_logo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kite.*
-import app.kite.R
 import app.kite.core.*
 
 /** A full-screen first-launch page: scrolls with very big text, with the button always in reach at the bottom. */
@@ -34,7 +35,7 @@ import app.kite.core.*
 private fun IntroPage(button: String, onButton: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     // Drawn straight over the app (not in a Dialog): a Dialog's window didn't reach the bottom of
     // the screen on a Pixel, which hid the button. Back does nothing here; the choice comes first.
-    androidx.activity.compose.BackHandler {}
+    androidx.compose.ui.backhandler.BackHandler {}
     val dark = LocalDark.current
     Column(Modifier.fillMaxSize().background(Vela.ground(dark)).pointerInput(Unit) { }.systemBarsPadding()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
@@ -74,7 +75,7 @@ fun WelcomeScreen() {
         if (openOnly) s.wazeAsked = true
         s.welcomed = true
     }) {
-        Image(painterResource(R.drawable.kite_logo), null, Modifier.size(72.dp).clip(RoundedCornerShape(16.dp)))
+        Image(painterResource(Res.drawable.kite_logo), null, Modifier.size(72.dp).clip(RoundedCornerShape(16.dp)))
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Welcome to Kite", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = primaryText)
             Text("Maps, search and turn-by-turn directions with no account and no tracking.", fontSize = 20.sp, color = secondaryText)

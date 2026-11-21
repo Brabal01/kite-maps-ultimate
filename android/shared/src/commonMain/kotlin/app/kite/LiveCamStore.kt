@@ -1,17 +1,14 @@
 package app.kite
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.ImageBitmap
+import org.jetbrains.compose.resources.decodeToImageBitmap
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.kite.core.*
 import kotlinx.coroutines.*
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Locale
-import java.util.TimeZone
+import kotlinx.datetime.format.DateTimeComponents
 
 /**
  * The free Windy Webcams API key (api.windy.com/keys, "Webcams API", Free plan). Empty means no
@@ -54,7 +51,7 @@ object LiveCamStore {
     /** After a failed list, not again before this, even with no list at all yet. */
     private var roadRetryAt = 0L
 
-    private val cacheFile get() = File(KiteApp.app.cacheDir, "livecams.json")
+    private val cacheFile get() = cacheDir() + "/livecams.json"
 
     private fun bump() { version++; onChange?.invoke() }
 
@@ -64,7 +61,7 @@ object LiveCamStore {
         val now = nowMillis()
         if (road.isEmpty()) {
             runCatching {
-                val saved = Json.obj(cacheFile.readBytes())
+                val saved = Json.obj(Disk.read(cacheFile) ?: return@runCatching)
                 val cams = saved?.get("cams").asMaps()?.mapNotNull { LiveCam.fromMap(it) }
                 if (!cams.isNullOrEmpty()) { road = cams; listedAt = saved?.get("at").long(); bump() }
             }
@@ -81,7 +78,7 @@ object LiveCamStore {
                 status = "${fresh.size} road cameras"
                 bump()
                 withContext(Dispatchers.IO) {
-                    runCatching { cacheFile.writeText(Json.write(mapOf("at" to listedAt, "cams" to fresh.map { it.toMap() }))) }
+                    runCatching { Disk.write(cacheFile, Json.write(mapOf("at" to listedAt, "cams" to fresh.map { it.toMap() })).encodeToByteArray()) }
                 }
             } else {
                 status = if (road.isEmpty()) "Couldn't load the camera list" else "${road.size} road cameras (saved list)"
@@ -231,13 +228,13 @@ object LiveCamStore {
     }
 
     /** The photo, and when the camera took it (from the server's Last-Modified, when it says). */
-    suspend fun photo(cam: LiveCam): Pair<Bitmap, Long?>? = withContext(Dispatchers.IO) {
+    suspend fun photo(cam: LiveCam): Pair<ImageBitmap, Long?>? = withContext(Dispatchers.IO) {
         val r = Http.getOrNull(cam.imageUrl, mapOf("User-Agent" to USER_AGENT, "Cache-Control" to "no-cache"), client)
             ?.takeIf { it.code == 200 } ?: return@withContext null
-        val bmp = BitmapFactory.decodeByteArray(r.body, 0, r.body.size)?.takeIf { it.width > 8 && !isPlaceholder(it) } ?: return@withContext null
+        val bmp = runCatching { r.body.decodeToImageBitmap() }.getOrNull()?.takeIf { it.width > 8 && !isPlaceholder(it) } ?: return@withContext null
         val taken = r.headers["Last-Modified"]?.let { lm ->
             runCatching {
-                SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US).apply { timeZone = TimeZone.getTimeZone("GMT") }.parse(lm)?.time
+                DateTimeComponents.Formats.RFC_1123.parse(lm).toInstantUsingOffset().toEpochMilliseconds()
             }.getOrNull()
         } ?: cam.updatedAtMillis
         bmp to taken
@@ -247,11 +244,14 @@ object LiveCamStore {
      * National Highways sends a "CAMERA UNAVAILABLE" card (white, with a red cross) instead of a
      * photo when a camera is off. That card is mostly pale with a red cross over a black camera; treat it as no photo.
      */
-    private fun isPlaceholder(bmp: Bitmap): Boolean {
-        val small = Bitmap.createScaledBitmap(bmp, 32, 18, true)
-        val px = IntArray(32 * 18)
-        small.getPixels(px, 0, 32, 0, 0, 32, 18)
-        if (small !== bmp) small.recycle()
+    private fun isPlaceholder(bmp: ImageBitmap): Boolean {
+        // A 32 by 18 grid of single pixels across the photo.
+        val one = IntArray(1)
+        val px = IntArray(32 * 18) { i ->
+            bmp.readPixels(one, ((i % 32) + 0.5f).times(bmp.width / 32f).toInt().coerceIn(0, bmp.width - 1),
+                ((i / 32) + 0.5f).times(bmp.height / 18f).toInt().coerceIn(0, bmp.height - 1), 1, 1)
+            one[0]
+        }
         var light = 0; var red = 0; var black = 0
         for (c in px) {
             val r = (c shr 16) and 0xFF; val g = (c shr 8) and 0xFF; val b = c and 0xFF

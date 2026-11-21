@@ -12,7 +12,9 @@ actual object Speech {
     private var speaking = 0
 
     private val delegate = object : NSObject(), AVSpeechSynthesizerDelegateProtocol {
+        @kotlinx.cinterop.ObjCSignatureOverride
         override fun speechSynthesizer(synthesizer: AVSpeechSynthesizer, didFinishSpeechUtterance: AVSpeechUtterance) = finished()
+        @kotlinx.cinterop.ObjCSignatureOverride
         override fun speechSynthesizer(synthesizer: AVSpeechSynthesizer, didCancelSpeechUtterance: AVSpeechUtterance) = finished()
     }
 
