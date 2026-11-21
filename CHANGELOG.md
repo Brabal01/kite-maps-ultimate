@@ -310,7 +310,7 @@ A check of the basics on both phones, with the bugs it found fixed. Nothing look
 
 ## 0.7.8 (iPhone and Android)
 
-Everything ChatGPT found when it went through both apps as a second reviewer, fixed and checked,
+Everything a full second review of both apps found, fixed and checked,
 plus live cameras.
 
 - **Live cameras (GitHub #15):** see the latest photo from traffic cameras and webcams, like the
