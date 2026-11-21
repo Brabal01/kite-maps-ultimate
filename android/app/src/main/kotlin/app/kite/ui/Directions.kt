@@ -148,10 +148,11 @@ fun AvoidRoadCard(model: AppModel, state: DirectionsState) {
     val dark = LocalDark.current
     val ask = model.avoidAsk
     when {
-        ask != null -> Row(Modifier.fillMaxWidth().height(54.dp).glass(CircleShape).padding(start = 14.dp, end = 6.dp),
+        ask != null -> Row(Modifier.fillMaxWidth().heightIn(min = 54.dp).glass(RoundedCornerShape(27.dp)).padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Icon(Icons.Filled.Block, null, tint = Vela.closed, modifier = Modifier.size(22.dp))
-            Text("Avoid ${ask.road ?: "this road"}?", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = primaryText, maxLines = 1,
+            // Two lines rather than a cut-off name ("Avoid Russell Boule…").
+            Text("Avoid ${ask.road ?: "this road"}?", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = primaryText, maxLines = 2, lineHeight = 20.sp,
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Text("Cancel", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = secondaryText, modifier = Modifier.tap { model.avoidAsk = null }.padding(6.dp))
             Box(Modifier.height(40.dp).clip(CircleShape).background(Vela.accent(dark)).tap { model.avoidRoad() }.padding(horizontal = 16.dp),

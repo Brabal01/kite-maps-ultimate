@@ -58,7 +58,9 @@ struct AvoidRoadCard: View {
             if let ask = model.avoidAsk {
                 HStack(spacing: 10) {
                     Image(systemName: "nosign").font(.system(size: 20, weight: .bold)).foregroundColor(Vela.closed)
-                    Text("Avoid \(ask.road ?? "this road")?").font(.system(size: 18, weight: .bold)).lineLimit(1).minimumScaleFactor(0.75)
+                    // Two lines rather than a cut-off name ("Avoid Russell Boule…").
+                    Text("Avoid \(ask.road ?? "this road")?").font(.system(size: 17, weight: .bold)).lineLimit(2).minimumScaleFactor(0.85)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 4)
                     Button("Cancel") { model.avoidAsk = nil }
                         .font(.system(size: 17, weight: .semibold)).foregroundColor(.secondary)
@@ -70,9 +72,9 @@ struct AvoidRoadCard: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.leading, 14).padding(.trailing, 6)
-                .frame(height: 54)
-                .glass(Capsule())
+                .padding(.leading, 14).padding(.trailing, 6).padding(.vertical, 4)
+                .frame(minHeight: 54)
+                .glass(RoundedRectangle(cornerRadius: 27, style: .continuous))
                 .transition(.move(edge: .top).combined(with: .opacity))
             } else if model.avoidBusy {
                 HStack(spacing: 10) {
