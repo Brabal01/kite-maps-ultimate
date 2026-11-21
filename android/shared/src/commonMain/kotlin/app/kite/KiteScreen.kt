@@ -1,5 +1,10 @@
 package app.kite
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,7 +31,10 @@ import org.maplibre.compose.interaction.MapInteractions
 import org.maplibre.compose.map.MapEvent
 import org.maplibre.compose.map.MaplibreMap
 import org.maplibre.compose.map.rememberMapState
-import org.maplibre.compose.overlay.ExpandingAttributionButton
+import org.maplibre.compose.overlay.AttributionDefaults
+import org.maplibre.compose.overlay.AttributionLinks
+import org.maplibre.compose.overlay.attributions
+import org.maplibre.compose.map.LocalMapState
 import org.maplibre.compose.map.StyleLoadState
 import org.maplibre.spatialk.geojson.Position
 
@@ -197,7 +205,27 @@ fun KiteMapView(model: AppModel, kiteMap: KiteMap, modifier: Modifier) {
     }
     MaplibreMap(modifier, state, interactions = interactions, overlay = {
         Box(Modifier.fillMaxSize().navigationBarsPadding()) {
-            ExpandingAttributionButton(Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 8.dp), contentAlignment = Alignment.BottomStart)
+            MapCredits(Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 8.dp))
         }
     })
+}
+
+/**
+ * The map's small "i" with its data credits (OpenStreetMap, Esri...). It starts folded, as the old apps
+ * did, so the credits never sit over the tabs at the bottom; a tap opens them, moving the map folds them.
+ */
+@Composable
+private fun MapCredits(modifier: Modifier) {
+    val map = LocalMapState.current ?: return
+    var open by remember { mutableStateOf(false) }
+    LaunchedEffect(map) {
+        snapshotFlow { map.isCameraMoving && map.cameraMoveReason == CameraMoveReason.Gesture }.collect { if (it) open = false }
+    }
+    val credits by remember(map.style) { derivedStateOf { map.style.attributions() } }
+    if (credits.isEmpty()) return
+    Row(modifier.background(if (open) AttributionDefaults.ContainerColor else Color.Transparent, RoundedCornerShape(24.dp))
+        .pointerInput(Unit) {}, verticalAlignment = Alignment.CenterVertically) {
+        AttributionDefaults.button { open = !open }
+        if (open) AttributionLinks(credits, Modifier.padding(end = 16.dp, top = 8.dp, bottom = 8.dp))
+    }
 }
