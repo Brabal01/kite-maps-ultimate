@@ -198,6 +198,16 @@ object DemoScript {
                 // The search box open with home set and the police heat map on: the legend must hide.
                 st.waze = true; st.wazeHeatmap = true; st.home = home; return
             }
+            "routechoice", "routepick" -> {
+                // Reading to Heathrow: several ways to go (M4, A4...), to check the route screen shows the
+                // picked one in teal and the others grey; "routepick" then picks the second one.
+                val to = Place("demo-heathrow", "Heathrow Airport", LatLng(51.4700, -0.4543), "demo")
+                model.select(to); delay(2000)
+                model.openDirections(to)
+                for (i in 0 until 40) { if ((model.directions?.current?.size ?: 0) > 1) break; delay(1000) }
+                if (step == "routepick" && (model.directions?.current?.size ?: 0) > 1) { delay(2000); model.selectRoute(1) }
+                return
+            }
             "locationoff" -> return
             "drive", "drivewrong" -> {
                 // A test drive: Reading town centre to the stadium, the car moved along the route
