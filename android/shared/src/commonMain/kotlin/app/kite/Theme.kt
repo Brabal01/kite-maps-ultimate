@@ -146,6 +146,9 @@ val primaryText: Color @Composable get() = Vela.primary(LocalDark.current)
 val secondaryText: Color @Composable get() = Vela.muted(LocalDark.current)
 
 object Fmt {
+    /** The phone's 12/24-hour setting, read again each time Kite comes back, so open screens redraw with it. */
+    var h24 by mutableStateOf(LocalFormat.is24Hour)
+
     private val country: String get() = systemCountry()
     private val autoImperial: Boolean get() = country in setOf("US", "GB", "LR", "MM", "UK")
 
@@ -244,7 +247,7 @@ object Fmt {
      * "Closes 22:00" when the phone is set to 24 hours, left as they are otherwise.
      */
     fun clock(text: String): String {
-        if (!LocalFormat.is24Hour) return text
+        if (!h24) return text
         return Regex("""\b(\d{1,2})(?::(\d{2}))?[\s\u202F\u00A0]?([AaPp])(?:\.[Mm]\.|[Mm])(?![A-Za-z])""").replace(text) { m ->
             val h = m.groupValues[1].toInt()
             if (h !in 1..12) return@replace m.value

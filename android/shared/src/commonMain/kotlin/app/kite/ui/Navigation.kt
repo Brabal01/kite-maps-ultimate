@@ -147,7 +147,8 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
                 } else InstructionBanner(nav)
                 // A traffic jam ahead: a small calm line just under the turn, where the eyes already are.
                 val jam = nav.wazeAhead?.takeIf { it.alert.kind == WazeAlert.Kind.JAM && !nav.arrived && !confirmEnd }
-                if (jam != null) TrafficLine(jam, Modifier.align(Alignment.CenterHorizontally).tap { nav.dismissWaze() })
+                // On a short phone with a warning card up, the standstill line gives way like the other notes.
+                if (jam != null && !(mainAlert != null && h < 700.dp)) TrafficLine(jam, Modifier.align(Alignment.CenterHorizontally).tap { nav.dismissWaze() })
                 // One warning at a time; the others wait in the pill under it.
                 when (mainAlert) {
                     NavAlert.CAMERA -> nav.cameraAhead?.let { CameraCard(it, nav.speedMps * 3.6, nav.speedLimitKmh) }
@@ -517,7 +518,7 @@ fun FasterRouteCard(offer: FasterOffer, onKeep: () -> Unit, onTake: () -> Unit) 
                     Row(Modifier.height(32.dp).clip(CircleShape).background(if (warn) Vela.warnFill(dark) else Vela.chip(dark)).padding(horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         val c = if (warn) Vela.warnText(dark) else primaryText
-                        Icon(if (text.endsWith("longer") || text.endsWith("shorter")) Icons.Filled.SwapHoriz else Icons.Filled.CurrencyPound, null,
+                        Icon(if (text.endsWith("longer") || text.endsWith("shorter")) Icons.Filled.SwapHoriz else if (text in offer.newZones) Icons.Filled.Eco else Icons.Filled.CurrencyPound, null,
                             tint = c, modifier = Modifier.size(17.dp))
                         Text(text, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = c, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }

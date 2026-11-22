@@ -18,6 +18,8 @@ class FasterOffer(
     val extraMeters: Double = 0.0,
     /** Pay-later road charges on the new way that yours didn't have, like the Dartford Crossing. */
     val newCharges: List<String> = emptyList(),
+    /** Which of [newCharges] are clean air zones (shown with a leaf, not a £). */
+    val newZones: Set<String> = emptySet(),
 )
 
 /** A lower speed limit coming up: what it is, and how far. */
@@ -860,8 +862,9 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
         val had = (RoadCharges.on(remainingLine) + CleanAirZones.on(remainingLine, clean)).map { it.name }.toSet()
         // Named with the price where Kite knows it: "Dartford Crossing £3.50".
         val charges = (RoadCharges.on(fresh.polyline) + CleanAirZones.on(fresh.polyline, clean)).filter { it.name !in had }
-            .map { c -> c.name + (c.price?.let { " $it" } ?: "") }
-        val offer = FasterOffer(minutes, fresh.summary, now() + FASTER_WAIT_MS, fresh.distanceMeters - remainingMeters, charges)
+        fun label(c: RoadCharge) = c.name + (c.price?.let { " $it" } ?: "")
+        val offer = FasterOffer(minutes, fresh.summary, now() + FASTER_WAIT_MS, fresh.distanceMeters - remainingMeters,
+            charges.map(::label), charges.filter { it.zone }.map(::label).toSet())
         fasterRoute = fresh
         fasterOffer = offer
         speak("Found a faster route. It saves $minutes minutes.")

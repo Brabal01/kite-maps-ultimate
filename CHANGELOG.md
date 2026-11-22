@@ -16,7 +16,31 @@ look and work the same on both, and every change lands on both phones at once.
   shortcuts ("Take me home with Kite"), voice and voice search.
 - **The map** is drawn by MapLibre on both phones through one shared map, so the heat map, cameras,
   lanes and route look identical.
-- No new features this time: the same Kite as 0.7.17, on one shared base.
+
+Design ideas picked by Matteo, on both phones:
+
+- **Tab names:** Map, Saved and Settings are written under their icons.
+- **Clearer "Then":** the turn after next sits on its own line under the turn, big and bold.
+- **Faster route countdown:** "switching in 5 s", so it's clear how long there is to keep yours.
+- **"+2 more"** in the Also ahead pill when not every warning fits; the police risk pill sits just under it.
+- **Standstill traffic** shows just under the turn banner.
+- **Nearest car park first:** "Car park · 3 min walk · Free" and "Nearest of 8 near there" (a tiny unnamed lot doesn't beat a real car park).
+- **Search pins:** the picked one on top and the rest faded; piled-up pins tidied away; a tap opens the pin tapped.
+- **"No route" says why** when it can: too far to walk or cycle, or the sea in the way.
+- **Dartford Crossing price** on the route: "£3.50 a car".
+- **12 or 24 hours:** opening hours and charge times follow the phone's clock setting.
+- **Cleaner route screen:** picked route bright teal, others grey; slim top bar; small panel with just the picked route and Go.
+
+Fixed after tapping through every screen on both phones:
+
+- Picking Walk for one trip no longer changes the default travel mode in Settings.
+- Messages on the map go away by themselves; "No internet" clears once you're back online.
+- The map credits, police pill and heat map key stay above the tab bar.
+- Add stop shows results while you type; the same place isn't listed several times in search.
+- A place card pulled all the way up stops under the search bar.
+- Tapping your own route offers to avoid that road even with another route close by.
+- iPhone: with location refused, the "Location is off" card shows, as on Android.
+- Android: the clock and icons at the top stay readable in Kite's dark theme; Settings menus open by their value.
 
 ## 0.7.17 (iPhone and Android)
 

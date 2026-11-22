@@ -63,6 +63,7 @@ object Kite {
     fun foreground() {
         LocationService.visible = true
         LocationService.refreshPermission()
+        Fmt.h24 = LocalFormat.is24Hour
     }
 
     /** Out of sight and not driving: GPS off to save the battery (back on when Kite is opened again). */

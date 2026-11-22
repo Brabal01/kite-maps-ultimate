@@ -776,7 +776,8 @@ fun ArrivalRows(model: AppModel, state: DirectionsState) {
     LaunchedEffect(place.id) {
         val found = async(Dispatchers.IO) { ArrivalHelp.parking(place.location) }
         if (ArrivalHelp.isBigPlace(place.category)) door = withContext(Dispatchers.IO) { ArrivalHelp.mainEntrance(place.location) }
-        parks = (found.await() ?: emptyList()).sortedBy { it.meters }
+        // In the order ArrivalHelp ranks them: nearest first, but a tiny unnamed lot doesn't beat a real car park.
+        parks = found.await() ?: emptyList()
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val note = state.endNote
@@ -800,7 +801,7 @@ fun ArrivalRows(model: AppModel, state: DirectionsState) {
                 Row(Modifier.fillMaxWidth().tap { showParks = true }, verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     // The nearest one straight away ("Car park · 3 min walk · Free"); the whole list is a tap away.
-                    val near = parks.minBy { it.meters }
+                    val near = parks.first()
                     Icon(Icons.Filled.LocalParking, null, tint = Vela.routeBlue, modifier = Modifier.size(20.dp))
                     Column(Modifier.weight(1f, fill = false)) {
                         Text(listOfNotNull(near.name ?: "Car park", "${Fmt.walkMinutes(near.meters)} walk", near.fee?.let { if (it) "Paid" else "Free" })
