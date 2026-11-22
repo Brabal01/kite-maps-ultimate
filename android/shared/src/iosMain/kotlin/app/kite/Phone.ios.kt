@@ -82,7 +82,8 @@ private fun machine(): String =
 
 actual object LocalFormat {
     private fun formatter(date: NSDateFormatterStyle, time: NSDateFormatterStyle) = NSDateFormatter().apply {
-        dateStyle = date; timeStyle = time; locale = NSLocale.currentLocale
+        // The live locale, so switching the phone to 24 hours shows here at once.
+        dateStyle = date; timeStyle = time; locale = NSLocale.autoupdatingCurrentLocale
     }
     private val timeOnly by lazy { formatter(NSDateFormatterNoStyle, NSDateFormatterShortStyle) }
     private val dateAndTime by lazy { formatter(NSDateFormatterMediumStyle, NSDateFormatterShortStyle) }

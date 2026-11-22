@@ -463,8 +463,9 @@ fun RouteCharges(route: Route) {
             Icon(if (c.zone) Icons.Filled.Eco else Icons.Filled.CurrencyPound, null,
                 tint = if (c.zone) Color(0xFF15803D) else Color(0xFFE37400), modifier = Modifier.size(28.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(if (c.zone) "Clean air zone on this route: ${c.name}" else "Charge on this route: ${c.name}", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = primaryText)
-                Text(c.note, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Vela.muted(dark), lineHeight = 19.sp)
+                Text(if (c.zone) "Clean air zone on this route: ${c.name}" else "Charge on this route: ${c.name}" + (c.price?.let { " · $it a car" } ?: ""),
+                    fontSize = 17.sp, fontWeight = FontWeight.Bold, color = primaryText)
+                Text(Fmt.clock(c.note), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Vela.muted(dark), lineHeight = 19.sp)
             }
         }
     }
@@ -726,8 +727,14 @@ fun ArrivalRows(model: AppModel, state: DirectionsState) {
             if (parks.isNotEmpty()) {
                 Row(Modifier.fillMaxWidth().tap { showParks = true }, verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // The nearest one straight away ("Car park · 3 min walk · Free"); the whole list is a tap away.
+                    val near = parks.minBy { it.meters }
                     Icon(Icons.Filled.LocalParking, null, tint = Vela.routeBlue, modifier = Modifier.size(20.dp))
-                    Text("${parks.size} car park${if (parks.size == 1) "" else "s"} near there", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = primaryText)
+                    Column(Modifier.weight(1f, fill = false)) {
+                        Text(listOfNotNull(near.name ?: "Car park", "${Fmt.walkMinutes(near.meters)} walk", near.fee?.let { if (it) "Paid" else "Free" })
+                            .joinToString(" · "), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (parks.size > 1) Text("Nearest of ${parks.size} near there", fontSize = 14.sp, color = secondaryText, maxLines = 1)
+                    }
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = secondaryText, modifier = Modifier.size(18.dp))
                 }
             }

@@ -158,7 +158,7 @@ fun BottomSheet(
 
 /**
  * The bar along the bottom: Map, Saved and Settings as three icons in one slim see-through pill,
- * with a dot under the page you're on. Each is still a big target (72 by 60).
+ * each with its name under it (the page you're on in the accent colour). Each is still a big target (72 by 60).
  */
 @Composable
 fun KiteDock(model: AppModel, modifier: Modifier = Modifier) {
@@ -174,10 +174,11 @@ fun KiteDock(model: AppModel, modifier: Modifier = Modifier) {
                         if (tab != model.tab && model.tab == AppTab.SETTINGS) model.reloadRoutes()
                         model.tab = tab
                     },
-                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
                 ) {
-                    Icon(icon, title, tint = c, modifier = Modifier.size(26.dp))
-                    Box(Modifier.size(5.dp).clip(CircleShape).background(if (on) c else Color.Transparent))
+                    Icon(icon, null, tint = c, modifier = Modifier.size(24.dp))
+                    Text(title, fontSize = 11.sp, lineHeight = 13.sp, maxLines = 1, color = c,
+                        fontWeight = if (on) FontWeight.Bold else FontWeight.Medium)
                 }
             }
             item(AppTab.MAP, Icons.Filled.Map, "Map")

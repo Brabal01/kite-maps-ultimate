@@ -88,7 +88,7 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
     // camera while you're over its limit, which always wins (that's the one that costs a fine).
     // An average check and a police aircraft aren't a spot on the road ahead, so they only get the
     // big card when nothing else is up.
-    // Traffic jams don't get a card up top: they show as a small line over the trip bar instead.
+    // Traffic jams don't get a big card: they show as a small line under the turn banner instead.
     val alertsUp = buildList {
         if (nav.arrived) return@buildList
         val ahead = listOfNotNull(nav.cameraAhead?.let { NavAlert.CAMERA to it.meters }, nav.wazeAhead?.takeIf { it.alert.kind != WazeAlert.Kind.JAM }?.let { NavAlert.WAZE to it.meters })
@@ -112,7 +112,6 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
     val north = AppSettings.driveLook == MapLook.NORTH
     val risk = nav.policeRisk
     val showRiskChip = risk != null && !nav.arrived && PoliceRisk.level(risk) != PoliceRisk.Level.LOW
-    val chipShowing = showRiskChip
 
     fun etaText(): String {
         val left = nav.progress?.remainingSeconds ?: nav.route.durationSeconds
@@ -146,6 +145,9 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
                         model.endNavigation()
                     }
                 } else InstructionBanner(nav)
+                // A traffic jam ahead: a small calm line just under the turn, where the eyes already are.
+                val jam = nav.wazeAhead?.takeIf { it.alert.kind == WazeAlert.Kind.JAM && !nav.arrived && !confirmEnd }
+                if (jam != null) TrafficLine(jam, Modifier.align(Alignment.CenterHorizontally).tap { nav.dismissWaze() })
                 // One warning at a time; the others wait in the pill under it.
                 when (mainAlert) {
                     NavAlert.CAMERA -> nav.cameraAhead?.let { CameraCard(it, nav.speedMps * 3.6, nav.speedLimitKmh) }
@@ -155,6 +157,10 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
                     null -> {}
                 }
                 if (others.isNotEmpty()) AlsoAheadPill(nav, others) { peek = others.first() }
+                // The police risk sits up here with the other warnings, so it never covers the car, the next
+                // turn or the road's name on the map. On a short phone with a warning card or the next limit
+                // up there's no room: it gives way, and comes back once they've gone.
+                if (showRiskChip && risk != null && !((mainAlert != null || nav.limitDropAhead != null) && h < 700.dp)) PoliceRiskChip(risk)
                 // On a short phone with a warning card and lane arrows up there's no room for a third
                 // row: the card matters more, and the GPS and rerouting notes come back once it's gone.
                 if (Voice.missing && nav.voiceMode != VoiceMode.OFF && !nav.arrived && mainAlert == null) {
@@ -195,11 +201,7 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
             Spacer(Modifier.weight(1f))
             Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    // A Waze police card already says it louder; the chip comes back when it's gone.
-                    // On a short phone a warning card plus lanes leaves no room: the chip gives way to the card.
-                    // The same when the next speed limit is up: on a short phone the column would reach the cards.
                     val limitDrop = nav.limitDropAhead
-                    if (showRiskChip && risk != null && !((mainAlert != null || limitDrop != null) && h < 700.dp)) PoliceRiskChip(risk)
                     SpeedBadge(nav.speedMps, nav.speedLimitKmh, limitDrop)
                 }
                 Spacer(Modifier.weight(1f))
@@ -238,9 +240,6 @@ fun NavigationOverlay(model: AppModel, nav: Navigator) {
                     Text("Re-centre", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Vela.onAccent(dark))
                 }
             }
-            // A traffic jam ahead: small and calm over the trip bar, so the top stays for turns and cameras.
-            val jam = nav.wazeAhead?.takeIf { it.alert.kind == WazeAlert.Kind.JAM && !nav.arrived && !confirmEnd }
-            if (jam != null) TrafficLine(jam, Modifier.align(Alignment.CenterHorizontally).tap { nav.dismissWaze() })
             // A faster way: two big buttons instead of the route just changing under you.
             // Arriving answers the end-trip question: the trip bar's Done takes over.
             val offer = nav.fasterOffer?.takeIf { !nav.arrived }
@@ -394,17 +393,18 @@ private fun ThenView(nav: Navigator) {
     val then = nav.thenManeuver ?: return
     val dark = LocalDark.current
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("Then", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Vela.muted(dark))
-        Icon(maneuverIcon(then.type), null, tint = primaryText, modifier = Modifier.size(22.dp))
+        // Big and bold, in the banner's main colour (white at night), so it reads at a glance.
+        Text("Then", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = primaryText)
+        Icon(maneuverIcon(then.type), null, tint = primaryText, modifier = Modifier.size(26.dp))
         val n = then.exit
         if (then.type == ManeuverType.ROUNDABOUT && n != null) {
             // Which exit, so the next roundabout is known before the banner changes.
-            Box(Modifier.defaultMinSize(22.dp, 22.dp).clip(CircleShape).background(hex(0x0F766E)), contentAlignment = Alignment.Center) {
-                Text("$n", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+            Box(Modifier.defaultMinSize(24.dp, 24.dp).clip(CircleShape).background(hex(0x0F766E)), contentAlignment = Alignment.Center) {
+                Text("$n", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
             }
         }
         // How soon after this turn it comes, so there's time to pick the lane for it.
-        nav.thenGap?.let { Text("after ${Fmt.distance(it)}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = primaryText, maxLines = 1, softWrap = false) }
+        nav.thenGap?.let { Text("after ${Fmt.distance(it)}", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = primaryText, maxLines = 1, softWrap = false) }
     }
 }
 
@@ -500,7 +500,10 @@ fun FasterRouteCard(offer: FasterOffer, onKeep: () -> Unit, onTake: () -> Unit) 
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("Faster route · saves ${offer.minutes} min", fontSize = 23.sp, fontWeight = FontWeight.ExtraBold, color = primaryText, maxLines = 1,
                 overflow = TextOverflow.Ellipsis)
-            Text((offer.via?.let { "via $it · " } ?: "") + "taking it in a few seconds", fontSize = 16.sp, fontWeight = FontWeight.Medium,
+            // A countdown, so it's clear how long there is to keep yours.
+            var secs by remember(offer) { mutableStateOf(max(0L, (offer.untilMillis - nowMillis() + 999) / 1000)) }
+            LaunchedEffect(offer) { while (secs > 0) { delay(1000); secs = max(0L, (offer.untilMillis - nowMillis() + 999) / 1000) } }
+            Text((offer.via?.let { "via $it · " } ?: "") + "switching in $secs s", fontSize = 16.sp, fontWeight = FontWeight.Medium,
                 color = Vela.muted(dark), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         // What else changes: only shown when something does, so a plain faster way looks as before.
@@ -697,7 +700,7 @@ val WazeAlert.reportedText: String
         return "Reported $w"
     }
 
-/** A traffic jam ahead, kept small and calm just over the trip bar: "Standstill traffic in 140 yd". */
+/** A traffic jam ahead, kept small and calm just under the turn banner: "Standstill traffic in 140 yd". */
 @Composable
 fun TrafficLine(ahead: WazeAhead, modifier: Modifier = Modifier) {
     val dark = LocalDark.current
@@ -872,7 +875,7 @@ fun AlsoAheadPill(nav: Navigator, alerts: List<NavAlert>, onTap: () -> Unit) {
     Row(Modifier.height(40.dp).glass(CircleShape).tap(onTap).padding(horizontal = 14.dp)
         .semantics { contentDescription = "Also ahead. Tap to show the next warning" },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Two at most, with "+1" for any more. On a small phone the words "Also ahead" go first,
+        // Two at most, with "+1 more" for any more. On a small phone the words "Also ahead" go first,
         // then the second warning, so the pill never runs off the screen.
         val width = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.width.toDp().value.toInt() }
         val shown = if (width < 360) 1 else 2
@@ -891,7 +894,7 @@ fun AlsoAheadPill(nav: Navigator, alerts: List<NavAlert>, onTap: () -> Unit) {
             }
             if (label != null) Text(label, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = primaryText, maxLines = 1)
         }
-        if (alerts.size > shown) Text("+${alerts.size - shown}", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = primaryText, maxLines = 1)
+        if (alerts.size > shown) Text("+${alerts.size - shown}" + (if (width >= 360) " more" else ""), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = primaryText, maxLines = 1)
     }
 }
 
@@ -1037,7 +1040,7 @@ fun AlongRouteSheet(nav: Navigator, close: () -> Unit) {
                     Row(Modifier.fillMaxWidth().tap { nav.addStop(p); close() }.padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(p.name, color = primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(listOfNotNull(p.rating?.let { fmt("%.1f ★", it) }, p.statusText).joinToString("  "), fontSize = KType.caption,
+                            Text(listOfNotNull(p.rating?.let { fmt("%.1f ★", it) }, p.statusText?.let { Fmt.clock(it) }).joinToString("  "), fontSize = KType.caption,
                                 color = secondaryText, maxLines = 1)
                         }
                         Column(horizontalAlignment = Alignment.End) {

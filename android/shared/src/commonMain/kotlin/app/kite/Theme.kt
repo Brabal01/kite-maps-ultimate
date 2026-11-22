@@ -239,6 +239,21 @@ object Fmt {
 
     fun time(epochMillis: Long): String = LocalFormat.time(epochMillis)
 
+    /**
+     * Times written in words ("Closes 10 pm", "Charged 6 am to 10 pm") on the phone's own clock:
+     * "Closes 22:00" when the phone is set to 24 hours, left as they are otherwise.
+     */
+    fun clock(text: String): String {
+        if (!LocalFormat.is24Hour) return text
+        return Regex("""\b(\d{1,2})(?::(\d{2}))?[\s\u202F\u00A0]?([AaPp])\.?[Mm]\.?(?![A-Za-z])""").replace(text) { m ->
+            val h = m.groupValues[1].toInt()
+            if (h !in 1..12) return@replace m.value
+            val pm = m.groupValues[3].lowercase() == "p"
+            val h24 = (h % 12) + if (pm) 12 else 0
+            fmt("%02d:%s", h24, m.groupValues[2].ifEmpty { "00" })
+        }
+    }
+
     fun count(n: Int): String = LocalFormat.count(n)
 }
 
@@ -261,7 +276,7 @@ fun StatusText(place: Place, fontSize: androidx.compose.ui.unit.TextUnit = KType
     if (place.permanentlyClosed) {
         Text("Permanently closed", color = c, fontSize = fontSize)
     } else place.statusText?.let { s ->
-        val parts = s.split(" · ")
+        val parts = Fmt.clock(s).split(" · ")
         Text(buildAnnotatedString {
             withStyle(SpanStyle(color = c)) { append(parts[0]) }
             if (parts.size > 1) withStyle(SpanStyle(color = gray)) { append(" · " + parts.drop(1).joinToString(" · ")) }

@@ -290,7 +290,7 @@ object DemoScript {
         delay(5000)
         if (step == "place") return
         if (step == "charges") app.kite.ui.RouteChargesDemo.charges =
-            listOf(RoadCharge("Dartford Crossing", "No barriers. Charged 6 am to 10 pm. Pay the Dart Charge online by midnight the day after."))
+            listOf(RoadCharge("Dartford Crossing", "No barriers. Charged 6 am to 10 pm. Pay the Dart Charge online by midnight the day after.", price = "£3.50"))
         model.openDirections(first)
         if (step == "stops") model.visibleResults.drop(1).firstOrNull()?.let { model.addStop(it) }
         delay(8000)

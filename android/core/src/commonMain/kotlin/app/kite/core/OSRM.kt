@@ -454,7 +454,8 @@ object OSRM {
 
 /** What the app asks for routes: Google (traffic, alternates), else the open router. */
 object Directions {
-    data class Result(val routes: List<Route>, val error: String? = null)
+    /** [reason]: why there's no route, in plain words, when Kite can tell (shown in place of "No route found."). */
+    data class Result(val routes: List<Route>, val error: String? = null, val reason: String? = null)
 
     /**
      * A drive that keeps off the roads tapped away ([avoid], a point on each): the open router's line
@@ -546,9 +547,29 @@ object Directions {
         // The open router only knows Europe: asked for somewhere it has no roads to (California, an
         // island with no ferry), it snaps the end to its nearest road, and Southampton to Davis came
         // back as 1,280 miles to Cabo da Roca in Portugal. A route that stops miles short isn't one.
-        o.getOrNull()?.filter { reaches(it.polyline, a, b) }?.let { if (it.isNotEmpty()) return@withContext Result(it.map { r -> StepMerge.tidy(r.maneuvers); Roundabouts.settle(r) }) }
+        val open = o.getOrNull()
+        open?.filter { reaches(it.polyline, a, b) }?.let { if (it.isNotEmpty()) return@withContext Result(it.map { r -> StepMerge.tidy(r.maneuvers); Roundabouts.settle(r) }) }
         o.exceptionOrNull()?.let { err = it.message }
-        Result(emptyList(), err ?: "No route found.")
+        Result(emptyList(), err ?: "No route found.", noRouteReason(a, b, mode, open))
+    }
+
+    /**
+     * Why there's no route, when it can be told: too far for the way of travel, or roads that stop
+     * short of the place (the open router found a way, but only to the nearest road it has: the sea,
+     * or a ferry, is in the way). Null when it can't be told.
+     */
+    fun noRouteReason(a: LatLng, b: LatLng, mode: TravelMode, open: List<Route>?): String? {
+        val km = a.distanceTo(b) / 1000
+        return when {
+            mode == TravelMode.WALK && km > 500 -> "Too far to walk."
+            mode == TravelMode.BIKE && km > 1000 -> "Too far to cycle."
+            km > 6000 -> "Too far to drive."
+            // Only when the open router got close (within 50 km at both ends): far off means it simply has
+            // no map there (it only knows Europe), not that the sea is in the way.
+            open?.any { it.polyline.size > 1 && it.polyline.first().distanceTo(a) < 50_000 && it.polyline.last().distanceTo(b) < 50_000 } == true ->
+                "No road goes all the way there. The sea or a ferry may be in the way."
+            else -> null
+        }
     }
 
     /** Whether [line] starts and ends within 5 km of where it was asked to go from and to. */

@@ -398,10 +398,13 @@ class KiteMap(private val model: AppModel) {
             textMaxWidth(8f)).apply { minZoom = 9f })
 
         src("vela-results")
+        // Pins that would land on top of each other aren't piled up: the best-ranked one shows, and the
+        // rest come out as you zoom in (the list has them all). With a place picked, the others fade back.
         style.addLayer(SymbolLayer("vela-results", "vela-results").withProperties(
-            iconImage(get("icon")), iconAllowOverlap(true), textField(get("label")), textFont(arrayOf("Noto Sans Bold")),
+            iconImage(get("icon")), iconAllowOverlap(false), textField(get("label")), textFont(arrayOf("Noto Sans Bold")),
             textSize(12f), textAnchor(Property.TEXT_ANCHOR_LEFT), textOffset(arrayOf(1.4f, 0f)), textOptional(true),
-            textMaxWidth(8f), textJustify(Property.TEXT_JUSTIFY_LEFT), symbolSortKey(get("rank"))))
+            textMaxWidth(8f), textJustify(Property.TEXT_JUSTIFY_LEFT), symbolSortKey(get("rank")),
+            iconOpacity(get("op")), textOpacity(get("op"))))
 
         src("vela-selected")
         style.addLayer(SymbolLayer("vela-selected", "vela-selected").withProperties(
@@ -829,7 +832,8 @@ class KiteMap(private val model: AppModel) {
         setShape(style, "vela-results", list.mapIndexedNotNull { i, p ->
             if (p.id == target?.id) return@mapIndexedNotNull null
             val rating = p.rating?.let { fmt("%.1f", it) }
-            point(p.location, mapOf("id" to p.id, "icon" to MapIcons.iconName(p), "label" to listOfNotNull(p.name, rating).joinToString("\n"), "rank" to i))
+            point(p.location, mapOf("id" to p.id, "icon" to MapIcons.iconName(p), "label" to listOfNotNull(p.name, rating).joinToString("\n"), "rank" to i,
+                "op" to if (target != null) 0.45 else 1.0))
         })
         val sel = mutableListOf<Feature>()
         if (target != null) {

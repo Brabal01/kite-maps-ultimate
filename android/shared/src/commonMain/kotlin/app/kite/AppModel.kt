@@ -691,8 +691,9 @@ class AppModel {
                 if (directions?.destination?.id != d.destination.id || routesRequest != req) return@launch
                 edit {
                     var e = it.errors
-                    if (r.routes.isEmpty()) e = e + (m to Connectivity.explain(
-                        if (r.error == "No route found.") "No route found." else "Couldn't get a route just now. Try again in a moment."))
+                    // Why, when Kite can tell (too far, no road all the way, offline); otherwise the plain words.
+                    if (r.routes.isEmpty()) e = e + (m to Connectivity.explain(r.reason
+                        ?: if (r.error == "No route found.") "No route found." else "Couldn't get a route just now. Try again in a moment."))
                     // The fastest first, so it's the one picked (a bike route marked "Slower route" was picked
                     // while one 5 min faster sat below it).
                     it.copy(loading = it.loading - m, routes = it.routes + (m to r.routes.sortedBy { x -> x.durationSeconds }), errors = e)

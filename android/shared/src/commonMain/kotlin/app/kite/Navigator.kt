@@ -858,7 +858,9 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
         // What else changes, so it's an easy call: longer or shorter, and any pay-later charge it adds.
         val clean = AppSettings.cleanCar
         val had = (RoadCharges.on(remainingLine) + CleanAirZones.on(remainingLine, clean)).map { it.name }.toSet()
-        val charges = (RoadCharges.on(fresh.polyline) + CleanAirZones.on(fresh.polyline, clean)).map { it.name }.filter { it !in had }
+        // Named with the price where Kite knows it: "Dartford Crossing £3.50".
+        val charges = (RoadCharges.on(fresh.polyline) + CleanAirZones.on(fresh.polyline, clean)).filter { it.name !in had }
+            .map { c -> c.name + (c.price?.let { " $it" } ?: "") }
         val offer = FasterOffer(minutes, fresh.summary, now() + FASTER_WAIT_MS, fresh.distanceMeters - remainingMeters, charges)
         fasterRoute = fresh
         fasterOffer = offer
@@ -887,7 +889,7 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
 
     /** For the build's screenshots: the faster route card. */
     fun showDemoFaster() {
-        fasterOffer = FasterOffer(6, "A3024", now() + 3600_000, 3400.0, listOf("Dartford Crossing"))
+        fasterOffer = FasterOffer(6, "A3024", now() + 12_000, 3400.0, listOf("Dartford Crossing £3.50"))
     }
 
     private fun justPassed(p: RouteTracker.Progress): Boolean {

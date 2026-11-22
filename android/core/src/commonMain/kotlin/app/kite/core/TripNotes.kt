@@ -46,20 +46,21 @@ object ClosingCheck {
 }
 
 /** A charge on the way that has no barrier to remind you: you pay online afterwards, or get a fine. */
-data class RoadCharge(val name: String, val note: String, val zone: Boolean = false)
+data class RoadCharge(val name: String, val note: String, val zone: Boolean = false, val price: String? = null)
 
 /**
  * Britain's pay-later road charges. A short fixed list, not looked up live: each is a spot in the
  * middle of a river crossing (a route within a few hundred metres of it can only be on the
  * crossing), or for London's Congestion Charge the area inside the Inner Ring Road.
- * No prices: they change every year, and the point is only that you know to pay.
+ * Prices only where they're set by law and rarely change (the Dart Charge went up once in 11 years);
+ * the others move every year, so for those the point is only that you know to pay.
  */
 object RoadCharges {
-    private class Crossing(val name: String, val note: String, val at: List<LatLng>, val radius: Double)
+    private class Crossing(val name: String, val note: String, val at: List<LatLng>, val radius: Double, val price: String? = null)
 
     private val crossings = listOf(
         Crossing("Dartford Crossing", "No barriers. Charged 6 am to 10 pm. Pay the Dart Charge online by midnight the day after.",
-            listOf(LatLng(51.4647, 0.2586)), 450.0),
+            listOf(LatLng(51.4647, 0.2586)), 450.0, price = "£3.50"),
         Crossing("Mersey Gateway", "No barriers. Pay online by midnight the day after.", listOf(LatLng(53.3528, -2.7131)), 400.0),
         Crossing("Silver Jubilee Bridge", "No barriers. Pay online by midnight the day after.", listOf(LatLng(53.3467, -2.7378)), 250.0),
         Crossing("Tyne Tunnels", "No barriers. Pay online by midnight the day after.", listOf(LatLng(54.9877, -1.4859)), 300.0),
@@ -87,7 +88,7 @@ object RoadCharges {
         for (c in crossings) {
             if (c.at.none { near(it) }) continue
             val k = cum ?: Geo.cumulative(line).also { cum = it }
-            if (c.at.any { near(it) && Geo.project(it, line, k).offset < c.radius }) found.add(RoadCharge(c.name, c.note))
+            if (c.at.any { near(it) && Geo.project(it, line, k).offset < c.radius }) found.add(RoadCharge(c.name, c.note, price = c.price))
         }
         if (line.any { insideCongestionZone(it) }) found.add(congestion)
         return found
