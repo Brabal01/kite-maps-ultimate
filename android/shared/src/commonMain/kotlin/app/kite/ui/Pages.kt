@@ -606,12 +606,13 @@ fun LayersSheet(liveCount: Int? = null, close: () -> Unit) {
                     else { s.liveCams = true; s.liveRoadCams = true; s.liveWebcams = true }
                 }
             }
-            tiles += {
+            // Waze belongs to Google: with "Use Kite without Google" on, its tiles would do nothing, so they're left out.
+            if (!s.noGoogle) tiles += {
                 LayerTile("Road alerts", s.wazeOn && s.wazeOnMap, { WazeBadge(if (WazeAlert.Kind.POLICE in Waze.shares) WazeAlert.Kind.POLICE else WazeAlert.Kind.CLOSURE, 34.dp) }) {
                     if (s.waze && s.wazeOnMap) s.wazeOnMap = false else { s.waze = true; s.wazeOnMap = true }
                 }
             }
-            if (WazeAlert.Kind.POLICE in Waze.shares) tiles += {
+            if (!s.noGoogle && WazeAlert.Kind.POLICE in Waze.shares) tiles += {
                 LayerTile("Police heat map", s.wazeOn && s.wazeHeatmap, { ic(Icons.Filled.LocalFireDepartment) }) {
                     if (s.waze && s.wazeHeatmap) s.wazeHeatmap = false else { s.waze = true; s.wazeHeatmap = true }
                 }

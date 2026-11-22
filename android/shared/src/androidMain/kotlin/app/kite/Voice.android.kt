@@ -114,7 +114,8 @@ actual object Speech {
         if (t == null || !ready) { warmUp(); pending.add(said); return }
         am.requestAudioFocus(focus)
         speaking++
-        t.speak(said, if (urgent) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "kite${System.nanoTime()}")
+        // Refused straight away (no callback will come): hand the music back now.
+        if (t.speak(said, if (urgent) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "kite${System.nanoTime()}") == TextToSpeech.ERROR) finished()
     }
 
     actual fun stop() {

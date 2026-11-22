@@ -281,6 +281,10 @@ class WazeLive {
         val shared = WazeLive()
         @Volatile var lastStatus: Waze.Status? = null
         @Volatile var bytes: Long = 0
+            private set
+        private val bytesLock = KLock()
+        /** Fetches run side by side: add under a lock, since a plain += can lose some. */
+        internal fun count(n: Int) = bytesLock.locked { bytes += n }
         /** Another server instead of Waze's, for testing what Kite does when Waze is unreachable. */
         @Volatile var hostOverride: String? = null
         const val protocolVersion = 234
@@ -577,7 +581,7 @@ class WazeLive {
             for ((id, body) in got) {
                 if (body == null) continue
                 out[id] = body
-                bytes += body.size
+                count(body.size)
                 any = true
             }
             // Waze has stopped answering: no point asking for the rest now.
@@ -711,7 +715,7 @@ class WazeLive {
         seq += 1
         val bytesOut = body.encodeToByteArray()
         val r = Http.post(url(path), bytesOut, "binary/octet-stream", h, http)
-        bytes += bytesOut.size + r.body.size
+        count(bytesOut.size + r.body.size)
         return r.body to r.code
     }
 

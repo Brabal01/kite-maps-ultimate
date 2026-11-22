@@ -714,7 +714,8 @@ fun TrafficLine(ahead: WazeAhead, modifier: Modifier = Modifier) {
 @Composable
 fun WazeCard(ahead: WazeAhead) {
     val a = ahead.alert
-    val left = (ahead.meters / ahead.startMeters).coerceIn(0.0, 1.0).toFloat()
+    // A report first seen right on top of you has no distance to count down from: show the bar empty.
+    val left = if (ahead.startMeters > 0) (ahead.meters / ahead.startMeters).coerceIn(0.0, 1.0).toFloat() else 0f
     val detail = listOfNotNull(a.reportedText, if (a.thumbsUp > 0) "${a.thumbsUp} 👍" else null, a.street).joinToString(" · ")
     val fill = hex(MapIcons.wazeColor(a.kind))
     val shape = RoundedCornerShape(26.dp)
@@ -1055,7 +1056,7 @@ fun AlongRouteSheet(nav: Navigator, close: () -> Unit) {
 
 /** Road numbers in an instruction ("I-80", "US 50", "A9", "M4"), for shields in the banner. */
 object RoadRefs {
-    private val re = Regex("""\b(I|US|CA|SR|State Route|Route|Hwy|Highway|A|B|M|E|N|D|SS)[- ]?(\d{1,4}[A-Z]?)\b""")
+    private val re = Regex("""\b(I|US|CA|SR|State Route|Route|Hwy|Highway|A|B|M|E|N|D|SS)[- ]?(\d{1,4}[A-Z]?)(\(M\)|\b)""")
     fun find(text: String): List<String> {
         val out = mutableListOf<String>()
         for (m in re.findAll(text)) {
@@ -1064,6 +1065,8 @@ object RoadRefs {
                 "I" -> "I-$num"
                 "US" -> "US $num"
                 "CA", "SR", "State Route", "Route", "Hwy", "Highway" -> "SR $num"
+                // British motorway-standard A roads keep their "(M)": A3(M) gets the blue plate.
+                "A" -> net + num + m.groupValues[3]
                 else -> net + num
             }
             if (ref !in out) out += ref

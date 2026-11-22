@@ -70,7 +70,8 @@ class RoadCache(private val file: String? = defaultFile) {
             for (c in cameras) if (c.id != 0L) s.cameras[c.id] = c.copy(quiet = false)
             for (g in signals) if (g.id != 0L) s.signals[g.id] = g.at
             if (s.ways.size > maxWays) {
-                for (id in s.ways.keys.sorted().take(s.ways.size - maxWays / 2)) s.ways.remove(id)
+                // The map keeps the order roads were first remembered in: the oldest half goes.
+                for (id in s.ways.keys.take(s.ways.size - maxWays / 2)) s.ways.remove(id)
             }
             start = !saving && file != null
             if (start) saving = true

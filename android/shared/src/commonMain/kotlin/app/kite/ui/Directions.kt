@@ -442,7 +442,8 @@ fun TripBody(model: AppModel) {
             d.mode in d.loading -> Row(Modifier.padding(vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Text("Finding routes…", color = secondaryText)
             }
-            else -> Text(d.errors[d.mode] ?: "No route found.", color = secondaryText, modifier = Modifier.padding(vertical = 20.dp))
+            // No route: the card at the top already says so (with Try again), so nothing is repeated here.
+            else -> {}
         }
     }
 }
