@@ -255,15 +255,18 @@ fun ToggleRow(title: String, icon: ImageVector?, color: Long, on: Boolean, enabl
 @Composable
 fun <T> PickRow(title: String, icon: ImageVector?, color: Long, value: T, options: List<T>, label: (T) -> String, set: (T) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    Box {
-        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).tap { open = true }.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            SettingLabel(title, icon, color, Modifier.weight(1f))
-            Text(label(value), fontSize = KType.body, color = secondaryText)
-            Icon(Icons.Filled.UnfoldMore, null, tint = secondaryText, modifier = Modifier.size(18.dp))
-        }
-        DropdownMenu(open, { open = false }, Modifier.align(Alignment.CenterEnd)) {
-            options.forEach { o ->
-                DropdownMenuItem(text = { Text(label(o)) }, trailingIcon = { if (o == value) Icon(Icons.Filled.Check, null) }, onClick = { set(o); open = false })
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).tap { open = true }.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        SettingLabel(title, icon, color, Modifier.weight(1f))
+        // The menu hangs off the value on the right, where the finger is, not the far left.
+        Box {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(label(value), fontSize = KType.body, color = secondaryText)
+                Icon(Icons.Filled.UnfoldMore, null, tint = secondaryText, modifier = Modifier.size(18.dp))
+            }
+            DropdownMenu(open, { open = false }) {
+                options.forEach { o ->
+                    DropdownMenuItem(text = { Text(label(o)) }, trailingIcon = { if (o == value) Icon(Icons.Filled.Check, null) }, onClick = { set(o); open = false })
+                }
             }
         }
     }
