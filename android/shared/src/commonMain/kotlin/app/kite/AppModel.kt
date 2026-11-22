@@ -533,8 +533,8 @@ class AppModel {
     }
 
     fun setMode(m: TravelMode) {
+        // For this trip only: the default stays as set in Settings (Matteo, 2026-11-22).
         edit { it.copy(transit = false, mode = m, selected = 0) }
-        settings.defaultMode = m
         frameRoute()
     }
 
