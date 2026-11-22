@@ -195,7 +195,7 @@ class AppModel {
         results = emptyList()
         directions = DirectionsState(destination = t.destination, mode = TravelMode.entries.firstOrNull { it.raw == t.mode } ?: TravelMode.DRIVE,
             stops = t.stops)
-        detent = SheetDetent.HALF
+        detent = SheetDetent.PEEK
         autoStart = true
         loadAllModes()
     }
@@ -515,7 +515,8 @@ class AppModel {
         if (resumeOffer != null) dismissResume()
         autoStart = false
         directions = DirectionsState(destination = place, mode = settings.defaultMode)
-        detent = SheetDetent.HALF
+        // Map first (Matteo, 2026-11-22): the panel starts small, showing just the picked route and Go.
+        detent = SheetDetent.PEEK
         loadAllModes()
     }
 
@@ -534,6 +535,7 @@ class AppModel {
 
     fun setMode(m: TravelMode) {
         // For this trip only: the default stays as set in Settings (Matteo, 2026-11-22).
+        if (directions?.transit == true) detent = SheetDetent.PEEK
         edit { it.copy(transit = false, mode = m, selected = 0) }
         frameRoute()
     }
@@ -560,6 +562,8 @@ class AppModel {
 
     fun showTransit() {
         edit { it.copy(transit = true) }
+        // Trains and buses come as a list to pick from, so the panel opens up to show it.
+        detent = SheetDetent.HALF
         // "Leave now" times found a while ago may have left already: look again.
         if (directions?.transitTime == null && nowMillis() - transitLoadedAt > 120_000) loadTransit()
         frameRoute()
