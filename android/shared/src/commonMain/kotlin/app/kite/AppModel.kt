@@ -195,7 +195,7 @@ class AppModel {
         results = emptyList()
         directions = DirectionsState(destination = t.destination, mode = TravelMode.entries.firstOrNull { it.raw == t.mode } ?: TravelMode.DRIVE,
             stops = t.stops)
-        detent = SheetDetent.HALF
+        detent = SheetDetent.PEEK
         autoStart = true
         loadAllModes()
     }
@@ -520,7 +520,8 @@ class AppModel {
         if (resumeOffer != null) dismissResume()
         autoStart = false
         directions = DirectionsState(destination = place, mode = settings.defaultMode)
-        detent = SheetDetent.HALF
+        // Map first (Matteo, 2026-11-22): the panel starts small, showing just the picked route and Go.
+        detent = SheetDetent.PEEK
         loadAllModes()
     }
 
@@ -539,6 +540,7 @@ class AppModel {
 
     fun setMode(m: TravelMode) {
         // For this trip only: the default stays as set in Settings (Matteo, 2026-11-22).
+        if (directions?.transit == true) detent = SheetDetent.PEEK
         edit { it.copy(transit = false, mode = m, selected = 0) }
         frameRoute()
     }
@@ -565,6 +567,8 @@ class AppModel {
 
     fun showTransit() {
         edit { it.copy(transit = true) }
+        // Trains and buses come as a list to pick from, so the panel opens up to show it.
+        detent = SheetDetent.HALF
         // "Leave now" times found a while ago may have left already: look again.
         if (directions?.transitTime == null && nowMillis() - transitLoadedAt > 120_000) loadTransit()
         frameRoute()
@@ -752,8 +756,13 @@ class AppModel {
             mapTick++
             return
         }
-        val r = directions?.route ?: run { mapTick++; return }
-        frame(r.polyline, bottomFraction = 0.42f, top = 170 + (directions?.stops?.size ?: 0) * 42)
+        val d = directions ?: run { mapTick++; return }
+        val r = d.route ?: run { mapTick++; return }
+        // Every route in view (the grey ones too), so picking another one doesn't make the map jump.
+        val all = if (nav == null) d.current.flatMap { it.polyline } else r.polyline
+        // The slim one-row top bar when there are no stops and you start where you are; the full box otherwise.
+        val top = if (d.stops.isEmpty() && d.origin == null) 120 else 170 + d.stops.size * 42
+        frame(all.ifEmpty { r.polyline }, bottomFraction = 0.34f, top = top)
     }
 
     /** Police risk within about a kilometre of you, from remembered and live Waze police reports. */

@@ -310,10 +310,11 @@ class KiteMap(private val model: AppModel) {
         src("vela-route-alt"); src("vela-route", metrics = true); src("vela-route-traffic"); src("vela-route-done")
 
         val done = line("vela-route-done", "vela-route-done", c(0x64748B), 10f).withProperties(lineOpacity(0.5f))
-        val altEdge = line("vela-route-alt-edge", "vela-route-alt", c(0x115E59), 11f).withProperties(lineOpacity(0.6f))
-        val altFill = line("vela-route-alt", "vela-route-alt", c(0x5EEAD4), 7f).withProperties(lineOpacity(0.6f))
+        // Routes you could take instead: grey and thinner, so the picked teal one stands out (Matteo, 2026-11-22).
+        val altEdge = line("vela-route-alt-edge", "vela-route-alt", c(0x334155), 9f).withProperties(lineOpacity(0.9f))
+        val altFill = line("vela-route-alt", "vela-route-alt", c(0x8391A5), 6f)
         // The light look: one plain teal line, no darker edge and no chevrons along it.
-        val edge = line("vela-route-edge", "vela-route", c(0x0F766E), 15f).withProperties(lineOpacity(0f))
+        val edge = line("vela-route-edge", "vela-route", c(0x063F39), 15f).withProperties(lineOpacity(0f))
         val fill = line("vela-route-line", "vela-route", c(0x2DD4BF), 10f).withProperties(
             lineGradient(interpolate(linear(), lineProgress(), stop(0, color(c(0x2DD4BF))), stop(1, color(c(0x22D3EE))))))
         val chevrons = SymbolLayer("vela-route-chevrons", "vela-route").withProperties(
@@ -417,7 +418,7 @@ class KiteMap(private val model: AppModel) {
             val b = SymbolLayer("vela-route-bubble-${if (selected) 1 else 0}", "vela-route-bubbles").withProperties(
                 iconImage(if (selected) "bubble-sel" else "bubble-alt"), iconTextFit(Property.ICON_TEXT_FIT_BOTH),
                 iconTextFitPadding(arrayOf(6f, 12f, 6f, 12f)), textField(get("label")), textFont(arrayOf("Noto Sans Bold")),
-                textSize(15f), textColor(if (selected) Color.WHITE else c(0x202124)), iconAllowOverlap(true), textAllowOverlap(true))
+                textSize(if (selected) 16f else 14f), textColor(if (selected) c(0x04201C) else c(0xE2E8F0)), iconAllowOverlap(true), textAllowOverlap(true))
             b.setFilter(eq(get("sel"), literal(if (selected) 1 else 0)))
             style.addLayer(b)
         }
@@ -859,6 +860,8 @@ class KiteMap(private val model: AppModel) {
             (n?.nextManeuver?.alongMeters ?: "") + (main?.trafficSpans?.size ?: 0)
         if (key == lastRouteKey) return
         lastRouteKey = key
+        // While choosing, the picked route gets a dark edge so it sits clearly on top; driving keeps the plain line.
+        style.getLayer("vela-route-edge")?.setProperties(lineOpacity(if (n == null && alts.isNotEmpty()) 1f else 0f))
         setShape(style, "vela-route-alt", alts.map { polyline(it.polyline) })
         setShape(style, "vela-transit", trip?.legs?.filter { it.path.size >= 2 }?.map { leg ->
             polyline(leg.path, mapOf("walk" to if (leg.isWalk) 1 else 0, "color" to hex(leg.color ?: 0x1F6FEB)))

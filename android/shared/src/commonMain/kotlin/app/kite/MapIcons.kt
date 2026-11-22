@@ -112,8 +112,9 @@ object MapIcons {
         style.addImage("puck", puck(dark))
         style.addImage("me-dot", meDot())
         style.addImage("me-heading", meHeading())
-        style.addImage("bubble-sel", bubble(c(0x0F766E), Color.WHITE))
-        style.addImage("bubble-alt", bubble(Color.WHITE, c(0xBDC1C6)))
+        // The picked route's time in bright teal; the others dark grey (Matteo, 2026-11-22).
+        style.addImage("bubble-sel", bubble(c(0x2DD4BF), c(0x063F39)))
+        style.addImage("bubble-alt", bubble(c(0x1B2433), c(0x475569)))
         style.addImage("road-pill", bubble(c(0x2DD4BF), c(0x0F766E)))
         style.addImage("cam-speed", speedCamera())
         style.addImage("cam-plate", plateCamera())
