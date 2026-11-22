@@ -60,6 +60,8 @@ object MapIcons {
 
     fun iconName(p: Place): String {
         val cat = (p.category ?: "").lowercase()
+        // Stations first: a railway station's list of types can include a café or restaurant inside it.
+        if (listOf("train", "railway", "rail station", "bus station", "bus_station", "subway", "transit", "airport").any { cat.contains(it) }) return "cat-transit"
         return kinds.firstOrNull { k -> k.words.any { cat.contains(it) } }?.name ?: "cat-default"
     }
 

@@ -153,7 +153,7 @@ private fun PlaceActions(model: AppModel, place: Place, driveSeconds: Double?) {
                 place.address?.let { a -> item("Copy address", Icons.Filled.ContentPaste) { ctx.copy("${place.name}, $a") }() }
                 HorizontalDivider()
                 Text("Open in", fontSize = KType.caption, color = secondaryText, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-                for (app in OtherApp.entries) item(app.label, Icons.Filled.Map) { ctx.open(app.url(place)) }()
+                for (app in OtherApp.entries.filter { isIos || it != OtherApp.APPLE }) item(app.label, Icons.Filled.Map) { ctx.open(app.url(place)) }()
             }
         }
     }
