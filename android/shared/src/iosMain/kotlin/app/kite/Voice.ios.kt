@@ -79,6 +79,13 @@ actual object Speech {
     actual fun chime() {
         session(true)
         AudioServicesPlaySystemSound(1057u)
+        // A chime with no words after it (a repeat camera, or voice set to alerts only) must still give the
+        // music back: once the chime is over, end the ducking unless Kite has started speaking meanwhile.
+        NSOperationQueue.mainQueue.addOperationWithBlock {
+            NSTimer.scheduledTimerWithTimeInterval(1.5, repeats = false) { _ ->
+                if (speaking == 0 && !synth.speaking) session(false)
+            }
+        }
     }
 
     actual fun buzz() {

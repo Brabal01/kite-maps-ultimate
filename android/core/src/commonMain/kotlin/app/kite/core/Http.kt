@@ -51,6 +51,10 @@ object Http {
 
     /** Bytes sent and received since launch (for Settings' data use line). */
     @Volatile var bytes: Long = 0
+        private set
+    private val bytesLock = KLock()
+    /** Requests run at the same time, so the count is added to under a lock (a plain += can lose some). */
+    private fun count(n: Int) = bytesLock.locked { bytes += n }
 
     private val skip = setOf("content-type", "content-length")
 
@@ -61,7 +65,7 @@ object Http {
             if (post != null) setBody(ByteArrayContent(post.first, ContentType.parse(post.second)))
         }
         val body = r.bodyAsBytes()
-        bytes += body.size
+        count(body.size)
         return HttpResp(r.status.value, body, RespHeaders(r.headers.entries().associate { it.key to it.value }))
     }
 
@@ -72,7 +76,7 @@ object Http {
         url: String, body: ByteArray, contentType: String,
         headers: Map<String, String> = emptyMap(), client: HttpClient = plain,
     ): HttpResp {
-        bytes += body.size
+        count(body.size)
         return run(client, url, headers, body to contentType)
     }
 
