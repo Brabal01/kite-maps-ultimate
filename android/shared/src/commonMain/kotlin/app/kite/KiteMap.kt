@@ -1046,9 +1046,15 @@ class KiteMap(private val model: AppModel) {
         m.at(box, "vela-mine").firstOrNull()?.let { f ->
             str(f, "id")?.let { model.myPlace(it) }?.let { model.select(it); return true }
         }
-        m.at(box, "vela-results").firstOrNull()?.let { f ->
-            val id = str(f, "id")
-            model.results.firstOrNull { it.id == id }?.let { model.select(it); return true }
+        // The search pin nearest the finger, not just any in reach. Then, before the map's own place
+        // names get a look-in, any result pin drawn within reach (one the map hid to avoid a pile-up
+        // can still be under the finger), so a tap never opens a different shop of the same name.
+        m.at(box, "vela-results").mapNotNull { f -> model.results.firstOrNull { it.id == str(f, "id") } }
+            .minByOrNull { it.location.distanceTo(at) }?.let { model.select(it); return true }
+        val tapPt = m.toScreenLocation(at)
+        if (tapPt != null && model.results.isNotEmpty() && model.directions == null) {
+            model.visibleResults.mapNotNull { r -> m.toScreenLocation(r.location)?.let { r to hypot(it.x - tapPt.x, it.y - tapPt.y) } }
+                .filter { it.second < 26f }.minByOrNull { it.second }?.let { model.select(it.first); return true }
         }
         m.at(box, "poi_r1", "poi_r7", "poi_r20", "poi_transit", "airport").firstOrNull()?.let { poi ->
             val name = str(poi, "name:en") ?: str(poi, "name")

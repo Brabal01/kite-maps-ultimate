@@ -564,6 +564,8 @@ object Directions {
             mode == TravelMode.WALK && km > 500 -> "Too far to walk."
             mode == TravelMode.BIKE && km > 1000 -> "Too far to cycle."
             km > 6000 -> "Too far to drive."
+            // Thousands of km with no road found at all: almost always an ocean in between (London to New York).
+            km > 3000 -> "No road goes all the way there. The sea may be in the way."
             // Only when the open router got close (within 50 km at both ends): far off means it simply has
             // no map there (it only knows Europe), not that the sea is in the way.
             open?.any { it.polyline.size > 1 && it.polyline.first().distanceTo(a) < 50_000 && it.polyline.last().distanceTo(b) < 50_000 } == true ->

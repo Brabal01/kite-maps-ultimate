@@ -245,7 +245,7 @@ object Fmt {
      */
     fun clock(text: String): String {
         if (!LocalFormat.is24Hour) return text
-        return Regex("""\b(\d{1,2})(?::(\d{2}))?[\s\u202F\u00A0]?([AaPp])\.?[Mm]\.?(?![A-Za-z])""").replace(text) { m ->
+        return Regex("""\b(\d{1,2})(?::(\d{2}))?[\s\u202F\u00A0]?([AaPp])(?:\.[Mm]\.|[Mm])(?![A-Za-z])""").replace(text) { m ->
             val h = m.groupValues[1].toInt()
             if (h !in 1..12) return@replace m.value
             val pm = m.groupValues[3].lowercase() == "p"

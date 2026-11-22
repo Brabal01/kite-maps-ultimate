@@ -320,7 +320,9 @@ fun TripHeader(model: AppModel) {
                     else -> Column(Modifier.heightIn(min = 52.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(d.errors[d.mode] ?: "No route found.", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Vela.muted(dark))
                         if (model.location.denied) PillButton("Open Settings", Icons.Filled.MyLocation, filled = true) { LocationService.openSettings() }
-                        else if (d.errors[d.mode] != null) PillButton("Try again", Icons.Filled.Refresh) { model.reloadRoutes() }
+                        // Not when it says why (too far, sea in the way): trying again wouldn't change that.
+                        else if (d.errors[d.mode]?.let { it == "No route found." || it.startsWith("Couldn't") || it.startsWith("No internet") } == true)
+                            PillButton("Try again", Icons.Filled.Refresh) { model.reloadRoutes() }
                     }
                 }
             }
@@ -463,7 +465,7 @@ fun RouteCharges(route: Route) {
             Icon(if (c.zone) Icons.Filled.Eco else Icons.Filled.CurrencyPound, null,
                 tint = if (c.zone) Color(0xFF15803D) else Color(0xFFE37400), modifier = Modifier.size(28.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(if (c.zone) "Clean air zone on this route: ${c.name}" else "Charge on this route: ${c.name}" + (c.price?.let { " · $it a car" } ?: ""),
+                Text(if (c.zone) "Clean air zone on this route: ${c.name}" else "Charge on this route: ${c.name}" + (c.price?.let { "\u00A0· $it a car" } ?: ""),
                     fontSize = 17.sp, fontWeight = FontWeight.Bold, color = primaryText)
                 Text(Fmt.clock(c.note), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Vela.muted(dark), lineHeight = 19.sp)
             }
@@ -704,7 +706,7 @@ fun ArrivalRows(model: AppModel, state: DirectionsState) {
     LaunchedEffect(place.id) {
         val found = async(Dispatchers.IO) { ArrivalHelp.parking(place.location) }
         if (ArrivalHelp.isBigPlace(place.category)) door = withContext(Dispatchers.IO) { ArrivalHelp.mainEntrance(place.location) }
-        parks = found.await() ?: emptyList()
+        parks = (found.await() ?: emptyList()).sortedBy { it.meters }
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val note = state.endNote

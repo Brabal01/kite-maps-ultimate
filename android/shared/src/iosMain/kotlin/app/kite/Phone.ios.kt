@@ -95,7 +95,7 @@ actual object LocalFormat {
         NSNumberFormatter.localizedStringFromNumber(NSNumber(int = n), NSNumberFormatterDecimalStyle)
     actual val amPm: List<String> get() = listOf(timeOnly.AMSymbol, timeOnly.PMSymbol)
     actual val is24Hour: Boolean
-        get() = NSDateFormatter.dateFormatFromTemplate("j", 0u, NSLocale.currentLocale)?.contains("a") != true
+        get() = NSDateFormatter.dateFormatFromTemplate("j", 0u, NSLocale.autoupdatingCurrentLocale)?.contains("a") != true
 }
 
 /**

@@ -375,9 +375,10 @@ fun InstructionBanner(nav: Navigator) {
                     Text("onto $it", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Vela.muted(dark), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            // No lanes to show: "Then" tucks into the corner instead of taking a row of its own.
-            if (lanes == null) Box(Modifier.align(Alignment.Bottom)) { ThenView(nav) }
         }
+        // No lanes to show: "Then" gets a row of its own under the turn, so the distance and road
+        // keep the full width.
+        if (lanes == null && nav.thenManeuver != null) Row(Modifier.padding(start = 4.dp)) { ThenView(nav) }
         if (lanes != null && m != null) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 LaneStrip(lanes.first, m.type, m.roundabout?.let { it.exits.getOrNull(it.taken) })
@@ -486,6 +487,7 @@ fun fasterFacts(o: FasterOffer): List<Pair<String, Boolean>> {
 }
 
 /** A faster route found on the way, in place of the trip bar: keep yours or take it. Left alone, it's taken. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FasterRouteCard(offer: FasterOffer, onKeep: () -> Unit, onTake: () -> Unit) {
     val dark = LocalDark.current
@@ -503,13 +505,14 @@ fun FasterRouteCard(offer: FasterOffer, onKeep: () -> Unit, onTake: () -> Unit) 
             // A countdown, so it's clear how long there is to keep yours.
             var secs by remember(offer) { mutableStateOf(max(0L, (offer.untilMillis - nowMillis() + 999) / 1000)) }
             LaunchedEffect(offer) { while (secs > 0) { delay(1000); secs = max(0L, (offer.untilMillis - nowMillis() + 999) / 1000) } }
-            Text((offer.via?.let { "via $it · " } ?: "") + "switching in $secs s", fontSize = 16.sp, fontWeight = FontWeight.Medium,
+            Text((offer.via?.let { "via $it · " } ?: "") + (if (secs > 0) "switching in $secs s" else "switching now"), fontSize = 16.sp, fontWeight = FontWeight.Medium,
                 color = Vela.muted(dark), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         // What else changes: only shown when something does, so a plain faster way looks as before.
         val facts = fasterFacts(offer)
         if (facts.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Wraps to a second line rather than cutting a price off on a narrow phone.
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 facts.forEach { (text, warn) ->
                     Row(Modifier.height(32.dp).clip(CircleShape).background(if (warn) Vela.warnFill(dark) else Vela.chip(dark)).padding(horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -878,7 +881,8 @@ fun AlsoAheadPill(nav: Navigator, alerts: List<NavAlert>, onTap: () -> Unit) {
         // Two at most, with "+1 more" for any more. On a small phone the words "Also ahead" go first,
         // then the second warning, so the pill never runs off the screen.
         val width = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.width.toDp().value.toInt() }
-        val shown = if (width < 360) 1 else 2
+        // With more waiting than fit, one warning plus "+N more", so the words never get clipped.
+        val shown = if (width < 360 || (alerts.size > 2 && width < 440) || (alerts.size == 2 && width < 400)) 1 else 2
         if (width >= 400) Text("Also ahead", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = secondaryText)
         for (a in alerts.take(shown)) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val label = when (a) {
