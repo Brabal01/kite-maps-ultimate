@@ -60,6 +60,7 @@ class KiteMap(private val model: AppModel) {
     private var roadQuery: Job? = null
     private var lastResultsKey = ""
     private var lastRouteKey = ""
+    private var trafficDimmed: Boolean? = null
     private var lastMineKey = ""
     private var lastPuckKey = ""
     private var lastHeadKey = ""
@@ -164,7 +165,7 @@ class KiteMap(private val model: AppModel) {
         m.style = st
         styleReady = true
         styledDriving = null
-        lastResultsKey = ""; lastRouteKey = ""; lastMineKey = ""; lastPuckKey = ""; lastHeadKey = ""; lastNextRoadKey = ""; lastCameraKey = ""; lastSignalsKey = ""; lastWazeKey = ""; lastLiveKey = ""; lastMeKey = ""
+        trafficDimmed = null; lastResultsKey = ""; lastRouteKey = ""; lastMineKey = ""; lastPuckKey = ""; lastHeadKey = ""; lastNextRoadKey = ""; lastCameraKey = ""; lastSignalsKey = ""; lastWazeKey = ""; lastLiveKey = ""; lastMeKey = ""
         LocationService.last?.let { pushFix(it) }
         render()
         loadCameras(m); loadWazeCameras(m); loadWaze(m); loadLiveCams(m)
@@ -525,6 +526,12 @@ class KiteMap(private val model: AppModel) {
         LocationService.last?.let { pushFix(it) } ?: run { if (lastMeKey != "") { lastMeKey = ""; setShape(style, "vela-me", emptyList()) } }
         // Not before the welcome screen's choice: "Open data only" means nothing ever went to Google.
         visible(style, "vela-traffic", s.traffic && !navigating && !s.noGoogle && s.welcomed)
+        // Choosing a route: the green traffic on every road is faded, so it isn't mistaken for a route.
+        val choosing = model.directions != null
+        if (choosing != trafficDimmed) {
+            trafficDimmed = choosing
+            style.getLayer("vela-traffic")?.setProperties(rasterOpacity(if (choosing) 0.25f else 0.6f))
+        }
         // The Surveillance layer just switched on: fetch it now, not at the next pan (only on the
         // switch, so a failed fetch keeps its 30-second pause).
         if (s.surveillanceCameras && !surveillanceWasOn) loadSurveillance(m)
@@ -925,7 +932,9 @@ class KiteMap(private val model: AppModel) {
             val cc = Geo.cumulative(route.polyline)
             val len = cc.last()
             var spot = Geo.point(route.polyline, len * 0.5, cc)
-            for (f in listOf(0.5, 0.6, 0.7, 0.8, 0.9)) {
+            // Routes often share most of their roads: look along the whole route (middle first) for a spot only
+            // this one passes, so each time bubble sits on its own line and none hides under another.
+            for (f in listOf(0.5, 0.6, 0.4, 0.7, 0.3, 0.8, 0.2, 0.9, 0.15, 0.85, 0.1)) {
                 val pt = Geo.point(route.polyline, len * f, cc)
                 if (others.none { o -> o.any { it.distanceTo(pt) < 120 } }) { spot = pt; break }
             }
