@@ -205,7 +205,7 @@ fun KiteMapView(model: AppModel, kiteMap: KiteMap, modifier: Modifier) {
     }
     MaplibreMap(modifier, state, interactions = interactions, overlay = {
         Box(Modifier.fillMaxSize().navigationBarsPadding()) {
-            MapCredits(Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 8.dp))
+            MapCredits(Modifier.align(Alignment.BottomStart).padding(start = 8.dp), dock = model.nav == null && model.tab == AppTab.MAP)
         }
     })
 }
@@ -215,7 +215,7 @@ fun KiteMapView(model: AppModel, kiteMap: KiteMap, modifier: Modifier) {
  * did, so the credits never sit over the tabs at the bottom; a tap opens them, moving the map folds them.
  */
 @Composable
-private fun MapCredits(modifier: Modifier) {
+private fun MapCredits(modifier: Modifier, dock: Boolean) {
     val map = LocalMapState.current ?: return
     var open by remember { mutableStateOf(false) }
     LaunchedEffect(map) {
@@ -223,7 +223,8 @@ private fun MapCredits(modifier: Modifier) {
     }
     val credits by remember(map.style) { derivedStateOf { map.style.attributions() } }
     if (credits.isEmpty()) return
-    Row(modifier.background(if (open) AttributionDefaults.ContainerColor else Color.Transparent, RoundedCornerShape(24.dp))
+    // Opened on the map tab, the credits lift above the tab bar so they can be read.
+    Row(modifier.padding(bottom = if (open && dock) 80.dp else 8.dp).background(if (open) AttributionDefaults.ContainerColor else Color.Transparent, RoundedCornerShape(24.dp))
         .pointerInput(Unit) {}, verticalAlignment = Alignment.CenterVertically) {
         AttributionDefaults.button { open = !open }
         if (open) AttributionLinks(credits, Modifier.padding(end = 16.dp, top = 8.dp, bottom = 8.dp))

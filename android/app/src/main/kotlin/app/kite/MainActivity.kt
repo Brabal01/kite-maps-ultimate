@@ -27,7 +27,19 @@ class MainActivity : ComponentActivity() {
         GpsHardware.asker = { list -> permissions.launch(list) }
         Dictation.launcher = { i -> speech.launch(i) }
         handle(intent)
-        setContent { KiteTheme { KiteScreen() } }
+        setContent {
+            KiteTheme {
+                // The clock and icons at the top follow Kite's own theme, not the phone's, so they stay readable.
+                val dark = LocalDark.current
+                androidx.compose.runtime.SideEffect {
+                    androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = !dark
+                        isAppearanceLightNavigationBars = !dark
+                    }
+                }
+                KiteScreen()
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

@@ -1006,6 +1006,8 @@ class KiteMap(private val model: AppModel) {
             val hits = m.at(box, "vela-route-bubble-0", "vela-route-alt", "vela-route-alt-edge")
             hits.firstOrNull { it.has("idx") }?.let { f -> f.number("idx")?.let { model.selectRoute(it.toInt()); return true } }
             val d = model.directions ?: return true
+            // A tap right on your own route offers to avoid that road, even with another route close by.
+            if (m.at(box, "vela-route-line").isNotEmpty() && hits.none { it.has("idx") }) { model.askAvoid(at); return true }
             if (hits.isNotEmpty()) {
                 val tappedAt = at
                 val i = d.current.indexOfFirst { r -> r.id != d.route?.id && r.polyline.any { it.distanceTo(tappedAt) < 300 } }

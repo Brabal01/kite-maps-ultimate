@@ -295,6 +295,10 @@ class AppModel {
             if (places.isEmpty() && queries.isEmpty()) places = runCatching { Photon.search(q, vp.first, 8) }.getOrDefault(emptyList())
             ensureActive()
             places = PlaceSearch.nearFirst(places, vp.first)
+            // The same place listed more than once (a station and its stops, say): keep the first.
+            places = places.fold(mutableListOf<Place>()) { out, p ->
+                if (out.none { it.name.equals(p.name, ignoreCase = true) && it.location.distanceTo(p.location) < 500 }) out.add(p); out
+            }
             if (user != null) places = places.map { it.copy(distanceMeters = user.distanceTo(it.location)) }
             val was = suggestions
             suggestions = SuggestParser.Result(
@@ -494,6 +498,7 @@ class AppModel {
 
     fun clearParking() {
         if (selected?.id == settings.parking?.id) selected = null
+        if (notice?.startsWith("Parking spot saved") == true) notice = null
         settings.parking = null
     }
 

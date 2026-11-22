@@ -46,6 +46,8 @@ actual object GpsHardware {
         this.onChange = onChange
         val s = manager.authorizationStatus
         val ok = s == kCLAuthorizationStatusAuthorizedWhenInUse || s == kCLAuthorizationStatusAuthorizedAlways
+        // Refused: Kite shows its "Location is off · Turn on" card, as on Android.
+        if (s == kCLAuthorizationStatusDenied || s == kCLAuthorizationStatusRestricted) LocationService.denied = true
         val reduced = ok && manager.accuracyAuthorization == CLAccuracyAuthorization.CLAccuracyAuthorizationReducedAccuracy
         return LocationAccess(ok, reduced, !CLLocationManager.locationServicesEnabled())
     }

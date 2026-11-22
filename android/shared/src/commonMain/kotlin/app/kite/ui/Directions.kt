@@ -780,6 +780,7 @@ fun StopPicker(model: AppModel, origin: Boolean = false) {
     var found by remember { mutableStateOf<List<Place>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     fun close() { if (origin) model.pickingOrigin = false else model.addingStop = false }
     fun run() {
         val q = query.trim()
@@ -791,11 +792,19 @@ fun StopPicker(model: AppModel, origin: Boolean = false) {
         val b = model.directions?.destination?.location ?: a
         val mid = LatLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2)
         val span = max(a.distanceTo(b) * 1.2, 5_000.0)
-        scope.launch {
+        job?.cancel()
+        job = scope.launch {
             val r = withContext(Dispatchers.IO) { PlaceSearch.search(q, mid, span, !s.noGoogle) }
+            if (query.trim() != q) return@launch
             found = r.places.take(30)
             searching = false
         }
+    }
+    // Results come while typing, like the main search box (a short pause first, so not every letter searches).
+    LaunchedEffect(query) {
+        if (query.trim().length < 3) { job?.cancel(); found = emptyList(); searching = false; return@LaunchedEffect }
+        kotlinx.coroutines.delay(450)
+        run()
     }
     PickerPage(if (origin) "Start from" else "Add stop", ::close) {
         PickerSearchField(query, { query = it }, if (origin) "Search for a place to start from" else "Search for a stop", ::run)

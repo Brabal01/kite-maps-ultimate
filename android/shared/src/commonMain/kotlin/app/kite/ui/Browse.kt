@@ -53,10 +53,12 @@ fun BrowseOverlay(model: AppModel) {
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val full = maxHeight
+        val statusTop = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
         val sheetH = if (!hasSheet) 0.dp else when (model.detent) {
             SheetDetent.PEEK -> 230.dp
             SheetDetent.HALF -> full * 0.46f
-            SheetDetent.FULL -> full * 0.94f
+            // Full height stops under the search bar, so the bar never covers the place's name.
+            SheetDetent.FULL -> minOf(full * 0.94f, full - statusTop - 72.dp)
         }
         val navBottom = with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }
 
@@ -79,7 +81,7 @@ fun BrowseOverlay(model: AppModel) {
             }
             Spacer(Modifier.weight(1f))
             if (sheetH < full * 0.6f) {
-                Row(Modifier.fillMaxWidth().padding(bottom = if (hasSheet) (sheetH - navBottom).coerceAtLeast(0.dp) + 14.dp else 86.dp),
+                Row(Modifier.fillMaxWidth().padding(bottom = if (hasSheet) (sheetH - navBottom).coerceAtLeast(0.dp) + 14.dp else navBottom + 80.dp),
                     verticalAlignment = Alignment.Bottom) {
                     if (idle) WazeMapChips(model)
                     Spacer(Modifier.weight(1f))
@@ -110,6 +112,13 @@ fun BrowseOverlay(model: AppModel) {
             if (focused) SuggestionsPanel(model) { focus.clearFocus(); focused = false }
             val n = model.notice
             if (n != null && !focused) NoticeBanner(n) { model.notice = null }
+            // Messages don't stay forever: a "saved" note goes after a few seconds, others a bit
+            // later, and "No internet" as soon as the phone is back online.
+            if (n != null) LaunchedEffect(n, Connectivity.online) {
+                if (n.startsWith("No internet") && Connectivity.online) { model.notice = null; return@LaunchedEffect }
+                kotlinx.coroutines.delay(if (n.startsWith("Saved") || n.startsWith("Parking spot saved")) 5_000 else 10_000)
+                if (model.notice == n && !n.startsWith("No internet")) model.notice = null
+            }
             if (!focused) StatusCards()
             // Kite closed in the middle of a drive: one big button to carry on.
             val trip = model.resumeOffer

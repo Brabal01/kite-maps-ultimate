@@ -621,7 +621,7 @@ fun LayersSheet(liveCount: Int? = null, close: () -> Unit) {
                 }
             }
             tiles.chunked(3).forEach { row ->
-                Row(Modifier.fillMaxWidth()) { row.forEach { t -> Box(Modifier.weight(1f)) { t() } }; repeat(3 - row.size) { Spacer(Modifier.weight(1f)) } }
+                Row(Modifier.fillMaxWidth()) { row.forEach { t -> Box(Modifier.weight(1f), contentAlignment = Alignment.TopCenter) { t() } }; repeat(3 - row.size) { Spacer(Modifier.weight(1f)) } }
             }
             // How many live Waze reports are on the map now (it used to be a label on the map itself).
             if (liveCount != null && s.wazeOn && (s.wazeOnMap || s.wazeHeatmap)) {
@@ -639,7 +639,8 @@ fun LayersSheet(liveCount: Int? = null, close: () -> Unit) {
 @Composable
 private fun LayerTile(title: String, on: Boolean, icon: @Composable () -> Unit, onClick: () -> Unit) {
     val dark = LocalDark.current
-    Column(Modifier.clip(RoundedCornerShape(14.dp)).tap(onClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // The whole cell wide, so a two-word name has room and every tile lines up with the ones above.
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).tap(onClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.size(74.dp, 64.dp).clip(RoundedCornerShape(14.dp)).background(Vela.chip(dark))
             .border(3.dp, if (on) Vela.accent(dark) else Color.Transparent, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) { icon() }
         Text(title, fontSize = KType.caption, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, color = if (on) Vela.accent(dark) else primaryText,
