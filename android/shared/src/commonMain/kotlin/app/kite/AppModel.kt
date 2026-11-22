@@ -747,8 +747,13 @@ class AppModel {
             mapTick++
             return
         }
-        val r = directions?.route ?: run { mapTick++; return }
-        frame(r.polyline, bottomFraction = 0.42f, top = 170 + (directions?.stops?.size ?: 0) * 42)
+        val d = directions ?: run { mapTick++; return }
+        val r = d.route ?: run { mapTick++; return }
+        // Every route in view (the grey ones too), so picking another one doesn't make the map jump.
+        val all = if (nav == null) d.current.flatMap { it.polyline } else r.polyline
+        // The slim one-row top bar when there are no stops and you start where you are; the full box otherwise.
+        val top = if (d.stops.isEmpty() && d.origin == null) 120 else 170 + d.stops.size * 42
+        frame(all.ifEmpty { r.polyline }, bottomFraction = 0.34f, top = top)
     }
 
     /** Police risk within about a kilometre of you, from remembered and live Waze police reports. */
