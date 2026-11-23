@@ -1,0 +1,51 @@
+2026-11-23 09:33:42.024 Kite[73256:188392] [Info] maplibre-compose: Created the MapLibre runtime on maplibre-compose-runtime
+2026-11-23 09:33:42.031 Kite[73256:188392] [Debug] maplibre-compose: Ambient cache size set to 52428800 bytes
+2026-11-23 09:33:42.620 Kite[73256:188394] [Info] maplibre-compose: Rendered the first map frame with Metal on maplibre-compose-render, extent MapExtent(logical=402x874, physical=1206x2622, scale=3.0)
+2026-11-23 09:33:46.074 Kite[73256:188494] [Warning] maplibre-compose: [General] Invalid geometry in line layer
+2026-11-23 09:33:54.373 Kite[73256:188593] [Warning] maplibre-compose: Failed to answer the resource request for kiteheat://9/82/196
+org.maplibre.nativeffi.error.InvalidStateException: INVALID_STATE (-2): resource request is cancelled
+    at 0   KiteShared                          0x108a792df        kfun:kotlin.Throwable#<init>(kotlin.String?){} + 99 
+    at 1   KiteShared                          0x108a7b937        kfun:kotlin.Exception#<init>(kotlin.String?){} + 95 
+    at 2   KiteShared                          0x108a7baf7        kfun:kotlin.RuntimeException#<init>(kotlin.String?){} + 95 
+    at 3   KiteShared                          0x10886697f        kfun:org.maplibre.nativeffi.error.MaplibreException#<init>(org.maplibre.nativeffi.error.MaplibreStatus;kotlin.Int;kotlin.String){} + 199 
+    at 4   KiteShared                          0x108866897        kfun:org.maplibre.nativeffi.error.InvalidStateException#<init>(kotlin.Int;kotlin.String){} + 187 
+    at 5   KiteShared                          0x108866c47        kfun:org.maplibre.nativeffi.error.MaplibreException.Companion#forStatus(org.maplibre.nativeffi.error.MaplibreStatus;kotlin.Int;kotlin.String){}org.maplibre.nativeffi.error.MaplibreException + 519 
+    at 6   KiteShared                          0x108875823        kfun:org.maplibre.nativeffi.internal.status.Status#exception(kotlin.Int){}org.maplibre.nativeffi.error.MaplibreException + 231 
+    at 7   KiteShared                          0x1089158d7        kfun:org.maplibre.nativeffi.resource.ResourceRequestHandle#complete(org.maplibre.nativeffi.resource.ResourceResponse){} + 1051 
+    at 8   KiteShared                          0x10a853a93        kfun:org.maplibre.compose.resource.FfiResourceRequest.complete#internal + 155 
+    at 9   KiteShared                          0x10a89bb2b        kfun:org.maplibre.compose.resource.TakenResourceRequest#complete(org.maplibre.nativeffi.resource.ResourceResponse){} + 91 
+    at 10  KiteShared                          0x10a84fee3        kfun:org.maplibre.compose.resource.MlnFfiResourceProvider.$serveUserCOROUTINE$2.invokeSuspend#internal + 3591 
+    at 11  KiteShared                          0x108a5d937        kfun:kotlin.coroutines.native.internal.BaseContinuationImpl#invokeSuspend(kotlin.Result<kotlin.Any?>){}kotlin.Any? + 67 
+    at 12  KiteShared                          0x108a5c5d7        kfun:kotlin.coroutines.native.internal.BaseContinuationImpl#resumeWith(kotlin.Result<kotlin.Any?>){} + 675 
+    at 13  KiteShared                          0x108a5dfcb        kfun:kotlin.coroutines.Continuation#resumeWith(kotlin.Result<1:0>){} + 91 
+    at 14  KiteShared                          0x108c59d3f        kfun:kotlinx.coroutines.internal.ScopeCoroutine#afterResume(kotlin.Any?){}-impl + 287 
+    at 15  KiteShared                          0x108c7e99b        kfun:kotlinx.coroutines.AbstractCoroutine#afterResume(kotlin.Any?){} + 59 
+    at 16  KiteShared                          0x108bd986f        kfun:kotlinx.coroutines.AbstractCoroutine#resumeWith(kotlin.Result<1:0>){} + 267 
+    at 17  KiteShared                          0x108a5dfcb        kfun:kotlin.coroutines.Continuation#resumeWith(kotlin.Result<1:0>){} + 91 
+    at 18  KiteShared                          0x108a5c813        kfun:kotlin.coroutines.native.internal.BaseContinuationImpl#resumeWith(kotlin.Result<kotlin.Any?>){} + 1247 
+    at 19  KiteShared                          0x108a5dfcb        kfun:kotlin.coroutines.Continuation#resumeWith(kotlin.Result<1:0>){} + 91 
+    at 20  KiteShared                          0x108c521ab        kfun:kotlinx.coroutines.DispatchedTask#run(){} + 2035 
+    at 21  KiteShared                          0x108c81d5f        kfun:kotlinx.coroutines.Runnable#run(){} + 83 
+    at 22  KiteShared                          0x108c5559b        kfun:kotlinx.coroutines.internal.LimitedDispatcher.Worker.run#internal + 331 
+    at 23  KiteShared                          0x108c81d5f        kfun:kotlinx.coroutines.Runnable#run(){} + 83 
+    at 24  KiteShared                          0x108c79103        kfun:kotlinx.coroutines.MultiWorkerDispatcher.MultiWorkerDispatcher$workerRunLoop$1.$invokeCOROUTINE$0.invokeSuspend#internal + 2087 
+    at 25  KiteShared                          0x108a5d937        kfun:kotlin.coroutines.native.internal.BaseContinuationImpl#invokeSuspend(kotlin.Result<kotlin.Any?>){}kotlin.Any? + 67 
+    at 26  KiteShared                          0x108a5c5d7        kfun:kotlin.coroutines.native.internal.BaseContinuationImpl#resumeWith(kotlin.Result<kotlin.Any?>){} + 675 
+    at 27  KiteShared                          0x108a5dfcb        kfun:kotlin.coroutines.Continuation#resumeWith(kotlin.Result<1:0>){} + 91 
+    at 28  KiteShared                          0x108c521ab        kfun:kotlinx.coroutines.DispatchedTask#run(){} + 2035 
+    at 29  KiteShared                          0x108c81d5f        kfun:kotlinx.coroutines.Runnable#run(){} + 83 
+    at 30  KiteShared                          0x108bee853        kfun:kotlinx.coroutines.EventLoopImplBase#processNextEvent(){}kotlin.Long-impl + 247 
+    at 31  KiteShared                          0x108c81b97        kfun:kotlinx.coroutines.EventLoop#processNextEvent(){}kotlin.Long + 51 
+    at 32  KiteShared                          0x108c72497        kfun:kotlinx.coroutines.BlockingCoroutine.joinBlocking#internal + 463 
+    at 33  KiteShared                          0x108c7188f        kfun:kotlinx.coroutines#runBlockingImpl(kotlin.coroutines.CoroutineContext;kotlinx.coroutines.EventLoop?;kotlin.coroutines.SuspendFunction1<kotlinx.coroutines.CoroutineScope,0:0>){0¬ß<kotlin.Any?>}0:0 + 467 
+    at 34  KiteShared                          0x108c6e027        kfun:kotlinx.coroutines#runBlocking(kotlin.coroutines.CoroutineContext;kotlin.coroutines.SuspendFunction1<kotlinx.coroutines.CoroutineScope,0:0>){0¬ß<kotlin.Any?>}0:0 + 563 
+    at 35  KiteShared                          0x108c6e147        kfun:kotlinx.coroutines#runBlocking$default(kotlin.coroutines.CoroutineContext?;kotlin.coroutines.SuspendFunction1<kotlinx.coroutines.CoroutineScope,0:0>;kotlin.Int){0¬ß<kotlin.Any?>}0:0 + 227 
+    at 36  KiteShared                          0x108c76f2f        kfun:kotlinx.coroutines.MultiWorkerDispatcher.workerRunLoop#internal + 191 
+    at 37  KiteShared                          0x108c7861b        kfun:kotlinx.coroutines.MultiWorkerDispatcher.MultiWorkerDispatcher$1.MultiWorkerDispatcher$1$invoke$$inlined$apply$1.invoke#internal + 71 
+    at 38  KiteShared                          0x108c78673        kfun:kotlinx.coroutines.MultiWorkerDispatcher.MultiWorkerDispatcher$1.MultiWorkerDispatcher$1$invoke$$inlined$apply$1.$<bridge-DN>invoke(){}#internal + 71 
+    at 39  KiteShared                          0x108a5f90b        kfun:kotlin.Function0#invoke(){}1:0 + 91 
+    at 40  KiteShared                          0x108b3ebff        WorkerExecuteAfterLaunchpad + 223 
+    at 41  KiteShared                          0x108a47a8b        _ZN6Worker19processQueueElementEb + 3075 
+    at 42  KiteShared                          0x108a46d93        _ZN12_GLOBAL__N_113workerRoutineEPv + 199 
+    at 43  libsystem_pthread.dylib             0x1008ca67f        _pthread_start + 103 
+    at 44  libsystem_pthread.dylib             0x1008c5a87        thread_start + 7 

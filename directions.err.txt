@@ -1,0 +1,6 @@
+2026-11-23 09:16:28.740 Kite[41578:112341] [Info] maplibre-compose: Created the MapLibre runtime on maplibre-compose-runtime
+2026-11-23 09:16:28.776 Kite[41578:112341] [Debug] maplibre-compose: Ambient cache size set to 52428800 bytes
+2026-11-23 09:16:31.232 Kite[41578:112343] [Info] maplibre-compose: Rendered the first map frame with Metal on maplibre-compose-render, extent MapExtent(logical=402x874, physical=1206x2622, scale=3.0)
+2026-11-23 09:16:39.085 Kite[41578:112440] [Warning] maplibre-compose: [General] Invalid geometry in line layer
+2026-11-23 09:16:44.868 Kite[41578:112341] [Debug] maplibre-compose: Ignoring the end of unknown camera transition 1
+2026-11-23 09:16:57.673 Kite[41578:113141] KiteLiveCams: tfl 836

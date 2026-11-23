@@ -1,0 +1,5 @@
+2026-11-23 09:27:11.092 Kite[58796:153542] [Info] maplibre-compose: Created the MapLibre runtime on maplibre-compose-runtime
+2026-11-23 09:27:11.100 Kite[58796:153542] [Debug] maplibre-compose: Ambient cache size set to 52428800 bytes
+2026-11-23 09:27:11.539 Kite[58796:153543] [Info] maplibre-compose: Rendered the first map frame with Metal on maplibre-compose-render, extent MapExtent(logical=402x874, physical=1206x2622, scale=3.0)
+2026-11-23 09:27:12.067 Kite[58796:153621] [Warning] maplibre-compose: [General] Invalid geometry in line layer
+2026-11-23 09:27:18.602 Kite[58796:153365] KiteTrace: street view: pano Ym80fPMYZCabrQCY1Zu_UQ thumbnail 200 88846 bytes image/jpeg; tile 200 60915 bytes

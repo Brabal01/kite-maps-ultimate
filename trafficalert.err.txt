@@ -1,0 +1,6 @@
+2026-11-23 09:32:23.911 Kite[70874:182053] [Info] maplibre-compose: Created the MapLibre runtime on maplibre-compose-runtime
+2026-11-23 09:32:23.919 Kite[70874:182053] [Debug] maplibre-compose: Ambient cache size set to 52428800 bytes
+2026-11-23 09:32:24.403 Kite[70874:182054] [Info] maplibre-compose: Rendered the first map frame with Metal on maplibre-compose-render, extent MapExtent(logical=402x874, physical=1206x2622, scale=3.0)
+2026-11-23 09:32:25.138 Kite[70874:182089] [Warning] maplibre-compose: [General] Invalid geometry in line layer
+2026-11-23 09:32:51.287 Kite[70874:181994] KiteVoice: say: Starting route to The Mustard Seed. Turn right onto 3rd Street.
+2026-11-23 09:32:51.310 Kite[70874:181994] KiteTrace: at 38.54490,-121.74050 along 0 off 8 next 1 in 22 offRoute false speed 0

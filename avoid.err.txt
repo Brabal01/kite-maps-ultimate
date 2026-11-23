@@ -1,0 +1,6 @@
+2026-11-23 09:43:12.678 Kite[92681:237395] [Info] maplibre-compose: Created the MapLibre runtime on maplibre-compose-runtime
+2026-11-23 09:43:12.688 Kite[92681:237395] [Debug] maplibre-compose: Ambient cache size set to 52428800 bytes
+2026-11-23 09:43:13.263 Kite[92681:237396] [Info] maplibre-compose: Rendered the first map frame with Metal on maplibre-compose-render, extent MapExtent(logical=402x874, physical=1206x2622, scale=3.0)
+2026-11-23 09:43:13.983 Kite[92681:237447] [Warning] maplibre-compose: [General] Invalid geometry in line layer
+2026-11-23 09:43:23.288 Kite[92681:237313] KiteTrace: waze browse: live map failed, drivers' reports 53 (Waze: nothing; page: fetch HTTP 403 · pass no, ?)
+2026-11-23 09:43:36.822 Kite[92681:237313] KiteTrace: waze browse: live map failed, drivers' reports 0 (Waze: nothing; page: fetch HTTP 403 · pass no, page asked 1× (403) key 6Lf4Wd api)
