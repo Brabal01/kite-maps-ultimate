@@ -3,6 +3,64 @@
 Every version of Kite Maps, newest first. The small number goes up for fixes and polish, and
 the middle number for big milestones.
 
+## 0.8.0 (iPhone and Android): one app for both phones
+
+A milestone: Kite is now **one app**. The iPhone and Android versions run the very same code
+(Kotlin Multiplatform with Compose Multiplatform), so every screen, the map and the driving view
+look and work the same on both, and every change lands on both phones at once.
+
+- **Nothing new to learn:** the screens are the Android ones, which already matched the iPhone's.
+- **Settings carry over (iPhone):** Home, Work, saved places, recent searches and all your choices
+  are brought over the first time 0.8.0 opens.
+- **Still iPhone's own:** the next turn on the lock screen and in the Dynamic Island, Siri
+  shortcuts ("Take me home with Kite"), voice and voice search.
+- **The map** is drawn by MapLibre on both phones through one shared map, so the heat map, cameras,
+  lanes and route look identical.
+
+Design ideas picked by Matteo, on both phones:
+
+- **Tab names:** Map, Saved and Settings are written under their icons.
+- **Clearer "Then":** the turn after next sits on its own line under the turn, big and bold.
+- **Faster route countdown:** "switching in 5 s", so it's clear how long there is to keep yours.
+- **"+2 more"** in the Also ahead pill when not every warning fits; the police risk pill sits just under it.
+- **Standstill traffic** shows just under the turn banner.
+- **Nearest car park first:** "Car park · 3 min walk · Free" and "Nearest of 8 near there" (a tiny unnamed lot doesn't beat a real car park).
+- **Search pins:** the picked one on top and the rest faded; piled-up pins tidied away; a tap opens the pin tapped.
+- **"No route" says why** when it can: too far to walk or cycle, or the sea in the way.
+- **Dartford Crossing price** on the route: "£3.50 a car".
+- **12 or 24 hours:** opening hours and charge times follow the phone's clock setting.
+- **Cleaner route screen:** picked route bright teal, others grey; slim top bar; small panel with just the picked route and Go.
+
+More design ideas picked by Matteo from the whole-app check, on both phones:
+
+- **Places:** the website shows just its name (tesco.com, no tracking code); the Reviews tab's stars match the
+  score at the top and show Google's top review properly; opening hours all follow the phone's clock; the
+  travel time on a place follows how you last travelled (drive, cycle or walk).
+- **Search:** "Tesco" frames the nearby ones on both phones; the box empties when you back out; offline
+  says "No internet" once, not twice. Without Google, the nearest results come first and streets only
+  show when you search for one.
+- **Saved:** "Removed · Undo" for a few seconds after removing a place, Home or Work; hold Home or Work to
+  remove it; Rename starts with the cursor at the end.
+- **Settings:** Diagnostics shows a tick or cross per check and says it can take a minute; "motorways",
+  not "highways", in the UK whatever the units.
+- **Trips:** "arrive tomorrow" on trips that end the next day; walking names the street to turn onto;
+  Android's drive notification opens bigger with the turn arrow; turned sideways, the map buttons and
+  locate button all fit.
+- **Look:** a soft band behind the clock on the satellite map; a dark iPhone keyboard in Kite's dark theme;
+  bold teal countdown on the faster route card; other search pins fade more; the Dartford price in bold;
+  softer grey for the tabs you're not on; a bigger "Then" arrow.
+
+Fixed after tapping through every screen on both phones:
+
+- Picking Walk for one trip no longer changes the default travel mode in Settings.
+- Messages on the map go away by themselves; "No internet" clears once you're back online.
+- The map credits, police pill and heat map key stay above the tab bar.
+- Add stop shows results while you type; the same place isn't listed several times in search.
+- A place card pulled all the way up stops under the search bar.
+- Tapping your own route offers to avoid that road even with another route close by.
+- iPhone: with location refused, the "Location is off" card shows, as on Android.
+- Android: the clock and icons at the top stay readable in Kite's dark theme; Settings menus open by their value.
+
 ## 0.7.17 (iPhone and Android)
 
 Ideas from a Kite user on GitHub, picked by Matteo:
@@ -295,7 +353,7 @@ A check of the basics on both phones, with the bugs it found fixed. Nothing look
 
 ## 0.7.8 (iPhone and Android)
 
-Everything ChatGPT found when it went through both apps as a second reviewer, fixed and checked,
+Everything a full second review of both apps found, fixed and checked,
 plus live cameras.
 
 - **Live cameras (GitHub #15):** see the latest photo from traffic cameras and webcams, like the

@@ -1,0 +1,410 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
+package app.kite
+
+import kotlinx.datetime.toLocalDateTime
+import app.kite.resources.Res
+import app.kite.resources.nunito
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.kite.core.*
+import kotlin.math.max
+import kotlin.math.roundToInt
+
+/**
+ * Kite's colors: a deep navy night look with one bright teal for "go".
+ * Sized and colored for a phone in a car holder. The same values as the iPhone app.
+ */
+object Vela {
+    val teal = Color(0xFF0F766E)
+    val tealLight = Color(0xFF2DD4BF)
+    val routeBlue = Color(0xFF2F7BFF)
+    val open = Color(0xFF16A34A)
+    val openDark = Color(0xFF4ADE80)
+    val closed = Color(0xFFDC2626)
+    val closedDark = Color(0xFFF87171)
+    val star = Color(0xFFF9AB00)
+    val camera = Color(0xFFFF8A00)
+    val police = Color(0xFF2F7BFF)
+
+    fun accent(dark: Boolean) = if (dark) tealLight else Color(0xFF14B8A6)
+    fun onAccent(@Suppress("UNUSED_PARAMETER") dark: Boolean) = Color(0xFF04241F)
+    fun accentText(dark: Boolean) = if (dark) tealLight else teal
+    fun sheet(dark: Boolean) = if (dark) Color(0xFF151F30) else Color.White
+    fun surface(dark: Boolean) = if (dark) Color(0xFF1A2638) else Color.White
+    fun ground(dark: Boolean) = if (dark) Color(0xFF0E1726) else Color(0xFFF2F5F9)
+    fun chip(dark: Boolean) = if (dark) Color(0xFF243349) else Color(0xFFEDF1F6)
+    /** A soft amber for "worth knowing" chips, like a longer route or a road charge. */
+    fun warnFill(dark: Boolean) = if (dark) Color(0xFF3A2A10) else Color(0xFFFDEFD9)
+    fun warnText(dark: Boolean) = if (dark) Color(0xFFFBBF24) else Color(0xFF9A4A08)
+    fun tonal(dark: Boolean) = if (dark) Color(0xFF12403C) else Color(0xFFCCFBF1)
+    fun onTonal(dark: Boolean) = if (dark) Color(0xFF99F6E4) else Color(0xFF134E4A)
+    fun muted(dark: Boolean) = if (dark) Color(0xFF94A3B8) else Color(0xFF64748B)
+    fun primary(dark: Boolean) = if (dark) Color.White else Color(0xFF0F172A)
+}
+
+/** Whether the screen is in dark colors right now. */
+val LocalDark = staticCompositionLocalOf { true }
+
+/** The rounded type, like the iPhone's SF Rounded. */
+val Rounded: FontFamily
+    @Composable get() {
+        val fonts = listOf(400, 500, 600, 700, 800, 900).map { w ->
+            org.jetbrains.compose.resources.Font(Res.font.nunito, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+        }
+        return remember(fonts) { FontFamily(fonts) }
+    }
+
+/** Text sizes matching iOS's at the "xLarge" type size the iPhone app never goes below. */
+object KType {
+    val largeTitle = 36.sp
+    val title = 30.sp
+    val title2 = 24.sp
+    val title3 = 22.sp
+    val headline = 19.sp
+    val body = 19.sp
+    val callout = 18.sp
+    val subheadline = 17.sp
+    val footnote = 15.sp
+    val caption = 14.sp
+    val caption2 = 13.sp
+}
+
+@Composable
+fun KiteTheme(content: @Composable () -> Unit) {
+    val dark = when (AppSettings.theme) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+    val scheme = if (dark) darkColorScheme(
+        primary = Vela.tealLight, onPrimary = Vela.onAccent(true), background = Vela.ground(true),
+        surface = Vela.sheet(true), onSurface = Color.White, onBackground = Color.White,
+        surfaceVariant = Vela.chip(true), onSurfaceVariant = Vela.muted(true),
+        secondaryContainer = Vela.tonal(true), onSecondaryContainer = Vela.onTonal(true),
+    ) else lightColorScheme(
+        primary = Vela.teal, onPrimary = Color.White, background = Vela.ground(false),
+        surface = Color.White, onSurface = Vela.primary(false), onBackground = Vela.primary(false),
+        surfaceVariant = Vela.chip(false), onSurfaceVariant = Vela.muted(false),
+        secondaryContainer = Vela.tonal(false), onSecondaryContainer = Vela.onTonal(false),
+    )
+    val base = Typography()
+    val type = Typography(
+        displayLarge = base.displayLarge.copy(fontFamily = Rounded),
+        headlineLarge = base.headlineLarge.copy(fontFamily = Rounded),
+        headlineMedium = base.headlineMedium.copy(fontFamily = Rounded),
+        titleLarge = base.titleLarge.copy(fontFamily = Rounded, fontSize = KType.title3),
+        titleMedium = base.titleMedium.copy(fontFamily = Rounded, fontSize = KType.headline),
+        titleSmall = base.titleSmall.copy(fontFamily = Rounded),
+        bodyLarge = base.bodyLarge.copy(fontFamily = Rounded, fontSize = KType.body),
+        bodyMedium = base.bodyMedium.copy(fontFamily = Rounded, fontSize = KType.subheadline),
+        bodySmall = base.bodySmall.copy(fontFamily = Rounded, fontSize = KType.footnote),
+        labelLarge = base.labelLarge.copy(fontFamily = Rounded, fontSize = KType.callout),
+        labelMedium = base.labelMedium.copy(fontFamily = Rounded),
+        labelSmall = base.labelSmall.copy(fontFamily = Rounded),
+    )
+    CompositionLocalProvider(LocalDark provides dark) {
+        MaterialTheme(colorScheme = scheme, typography = type) {
+            CompositionLocalProvider(LocalTextStyle provides TextStyle(fontFamily = Rounded, fontSize = KType.body)) {
+                content()
+            }
+        }
+    }
+}
+
+/** Primary and secondary text colors for the current look. */
+val primaryText: Color @Composable get() = Vela.primary(LocalDark.current)
+val secondaryText: Color @Composable get() = Vela.muted(LocalDark.current)
+
+object Fmt {
+    /** The phone's 12/24-hour setting, read again each time Kite comes back, so open screens redraw with it. */
+    var h24 by mutableStateOf(LocalFormat.is24Hour)
+
+    private val country: String get() = systemCountry()
+    private val autoImperial: Boolean get() = country in setOf("US", "GB", "LR", "MM", "UK")
+
+    val metric: Boolean
+        get() = when (AppSettings.units) {
+            UnitsMode.METRIC -> true
+            UnitsMode.IMPERIAL, UnitsMode.YARDS -> false
+            UnitsMode.AUTO -> !autoImperial
+        }
+
+    /** Short distances in yards, the British way. */
+    /** The UK word for the big roads: "motorways" in Britain and Ireland whatever the units, else "highways". */
+    val motorways: String get() = if (yards || country in setOf("GB", "UK", "IE")) "motorways" else "highways"
+
+    val yards: Boolean
+        get() = when (AppSettings.units) {
+            UnitsMode.YARDS -> true
+            UnitsMode.AUTO -> country == "GB" || country == "UK"
+            else -> false
+        }
+
+    private fun r(x: Double) = x.roundToInt()
+
+    fun distance(m: Double): String {
+        if (metric) {
+            if (m < 950) return "${r(m / 10) * 10} m"
+            return if (m < 9_950) fmt("%.1f km", m / 1000) else "${r(m / 1000)} km"
+        }
+        if (yards) {
+            val yd = m * 1.09361
+            if (yd < 500) return "${max(r(yd / 10) * 10, 10)} yd"
+        } else {
+            val ft = m * 3.28084
+            if (ft < 1000) return "${max(r(ft / 50) * 50, 50)} ft"
+        }
+        val mi = m / 1609.344
+        return if (mi < 9.95) fmt("%.1f mi", mi) else "${r(mi)} mi"
+    }
+
+    /** Words for the voice: "400 feet", "1.2 miles". */
+    fun spokenDistance(m: Double): String {
+        if (metric) {
+            if (m < 950) return "${r(m / 50) * 50} meters"
+            val km = m / 1000
+            return if (km < 1.05) "1 kilometer" else fmt("%.1f kilometers", km)
+        }
+        if (yards) {
+            val yd = m * 1.09361
+            if (yd < 500) return "${max(r(yd / 50) * 50, 50)} yards"
+        } else {
+            val ft = m * 3.28084
+            if (ft < 1000) return "${max(r(ft / 100) * 100, 100)} feet"
+        }
+        val mi = m / 1609.344
+        if (mi < 0.3) return if (yards) "a quarter of a mile" else "a quarter mile"
+        if (mi < 0.6) return "half a mile"
+        if (mi < 0.9) return "three quarters of a mile"
+        return if (mi < 1.05) "1 mile" else fmt("%.1f miles", mi)
+    }
+
+    /** A limit for the voice: "30 miles per hour" (to the posted 5), "50 kilometers per hour". */
+    fun spokenSpeed(kmh: Double): String =
+        if (metric) "${max(5, r(kmh / 5) * 5)} kilometers per hour" else "${postedMph(kmh)} miles per hour"
+
+    /**
+     * A limit in mph as the sign shows it, to the nearest 5. Never 0: a road mapped "walk" (about
+     * 7 km/h, a car park or a living street) would round down to a "0" sign; the lowest sign is 5.
+     */
+    fun postedMph(kmh: Double): Int = max(5, r(kmh / 1.609344 / 5) * 5)
+
+    /** A speed in the user's units, without the unit. */
+    fun speed(kmh: Double): Int = r(if (metric) kmh else kmh / 1.609344)
+
+    val speedUnit: String get() = if (metric) "km/h" else "mph"
+
+    fun duration(s: Double): String {
+        val mins = max(1, r(s / 60))
+        if (mins < 60) return "$mins min"
+        val h = mins / 60; val m = mins % 60
+        return if (m == 0) "$h h" else "$h h $m min"
+    }
+
+    fun shortDuration(s: Double): String {
+        val mins = max(1, r(s / 60))
+        if (mins < 60) return "$mins min"
+        val h = mins / 60; val m = mins % 60
+        return if (m == 0) "${h}h" else "${h}h ${m}m"
+    }
+
+    /** "4 min" on foot, from metres in a straight line (a little slower than walking pace for the corners). */
+    fun walkMinutes(meters: Double): String = "${maxOf(1, (meters / 70).roundToInt())} min"
+
+    /** "18:47", or "tomorrow 18:47" (or "Wed 18:47") when the trip ends on another day. */
+    fun arrival(s: Double): String = arrivalDay(s).let { d -> if (d.isEmpty()) arrivalTime(s) else "$d ${arrivalTime(s)}" }
+
+    fun arrivalTime(s: Double): String = time(nowMillis() + (s * 1000).toLong())
+
+    /** "" today, "tomorrow", or the day's short name further on. */
+    fun arrivalDay(s: Double): String {
+        val tz = kotlinx.datetime.TimeZone.currentSystemDefault()
+        fun day(ms: Long) = kotlin.time.Instant.fromEpochMilliseconds(ms).toLocalDateTime(tz).date
+        val now = nowMillis()
+        val today = day(now)
+        val then = day(now + (s * 1000).toLong())
+        val days = (then.toEpochDays() - today.toEpochDays()).toLong()
+        return when {
+            days <= 0L -> ""
+            days == 1L -> "tomorrow"
+            else -> then.dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
+        }
+    }
+
+    fun time(epochMillis: Long): String = LocalFormat.time(epochMillis)
+
+    /**
+     * Times written in words ("Closes 10 pm", "Charged 6 am to 10 pm") on the phone's own clock:
+     * "Closes 22:00" when the phone is set to 24 hours, left as they are otherwise.
+     */
+    fun clock(text: String): String {
+        if (!h24) {
+            // A 12-hour phone: "Closes 23:00" becomes "Closes 11 pm", like Google's own hours lines.
+            return Regex("""(?<![\d:.])(\d{1,2}):(\d{2})(?![\d:])(?![\s\u202F\u00A0]?(?:[AaPp]\.?[Mm]))""").replace(text) { m ->
+                val h = m.groupValues[1].toInt()
+                val min = m.groupValues[2]
+                if (h > 23 || min.toInt() > 59) return@replace m.value
+                val h12 = if (h % 12 == 0) 12 else h % 12
+                (if (min == "00") "$h12" else "$h12:$min") + if (h < 12) " am" else " pm"
+            }
+        }
+        return Regex("""\b(\d{1,2})(?::(\d{2}))?[\s\u202F\u00A0]?([AaPp])(?:\.[Mm]\.|[Mm])(?![A-Za-z])""").replace(text) { m ->
+            val h = m.groupValues[1].toInt()
+            if (h !in 1..12) return@replace m.value
+            val pm = m.groupValues[3].lowercase() == "p"
+            val h24 = (h % 12) + if (pm) 12 else 0
+            fmt("%02d:%s", h24, m.groupValues[2].ifEmpty { "00" })
+        }
+    }
+
+    fun count(n: Int): String = LocalFormat.count(n)
+}
+
+@Composable
+fun statusColor(p: Place): Color {
+    val dark = LocalDark.current
+    if (p.permanentlyClosed) return if (dark) Vela.closedDark else Vela.closed
+    return when (p.openNow) {
+        true -> if (dark) Vela.openDark else Vela.open
+        false -> if (dark) Vela.closedDark else Vela.closed
+        null -> secondaryText
+    }
+}
+
+/** "Open" in green, then "· Closes 9:30 PM" in gray, the way Vela splits Google's status. */
+@Composable
+fun StatusText(place: Place, fontSize: androidx.compose.ui.unit.TextUnit = KType.subheadline) {
+    val c = statusColor(place)
+    val gray = secondaryText
+    if (place.permanentlyClosed) {
+        Text("Permanently closed", color = c, fontSize = fontSize)
+    } else place.statusText?.let { s ->
+        val parts = Fmt.clock(s).split(" · ")
+        Text(buildAnnotatedString {
+            withStyle(SpanStyle(color = c)) { append(parts[0]) }
+            if (parts.size > 1) withStyle(SpanStyle(color = gray)) { append(" · " + parts.drop(1).joinToString(" · ")) }
+        }, fontSize = fontSize)
+    }
+}
+
+@Composable
+fun Stars(rating: Double, size: Dp = 13.dp) {
+    Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+        for (i in 0 until 5) {
+            val fill = rating - i
+            Icon(
+                when { fill >= 0.75 -> Icons.Filled.Star; fill >= 0.25 -> Icons.AutoMirrored.Filled.StarHalf; else -> Icons.Outlined.StarOutline },
+                null, tint = Vela.star, modifier = Modifier.size(size),
+            )
+        }
+    }
+}
+
+/** "4.7 ★★★★★ (1,341) · 0.2 mi · Sushi restaurant · $10–20" */
+@Composable
+fun PlaceMetaLine(place: Place, showStars: Boolean = true, here: LatLng? = null) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        place.rating?.let { r ->
+            Text(fmt("%.1f", r), color = primaryText, fontSize = KType.subheadline)
+            if (showStars) Stars(r) else Icon(Icons.Filled.Star, null, tint = Vela.star, modifier = Modifier.size(12.dp))
+            place.reviewCount?.let { Text("(${Fmt.count(it)})", color = secondaryText, fontSize = KType.subheadline) }
+        }
+        val meters = here?.distanceTo(place.location) ?: place.distanceMeters
+        val rest = listOfNotNull(meters?.let { Fmt.distance(it) }, place.category, place.priceText)
+        if (rest.isNotEmpty()) {
+            Text((if (place.rating != null) "· " else "") + rest.joinToString(" · "), color = secondaryText,
+                fontSize = KType.subheadline, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** Arrow for a maneuver. */
+fun maneuverIcon(t: ManeuverType): ImageVector = when (t) {
+    ManeuverType.DEPART, ManeuverType.STRAIGHT, ManeuverType.UNKNOWN -> Icons.Filled.ArrowUpward
+    ManeuverType.ARRIVE -> Icons.Filled.Place
+    ManeuverType.TURN_LEFT -> Icons.Filled.TurnLeft
+    ManeuverType.TURN_RIGHT -> Icons.Filled.TurnRight
+    ManeuverType.SLIGHT_LEFT, ManeuverType.KEEP_LEFT, ManeuverType.RAMP_LEFT, ManeuverType.FORK_LEFT -> Icons.Filled.TurnSlightLeft
+    ManeuverType.SLIGHT_RIGHT, ManeuverType.KEEP_RIGHT, ManeuverType.RAMP_RIGHT, ManeuverType.FORK_RIGHT -> Icons.Filled.TurnSlightRight
+    ManeuverType.SHARP_LEFT -> Icons.Filled.TurnSharpLeft
+    ManeuverType.SHARP_RIGHT -> Icons.Filled.TurnSharpRight
+    ManeuverType.UTURN -> Icons.Filled.UTurnLeft
+    ManeuverType.MERGE -> Icons.Filled.Merge
+    ManeuverType.ROUNDABOUT -> Icons.Filled.RoundaboutLeft
+}
+
+/**
+ * See-through look for everything floating over the map (the light look): the surface color with the
+ * map showing faintly through it and a thin bright edge. No shadow: one would show through the glass.
+ */
+@Composable
+fun Modifier.glass(shape: Shape): Modifier {
+    val dark = LocalDark.current
+    return this
+        .clip(shape)
+        .background(Vela.surface(dark).copy(alpha = if (dark) 0.84f else 0.88f))
+        .border(0.75.dp, Color.White.copy(alpha = if (dark) 0.10f else 0.6f), shape)
+}
+
+/** Round buttons floating on the map (layers, location, compass). */
+@Composable
+fun MapFab(icon: ImageVector, tint: Color? = null, size: Dp = 48.dp, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(modifier.size(size).glass(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(icon, null, tint = tint ?: primaryText, modifier = Modifier.size(size * 0.46f))
+    }
+}
+
+/** Pill buttons in sheets: filled teal for the main one, tonal for the rest. */
+@Composable
+fun PillButton(title: String, icon: ImageVector, filled: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val dark = LocalDark.current
+    Row(
+        modifier.height(52.dp).clip(CircleShape)
+            .background(if (filled) Vela.accent(dark) else Vela.tonal(dark))
+            .clickable(onClick = onClick).padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+    ) {
+        val c = if (filled) Vela.onAccent(dark) else Vela.onTonal(dark)
+        Icon(icon, null, tint = c, modifier = Modifier.size(20.dp))
+        Text(title, color = c, fontWeight = FontWeight.Bold, fontSize = KType.body, maxLines = 1)
+    }
+}
+
+@Composable
+fun CircleIconButton(icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(modifier.size(44.dp).clip(CircleShape).background(Vela.chip(LocalDark.current)).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center) {
+        Icon(icon, null, tint = primaryText, modifier = Modifier.size(20.dp))
+    }
+}
