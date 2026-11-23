@@ -172,6 +172,8 @@ fun KiteDock(model: AppModel, modifier: Modifier = Modifier) {
                 Column(
                     Modifier.size(72.dp, 60.dp).clip(CircleShape).clickable {
                         if (tab != model.tab && model.tab == AppTab.SETTINGS) model.reloadRoutes()
+                        // Settings tapped again from inside a settings page: back to the main list.
+                        if (tab == model.tab && tab == AppTab.SETTINGS) model.settingsHome++
                         model.tab = tab
                     },
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
@@ -228,7 +230,8 @@ fun PoliceRiskChip(score: Int, label: String = "Police risk") {
 @Composable
 fun WazeMapChips(model: AppModel) {
     val s = AppSettings
-    if (!s.wazeOn) return
+    // Both Waze layers off in Layers: nothing from Waze on the plain map, the risk pill included (Matteo, 2026-11-23).
+    if (!s.wazeOn || !(s.wazeOnMap || s.wazeHeatmap)) return
     // The heat map was just switched on: its key is showing.
     var legend by remember { mutableStateOf(false) }
     var heatWas by remember { mutableStateOf(s.wazeHeatmap) }

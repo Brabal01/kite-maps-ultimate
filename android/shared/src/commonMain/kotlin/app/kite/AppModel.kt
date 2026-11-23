@@ -112,6 +112,8 @@ class AppModel {
     var selected by mutableStateOf<Place?>(null)
     var searching by mutableStateOf(false)
     var notice by mutableStateOf<String?>(null)
+    /** Goes up each time the Settings tab is tapped while already on it: the page goes back to its main list. */
+    var settingsHome by mutableStateOf(0)
     var detent by mutableStateOf(SheetDetent.HALF)
     var openNowOnly by mutableStateOf(false)
     var rating4Only by mutableStateOf(false)

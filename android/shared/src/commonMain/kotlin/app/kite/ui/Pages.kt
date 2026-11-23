@@ -180,6 +180,8 @@ fun SettingsPage(model: AppModel) {
         "mapsettings" -> SettingsScreen.MAP
         else -> SettingsScreen.MENU
     }) }
+    var homeSeen by remember { mutableStateOf(model.settingsHome) }
+    if (model.settingsHome != homeSeen) { homeSeen = model.settingsHome; screen = SettingsScreen.MENU }
     Box(Modifier.fillMaxSize().background(Vela.ground(dark))) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             if (screen == SettingsScreen.MENU) {
