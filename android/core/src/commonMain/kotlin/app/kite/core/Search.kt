@@ -1,6 +1,7 @@
 package app.kite.core
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 
 /** Photon, the OpenStreetMap geocoder: names, cities and addresses (not categories). Used when Google fails. */
 object Photon {
@@ -8,12 +9,40 @@ object Photon {
     private val langs = setOf("en", "de", "fr", "it")
     private const val UA = "KiteMaps-Android/0.7 (+https://github.com/matteofx1/kite-maps)"
 
-    suspend fun search(query: String, near: LatLng?, limit: Int = 20): List<Place> {
+    suspend fun search(query: String, near: LatLng?, limit: Int = 20, boxKm: Double? = null): List<Place> {
         var url = base + "?q=" + urlEnc(query) + "&limit=$limit"
         if (near != null) url += "&lat=${near.lat.plain()}&lon=${near.lng.plain()}"
+        if (near != null && boxKm != null) {
+            // Only what's around here (Photon otherwise puts big, well-known places first, miles away).
+            val dLat = boxKm / 111.0
+            val dLng = boxKm / (111.0 * kotlin.math.cos(near.lat * kotlin.math.PI / 180).coerceAtLeast(0.2))
+            url += "&bbox=${(near.lng - dLng).plain()},${(near.lat - dLat).plain()},${(near.lng + dLng).plain()},${(near.lat + dLat).plain()}"
+        }
         val lang = systemLanguage()
         url += "&lang=" + if (lang in langs) lang else "en"
         return parse(Http.get(url, mapOf("User-Agent" to UA), Http.client(15)).body, near)
+    }
+
+    /**
+     * A search without Google: the ones close by first, nearest at the top, then any further away.
+     * A street only shows when it's what was asked for (no "Tesco Road" among the Tesco shops).
+     */
+    suspend fun nearby(query: String, near: LatLng, limit: Int = 20): List<Place> = kotlinx.coroutines.coroutineScope {
+        val local = async { runCatching { search(query, near, limit, boxKm = 15.0) }.getOrElse { if (it is CancellationException) throw it; emptyList() } }
+        val wide = async { runCatching { search(query, near, limit) }.getOrElse { if (it is CancellationException) throw it; emptyList() } }
+        merge(local.await(), wide.await(), near, query)
+    }
+
+    private val roadWords = Regex("""\b(road|rd|street|st|lane|ln|way|avenue|ave|close|drive|dr|crescent|terrace|place|hill|gardens|grove|square)\b""")
+
+    fun merge(local: List<Place>, wide: List<Place>, near: LatLng, query: String = ""): List<Place> {
+        val all = (local + wide).fold(mutableListOf<Place>()) { out, p -> if (out.none { it.id == p.id }) out.add(p); out }
+        val q = query.lowercase()
+        val wantsAddress = q.any { it.isDigit() } || roadWords.containsMatchIn(q)
+        val places = if (wantsAddress) all else all.filter { it.category != "Street" && it.category != "Address" }
+        val kept = places.ifEmpty { all }
+        val (close, far) = kept.partition { it.location.distanceTo(near) <= 20_000 }
+        return close.sortedBy { it.location.distanceTo(near) } + far
     }
 
     /** The address at a point, for a dropped pin. */
@@ -39,7 +68,7 @@ object Photon {
             val title = (if (named) s("name") else (street ?: s("name"))) ?: return@mapNotNull null
             val osmId = p["osm_id"].long()?.toString() ?: "${loc.lat},${loc.lng}"
             val place = Place("osm:${s("osm_type") ?: ""}$osmId", title, loc, "osm")
-            place.category = if (named) s("osm_value")?.replace("_", " ")?.capitalizedFirst() else "Address"
+            place.category = if (s("osm_key") == "highway") "Street" else if (named) s("osm_value")?.replace("_", " ")?.capitalizedFirst() else "Address"
             place.address = listOfNotNull(if (named) street else null, locality, s("country")).joinToString(", ").nilIfBlank()
             place.distanceMeters = near?.distanceTo(loc)
             place
@@ -112,7 +141,7 @@ object PlaceSearch {
 
     /** OpenStreetMap's answer, or nothing if it fails; being cancelled still cancels. */
     private suspend fun photonOrNothing(q: String, center: LatLng): List<Place> = try {
-        Photon.search(q, center)
+        Photon.nearby(q, center)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

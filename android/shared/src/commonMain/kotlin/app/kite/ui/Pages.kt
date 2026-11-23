@@ -39,6 +39,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -59,7 +61,11 @@ fun SavedPage(model: AppModel) {
     val dark = LocalDark.current
     val s = AppSettings
     var renaming by remember { mutableStateOf<Place?>(null) }
-    var newName by remember { mutableStateOf("") }
+    // The cursor starts at the end of the name, ready to type (Android put it at the start).
+    var newName by remember { mutableStateOf(TextFieldValue("")) }
+    // Just removed: "Removed · Undo" for a few seconds, then it's gone for good.
+    var undo by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
+    LaunchedEffect(undo) { if (undo != null) { delay(5_000); undo = null } }
     fun go(p: Place) { model.tab = AppTab.MAP; model.openDirections(p) }
     fun show(p: Place) { model.tab = AppTab.MAP; model.openSaved(p) }
     fun distance(p: Place) = model.userLatLng?.let { Fmt.distance(it.distanceTo(p.location)) }
@@ -69,8 +75,14 @@ fun SavedPage(model: AppModel) {
             verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Text("Saved", fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, color = primaryText, modifier = Modifier.padding(horizontal = 4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MineTile(model, Icons.Filled.Home, Vela.routeBlue, "Home", s.home, PickKind.HOME, ::go, ::distance)
-                MineTile(model, Icons.Filled.Work, hex(0x8B5CF6), "Work", s.work, PickKind.WORK, ::go, ::distance)
+                MineTile(model, Icons.Filled.Home, Vela.routeBlue, "Home", s.home, PickKind.HOME, ::go, ::distance) {
+                    val was = s.home ?: return@MineTile
+                    model.setHome(null); undo = "Home removed" to { model.setHome(was); model.notice = null }
+                }
+                MineTile(model, Icons.Filled.Work, hex(0x8B5CF6), "Work", s.work, PickKind.WORK, ::go, ::distance) {
+                    val was = s.work ?: return@MineTile
+                    model.setWork(null); undo = "Work removed" to { model.setWork(was); model.notice = null }
+                }
             }
             s.parking?.let { car ->
                 Box(Modifier.clip(RoundedCornerShape(24.dp)).background(Vela.surface(dark))) {
@@ -88,11 +100,25 @@ fun SavedPage(model: AppModel) {
                     s.saved.forEachIndexed { i, p ->
                         if (i > 0) HorizontalDivider(Modifier.padding(start = 78.dp))
                         SavedRow(p, Icons.Filled.Bookmark, hex(0xF59E0B), distance(p), { action ->
-                            if (action == 0) { newName = p.name; renaming = p } else s.saved = s.saved.filter { it.id != p.id }
+                            if (action == 0) { newName = TextFieldValue(p.name, TextRange(p.name.length)); renaming = p } else {
+                                s.saved = s.saved.filter { it.id != p.id }
+                                // Back where it was in the list.
+                                undo = "Removed" to { if (s.saved.none { it.id == p.id }) s.saved = s.saved.toMutableList().apply { add(minOf(i, size), p) } }
+                            }
                         }, ::show, ::go)
                     }
                 }
                 Text("Hold a place to rename or remove it.", fontSize = KType.subheadline, color = Vela.muted(dark), modifier = Modifier.padding(horizontal = 4.dp))
+            }
+        }
+        undo?.let { (text, restore) ->
+            Row(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 92.dp).padding(horizontal = 16.dp)
+                .clip(CircleShape).background(if (dark) Color(0xFFE2E8F0) else Color(0xFF1E293B)).padding(start = 20.dp, end = 6.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = if (dark) Color(0xFF0F172A) else Color.White)
+                TextButton({ restore(); undo = null }) {
+                    Text("Undo", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = if (dark) Vela.teal else Vela.tealLight)
+                }
             }
         }
         KiteDock(model, Modifier.align(Alignment.BottomCenter))
@@ -100,7 +126,7 @@ fun SavedPage(model: AppModel) {
     renaming?.let { p ->
         AlertDialog(onDismissRequest = { renaming = null }, title = { Text("Rename") },
             text = { OutlinedTextField(newName, { newName = it }, singleLine = true, label = { Text("Name") }) },
-            confirmButton = { TextButton({ s.renameSaved(p.id, newName); renaming = null }) { Text("Save") } },
+            confirmButton = { TextButton({ s.renameSaved(p.id, newName.text); renaming = null }) { Text("Save") } },
             dismissButton = { TextButton({ renaming = null }) { Text("Cancel") } })
     }
     BackHandler { model.tab = AppTab.MAP }
@@ -108,7 +134,7 @@ fun SavedPage(model: AppModel) {
 
 @Composable
 private fun RowScope.MineTile(model: AppModel, icon: ImageVector, color: Color, title: String, place: Place?, kind: PickKind,
-                              go: (Place) -> Unit, distance: (Place) -> String?) {
+                              go: (Place) -> Unit, distance: (Place) -> String?, remove: () -> Unit) {
     val dark = LocalDark.current
     var menu by remember { mutableStateOf(false) }
     Box(Modifier.weight(1f)) {
@@ -127,6 +153,9 @@ private fun RowScope.MineTile(model: AppModel, icon: ImageVector, color: Color, 
         DropdownMenu(menu, { menu = false }) {
             DropdownMenuItem(text = { Text("Change ${title.lowercase()}") }, leadingIcon = { Icon(Icons.Filled.Edit, null) },
                 onClick = { menu = false; model.picking = kind })
+            // Remove straight from the hold menu, like a saved place.
+            DropdownMenuItem(text = { Text("Remove ${title.lowercase()}") }, leadingIcon = { Icon(Icons.Filled.Delete, null) },
+                onClick = { menu = false; remove() })
         }
     }
 }
@@ -297,7 +326,7 @@ private fun SettingsMenu(open: (SettingsScreen) -> Unit) {
             }
             if (!last) HorizontalDivider(Modifier.padding(start = 64.dp))
         }
-        item(SettingsScreen.DRIVING, "Voice, travel mode, avoid tolls and ${if (Fmt.yards) "motorways" else "highways"}", null, Icons.AutoMirrored.Filled.VolumeUp, 0x0F766E)
+        item(SettingsScreen.DRIVING, "Voice, travel mode, avoid tolls and ${Fmt.motorways}", null, Icons.AutoMirrored.Filled.VolumeUp, 0x0F766E)
         item(SettingsScreen.CAMERAS, "Camera warnings, speeding alert", null, Icons.Filled.PhotoCamera, 0xDC2626)
         item(SettingsScreen.WAZE, if (WazeAlert.Kind.POLICE in Waze.shares) "Police, crashes, closures" else "Closures, police aircraft",
             if (s.wazeOn) "On" else "Off", Icons.Filled.Warning, 0x7C3AED)
@@ -323,7 +352,7 @@ private fun DrivingSettings() {
     SettingsGroup("Routes") {
         ToggleRow("Avoid tolls", Icons.Filled.Toll, 0xF59E0B, s.avoidTolls) { s.avoidTolls = it }
         RowDivider()
-        ToggleRow(if (Fmt.yards) "Avoid motorways" else "Avoid highways", Icons.Filled.AddRoad, 0x1D4ED8, s.avoidHighways) { s.avoidHighways = it }
+        ToggleRow("Avoid ${Fmt.motorways}", Icons.Filled.AddRoad, 0x1D4ED8, s.avoidHighways) { s.avoidHighways = it }
         RowDivider()
         ToggleRow("My car meets clean air zone rules", Icons.Filled.Eco, 0x16A34A, s.cleanCar) { s.cleanCar = it }
     }

@@ -39,6 +39,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -255,7 +258,7 @@ private fun RouteOptionsButton(model: AppModel) {
         DropdownMenu(menu, { menu = false }) {
             DropdownMenuItem(text = { Text("Avoid tolls") }, trailingIcon = { Checkbox(s.avoidTolls, null) },
                 onClick = { s.avoidTolls = !s.avoidTolls; model.reloadRoutes() })
-            DropdownMenuItem(text = { Text(if (Fmt.yards) "Avoid motorways" else "Avoid highways") }, trailingIcon = { Checkbox(s.avoidHighways, null) },
+            DropdownMenuItem(text = { Text("Avoid ${Fmt.motorways}") }, trailingIcon = { Checkbox(s.avoidHighways, null) },
                 onClick = { s.avoidHighways = !s.avoidHighways; model.reloadRoutes() })
         }
     }
@@ -301,8 +304,9 @@ private fun PickedRoute(r: Route) {
         }
         Column(horizontalAlignment = Alignment.End) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(Fmt.arrival(r.durationSeconds), fontSize = 19.sp, fontWeight = FontWeight.Bold, color = primaryText, maxLines = 1)
-                Text("arrive", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Vela.muted(dark), maxLines = 1)
+                Text(Fmt.arrivalTime(r.durationSeconds), fontSize = 19.sp, fontWeight = FontWeight.Bold, color = primaryText, maxLines = 1)
+                // "arrive tomorrow" on a trip that runs past midnight.
+                Text(Fmt.arrivalDay(r.durationSeconds).let { if (it.isEmpty()) "arrive" else "arrive $it" }, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Vela.muted(dark), maxLines = 1)
             }
             if (r.summary != null) Text(Fmt.distance(r.distanceMeters), fontSize = 15.sp, fontWeight = FontWeight.Medium,
                 color = Vela.muted(dark), maxLines = 1)
@@ -336,7 +340,7 @@ private fun ModeButton(model: AppModel, d: DirectionsState) {
                 HorizontalDivider()
                 DropdownMenuItem(text = { Text("Avoid tolls") }, trailingIcon = { Checkbox(s.avoidTolls, null) },
                     onClick = { s.avoidTolls = !s.avoidTolls; model.reloadRoutes() })
-                DropdownMenuItem(text = { Text(if (Fmt.yards) "Avoid motorways" else "Avoid highways") }, trailingIcon = { Checkbox(s.avoidHighways, null) },
+                DropdownMenuItem(text = { Text("Avoid ${Fmt.motorways}") }, trailingIcon = { Checkbox(s.avoidHighways, null) },
                     onClick = { s.avoidHighways = !s.avoidHighways; model.reloadRoutes() })
             }
         }
@@ -535,8 +539,11 @@ fun RouteCharges(route: Route) {
             Icon(if (c.zone) Icons.Filled.Eco else Icons.Filled.CurrencyPound, null,
                 tint = if (c.zone) Color(0xFF15803D) else Color(0xFFE37400), modifier = Modifier.size(28.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(if (c.zone) "Clean air zone on this route: ${c.name}" else "Charge on this route: ${c.name}" + (c.price?.let { "\u00A0· $it a car" } ?: ""),
-                    fontSize = 17.sp, fontWeight = FontWeight.Bold, color = primaryText)
+                // The price in heavier type, so "£3.50 a car" stands out on the line.
+                Text(buildAnnotatedString {
+                    append(if (c.zone) "Clean air zone on this route: ${c.name}" else "Charge on this route: ${c.name}")
+                    if (!c.zone) c.price?.let { append("\u00A0· "); withStyle(SpanStyle(fontWeight = FontWeight.Black)) { append("$it a car") } }
+                }, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = primaryText)
                 Text(Fmt.clock(c.note), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Vela.muted(dark), lineHeight = 19.sp)
             }
         }

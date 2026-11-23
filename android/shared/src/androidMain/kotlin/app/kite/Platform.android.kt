@@ -53,6 +53,9 @@ actual fun haptic(long: Boolean) {
         if (long) HapticFeedbackConstants.LONG_PRESS else HapticFeedbackConstants.CLOCK_TICK)
 }
 
+/** Android's bars are set by the activity (MainActivity), which already follows Kite's theme. */
+actual fun matchSystemLook(dark: Boolean) {}
+
 actual fun keepScreenOn(on: Boolean) {
     val w = AndroidHost.activity?.window ?: return
     if (on) w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else w.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

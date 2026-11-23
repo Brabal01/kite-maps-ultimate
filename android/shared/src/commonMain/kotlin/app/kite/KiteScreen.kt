@@ -6,6 +6,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -108,6 +113,9 @@ fun KiteScreen(model: AppModel = Kite.model) {
     // Kept on while driving; once arrived the phone goes in a pocket, so the screen may sleep.
     val screenOn = model.nav?.let { !it.arrived } ?: (model.cruise != null)
     LaunchedEffect(screenOn) { keepScreenOn(screenOn) }
+    // The iPhone keyboard and clock follow Kite's theme, so dark mode gets a dark keyboard.
+    val darkLook = LocalDark.current
+    LaunchedEffect(darkLook) { matchSystemLook(darkLook) }
     LaunchedEffect(s.wazeOn) { if (!s.wazeOn) WazeWeb.shutDown() }
 
     val ready = s.welcomed && !s.needsWazeChoice
@@ -122,6 +130,14 @@ fun KiteScreen(model: AppModel = Kite.model) {
         model.mapHeightDp = maxHeight.value
         model.glide.heightDp = maxHeight.value
         KiteMapView(model, kiteMap, Modifier.fillMaxSize())
+        // Satellite: a soft band at the very top, so the phone's clock and battery stay readable over
+        // bright fields. Dark behind white icons, light behind dark ones.
+        if (s.satellite && (model.tab == AppTab.MAP || model.nav != null || model.directions != null || model.cruise != null)) {
+            val top = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
+            if (top > 0.dp) Box(Modifier.fillMaxWidth().height(top + 18.dp).background(Brush.verticalGradient(
+                if (darkLook) listOf(Color.Black.copy(alpha = 0.55f), Color.Black.copy(alpha = 0.3f), Color.Transparent)
+                else listOf(Color.White.copy(alpha = 0.7f), Color.White.copy(alpha = 0.4f), Color.Transparent))))
+        }
 
         val nav = model.nav
         when {

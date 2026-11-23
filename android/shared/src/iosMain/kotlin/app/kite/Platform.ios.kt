@@ -41,3 +41,12 @@ actual fun haptic(long: Boolean) {
 }
 
 actual fun keepScreenOn(on: Boolean) { UIApplication.sharedApplication.idleTimerDisabled = on }
+
+/** A dark keyboard (and white clock) with Kite's dark theme, a light one with its light theme. */
+actual fun matchSystemLook(dark: Boolean) {
+    val style = if (dark) UIUserInterfaceStyle.UIUserInterfaceStyleDark else UIUserInterfaceStyle.UIUserInterfaceStyleLight
+    for (scene in UIApplication.sharedApplication.connectedScenes) {
+        val ws = scene as? UIWindowScene ?: continue
+        for (w in ws.windows) (w as? UIWindow)?.overrideUserInterfaceStyle = style
+    }
+}

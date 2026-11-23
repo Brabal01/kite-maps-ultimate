@@ -15,6 +15,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import app.kite.core.ManeuverType
 
 /**
  * Keeps Kite running with the screen off or another app on top while a drive is going, the way
@@ -31,7 +32,7 @@ class DriveService : Service() {
                 setShowBadge(false)
             })
         }
-        val n = build(this, title, text)
+        val n = build(this, title, text, turn)
         // Always go foreground first, even when this start is only to stop: Android ends the app if a
         // service started with startForegroundService() stops before it calls startForeground().
         val foreground = runCatching {
@@ -53,17 +54,25 @@ class DriveService : Service() {
         private var title = "Driving with Kite"
         private var text = "Tap to go back to the map"
         private var shownAt = 0L
+        private var turn: ManeuverType? = null
         /** The small car icon, set by the Android shell (it owns the drawable). */
         var notificationIcon = android.R.drawable.ic_menu_mylocation
 
-        private fun build(c: Context, title: String, text: String): Notification {
+        private fun build(c: Context, title: String, text: String, type: ManeuverType? = null): Notification {
             val launch = c.packageManager.getLaunchIntentForPackage(c.packageName) ?: Intent()
             val open = PendingIntent.getActivity(c, 0, launch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-            return NotificationCompat.Builder(c, CHANNEL)
+            // Bigger when a turn is coming: the turn arrow beside it, and the line opens out in full.
+            val b = NotificationCompat.Builder(c, CHANNEL)
                 .setSmallIcon(notificationIcon)
                 .setContentTitle(title)
                 .setContentText(text)
+            if (type != null) {
+                b.setLargeIcon(TurnArrow.bitmap(type, (64 * c.resources.displayMetrics.density).toInt()))
+                b.setStyle(NotificationCompat.BigTextStyle().setBigContentTitle(title).bigText(text))
+                b.setColor(0xFF0F766E.toInt()).setColorized(false)
+            }
+            return b
                 .setContentIntent(open)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
@@ -77,19 +86,19 @@ class DriveService : Service() {
          * The next turn and the arrival time on the notification, so they're on the lock screen and
          * over another app. Quiet: it never sounds or buzzes, and changes at most every two seconds.
          */
-        fun show(c: Context, title: String, text: String) {
-            if (!running || (title == this.title && text == this.text)) return
+        fun show(c: Context, title: String, text: String, type: ManeuverType? = null) {
+            if (!running || (title == this.title && text == this.text && type == turn)) return
             val now = android.os.SystemClock.elapsedRealtime()
-            if (title.substringAfter(" · ") == this.title.substringAfter(" · ") && now - shownAt < 2_000) return
-            this.title = title; this.text = text; shownAt = now
-            runCatching { c.getSystemService(NotificationManager::class.java).notify(1, build(c, title, text)) }
+            if (title.substringAfter(" · ") == this.title.substringAfter(" · ") && type == turn && now - shownAt < 2_000) return
+            this.title = title; this.text = text; turn = type; shownAt = now
+            runCatching { c.getSystemService(NotificationManager::class.java).notify(1, build(c, title, text, type)) }
         }
 
         fun start(c: Context) {
             // Without location access Android refuses a location service, and that refusal ends the app.
             if (ContextCompat.checkSelfPermission(c, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
                 ContextCompat.checkSelfPermission(c, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
-            title = "Driving with Kite"; text = "Tap to go back to the map"
+            title = "Driving with Kite"; text = "Tap to go back to the map"; turn = null
             running = runCatching { c.startForegroundService(Intent(c, DriveService::class.java)) }.isSuccess
         }
 
@@ -108,6 +117,6 @@ class DriveService : Service() {
 
 actual object DriveSession {
     actual fun start(destination: String) = DriveService.start(AndroidHost.app)
-    actual fun show(state: TurnState) = DriveService.show(AndroidHost.app, state.title, state.text)
+    actual fun show(state: TurnState) = DriveService.show(AndroidHost.app, state.title, state.text, state.type)
     actual fun stop() = DriveService.stop(AndroidHost.app)
 }

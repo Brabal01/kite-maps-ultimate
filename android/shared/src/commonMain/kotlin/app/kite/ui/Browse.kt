@@ -61,10 +61,14 @@ fun BrowseOverlay(model: AppModel) {
             SheetDetent.FULL -> minOf(full * 0.94f, full - statusTop - 72.dp)
         }
         val navBottom = with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }
+        // Turned sideways: the search and its cards keep to the left, so the map buttons can sit at
+        // the top right and the locate button still fits above the tab bar.
+        val wide = maxWidth > maxHeight && maxHeight < 560.dp
+        val sides = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
 
         // Map buttons: layers, parking and the 3D/2D/north-up button on the right, under the top cards.
-        Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp)) {
-            Row(Modifier.fillMaxWidth().padding(top = if (idle) (if (model.resumeOffer != null) 266.dp else 166.dp) else 76.dp)) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().windowInsetsPadding(sides).padding(horizontal = 16.dp)) {
+            Row(Modifier.fillMaxWidth().padding(top = if (wide) 12.dp else if (idle) (if (model.resumeOffer != null) 266.dp else 166.dp) else 76.dp)) {
                 Spacer(Modifier.weight(1f))
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     MapFab(Icons.Outlined.Layers) { model.showLayers = true }
@@ -107,7 +111,8 @@ fun BrowseOverlay(model: AppModel) {
             KiteDock(model)
         }
 
-        Column(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column((if (wide) Modifier.width(minOf(460.dp, maxWidth * 0.6f)) else Modifier.fillMaxWidth()).statusBarsPadding().windowInsetsPadding(sides)
+            .padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SearchBar(model, focused, { focused = it }, unfocus = { focus.clearFocus(); focused = false })
             if (focused) SuggestionsPanel(model) { focus.clearFocus(); focused = false }
             val n = model.notice
@@ -119,7 +124,8 @@ fun BrowseOverlay(model: AppModel) {
                 kotlinx.coroutines.delay(if (n.startsWith("Saved") || n.startsWith("Parking spot saved")) 5_000 else 10_000)
                 if (model.notice == n && !n.startsWith("No internet")) model.notice = null
             }
-            if (!focused) StatusCards()
+            // Offline after a search: the one "No internet" message above is enough, not a second card.
+            if (!focused) StatusCards(offlineShown = n != null && n.startsWith("No internet"))
             // Kite closed in the middle of a drive: one big button to carry on.
             val trip = model.resumeOffer
             if (idle && trip != null) ResumeCard(trip, onGo = { model.resumeTrip() }, onClose = { model.dismissResume() })
@@ -129,7 +135,11 @@ fun BrowseOverlay(model: AppModel) {
     // Screenshot run only: the search box open, to check nothing sits on its panel.
     if (DemoScript.step == "searchfocus") LaunchedEffect(Unit) { kotlinx.coroutines.delay(8000); focused = true }
     androidx.compose.ui.backhandler.BackHandler(enabled = focused || hasSheet) {
-        if (focused) { focus.clearFocus(); focused = false } else model.clearSearch()
+        if (focused) {
+            focus.clearFocus(); focused = false
+            // Backed out before searching: nothing is shown, so the words go too.
+            if (model.results.isEmpty() && model.selected == null && !model.searching) model.query = ""
+        } else model.clearSearch()
     }
 }
 

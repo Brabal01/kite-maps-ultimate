@@ -316,7 +316,12 @@ object Banner {
         m ?: return "Follow the route"
         val n = m.exit
         if (m.type == ManeuverType.ROUNDABOUT && n != null) return "${ordinal(n)} exit"
-        return SpokenText.forScreen(m.instruction)
+        val text = SpokenText.forScreen(m.instruction)
+        // A bare "Turn right" when the street is known: name it, like driving does.
+        val road = m.road
+        if (road != null && m.type !in setOf(ManeuverType.ROUNDABOUT, ManeuverType.ARRIVE, ManeuverType.DEPART) &&
+            listOf(" onto ", " on ", " toward", " towards ", road).none { text.contains(it) }) return "$text onto $road"
+        return text
     }
 
     fun ordinal(n: Int): String {
@@ -397,7 +402,7 @@ private fun ThenView(nav: Navigator) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
         // Big and bold, in the banner's main colour (white at night), so it reads at a glance.
         Text("Then", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = primaryText)
-        Icon(maneuverIcon(then.type), null, tint = primaryText, modifier = Modifier.size(26.dp))
+        Icon(maneuverIcon(then.type), null, tint = primaryText, modifier = Modifier.size(32.dp))
         val n = then.exit
         if (then.type == ManeuverType.ROUNDABOUT && n != null) {
             // Which exit, so the next roundabout is known before the banner changes.
@@ -506,8 +511,8 @@ fun FasterRouteCard(offer: FasterOffer, onKeep: () -> Unit, onTake: () -> Unit) 
             // A countdown, so it's clear how long there is to keep yours.
             var secs by remember(offer) { mutableStateOf(max(0L, (offer.untilMillis - nowMillis() + 999) / 1000)) }
             LaunchedEffect(offer) { while (secs > 0) { delay(1000); secs = max(0L, (offer.untilMillis - nowMillis() + 999) / 1000) } }
-            Text((offer.via?.let { "via $it · " } ?: "") + (if (secs > 0) "switching in $secs s" else "switching now"), fontSize = 16.sp, fontWeight = FontWeight.Medium,
-                color = Vela.muted(dark), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text((offer.via?.let { "via $it · " } ?: "") + (if (secs > 0) "switching in $secs s" else "switching now"), fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                color = Vela.accentText(dark), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         // What else changes: only shown when something does, so a plain faster way looks as before.
         val facts = fasterFacts(offer)

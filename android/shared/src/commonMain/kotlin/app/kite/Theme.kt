@@ -2,6 +2,7 @@
 
 package app.kite
 
+import kotlinx.datetime.toLocalDateTime
 import app.kite.resources.Res
 import app.kite.resources.nunito
 
@@ -160,6 +161,9 @@ object Fmt {
         }
 
     /** Short distances in yards, the British way. */
+    /** The UK word for the big roads: "motorways" in Britain and Ireland whatever the units, else "highways". */
+    val motorways: String get() = if (yards || country in setOf("GB", "UK", "IE")) "motorways" else "highways"
+
     val yards: Boolean
         get() = when (AppSettings.units) {
             UnitsMode.YARDS -> true
@@ -238,7 +242,25 @@ object Fmt {
     /** "4 min" on foot, from metres in a straight line (a little slower than walking pace for the corners). */
     fun walkMinutes(meters: Double): String = "${maxOf(1, (meters / 70).roundToInt())} min"
 
-    fun arrival(s: Double): String = time(nowMillis() + (s * 1000).toLong())
+    /** "18:47", or "tomorrow 18:47" (or "Wed 18:47") when the trip ends on another day. */
+    fun arrival(s: Double): String = arrivalDay(s).let { d -> if (d.isEmpty()) arrivalTime(s) else "$d ${arrivalTime(s)}" }
+
+    fun arrivalTime(s: Double): String = time(nowMillis() + (s * 1000).toLong())
+
+    /** "" today, "tomorrow", or the day's short name further on. */
+    fun arrivalDay(s: Double): String {
+        val tz = kotlinx.datetime.TimeZone.currentSystemDefault()
+        fun day(ms: Long) = kotlin.time.Instant.fromEpochMilliseconds(ms).toLocalDateTime(tz).date
+        val now = nowMillis()
+        val today = day(now)
+        val then = day(now + (s * 1000).toLong())
+        val days = (then.toEpochDays() - today.toEpochDays()).toLong()
+        return when {
+            days <= 0L -> ""
+            days == 1L -> "tomorrow"
+            else -> then.dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
+        }
+    }
 
     fun time(epochMillis: Long): String = LocalFormat.time(epochMillis)
 
@@ -247,7 +269,16 @@ object Fmt {
      * "Closes 22:00" when the phone is set to 24 hours, left as they are otherwise.
      */
     fun clock(text: String): String {
-        if (!h24) return text
+        if (!h24) {
+            // A 12-hour phone: "Closes 23:00" becomes "Closes 11 pm", like Google's own hours lines.
+            return Regex("""(?<![\d:.])(\d{1,2}):(\d{2})(?![\d:])(?![\s\u202F\u00A0]?(?:[AaPp]\.?[Mm]))""").replace(text) { m ->
+                val h = m.groupValues[1].toInt()
+                val min = m.groupValues[2]
+                if (h > 23 || min.toInt() > 59) return@replace m.value
+                val h12 = if (h % 12 == 0) 12 else h % 12
+                (if (min == "00") "$h12" else "$h12:$min") + if (h < 12) " am" else " pm"
+            }
+        }
         return Regex("""\b(\d{1,2})(?::(\d{2}))?[\s\u202F\u00A0]?([AaPp])(?:\.[Mm]\.|[Mm])(?![A-Za-z])""").replace(text) { m ->
             val h = m.groupValues[1].toInt()
             if (h !in 1..12) return@replace m.value

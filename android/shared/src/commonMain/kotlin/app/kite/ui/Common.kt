@@ -168,7 +168,8 @@ fun KiteDock(model: AppModel, modifier: Modifier = Modifier) {
             @Composable
             fun item(tab: AppTab, icon: ImageVector, title: String) {
                 val on = model.tab == tab
-                val c = if (on) Vela.accentText(dark) else Vela.muted(dark)
+                // Tabs you're not on in a softer grey, so the one you're on stands out.
+                val c = if (on) Vela.accentText(dark) else if (dark) Color(0xFF7B8798) else Color(0xFF9AA5B4)
                 Column(
                     Modifier.size(72.dp, 60.dp).clip(CircleShape).clickable {
                         if (tab != model.tab && model.tab == AppTab.SETTINGS) model.reloadRoutes()
@@ -282,7 +283,7 @@ fun NoticeBanner(text: String, dismiss: () -> Unit) {
 
 /** Why the map can't do its job right now: location turned off, or no internet. */
 @Composable
-fun StatusCards() {
+fun StatusCards(offlineShown: Boolean = false) {
     val loc = LocationService
     val fix = loc.last
     when {
@@ -296,7 +297,7 @@ fun StatusCards() {
             "Allow precise location for Kite in Settings to improve your position.", "Settings") { LocationService.openSettings() }
         loc.authorized && fix != null && fix.accuracy > 200 -> StatusCard(Icons.Filled.MyLocation, Color(0xFFF59E0B), "Location is uncertain",
             "GPS accuracy is about ${fix.accuracy.toInt()} m. Move outdoors for a better fix.", null) {}
-        !Connectivity.online -> StatusCard(Icons.Filled.WifiOff, Color(0xFFF59E0B), "No internet connection",
+        !Connectivity.online && !offlineShown -> StatusCard(Icons.Filled.WifiOff, Color(0xFFF59E0B), "No internet connection",
             "Search, routes and live traffic need one. The map you've already seen still works.", null) {}
     }
 }

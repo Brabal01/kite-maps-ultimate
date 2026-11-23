@@ -31,6 +31,25 @@ Design ideas picked by Matteo, on both phones:
 - **12 or 24 hours:** opening hours and charge times follow the phone's clock setting.
 - **Cleaner route screen:** picked route bright teal, others grey; slim top bar; small panel with just the picked route and Go.
 
+More design ideas picked by Matteo from the whole-app check, on both phones:
+
+- **Places:** the website shows just its name (tesco.com, no tracking code); the Reviews tab's stars match the
+  score at the top and show Google's top review properly; opening hours all follow the phone's clock; the
+  travel time on a place follows how you last travelled (drive, cycle or walk).
+- **Search:** "Tesco" frames the nearby ones on both phones; the box empties when you back out; offline
+  says "No internet" once, not twice. Without Google, the nearest results come first and streets only
+  show when you search for one.
+- **Saved:** "Removed · Undo" for a few seconds after removing a place, Home or Work; hold Home or Work to
+  remove it; Rename starts with the cursor at the end.
+- **Settings:** Diagnostics shows a tick or cross per check and says it can take a minute; "motorways",
+  not "highways", in the UK whatever the units.
+- **Trips:** "arrive tomorrow" on trips that end the next day; walking names the street to turn onto;
+  Android's drive notification opens bigger with the turn arrow; turned sideways, the map buttons and
+  locate button all fit.
+- **Look:** a soft band behind the clock on the satellite map; a dark iPhone keyboard in Kite's dark theme;
+  bold teal countdown on the faster route card; other search pins fade more; the Dartford price in bold;
+  softer grey for the tabs you're not on; a bigger "Then" arrow.
+
 Fixed after tapping through every screen on both phones:
 
 - Picking Walk for one trip no longer changes the default travel mode in Settings.

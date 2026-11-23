@@ -507,6 +507,9 @@ object Directions {
                         val candidates = vias[i]?.let { listOf(it) + plain } ?: plain
                         // Google's step positions are only trustworthy when its steps cover the whole line.
                         val complete = g[i].stepsComplete
+                        // On foot, Google's own steps name the streets (the open router's footpaths often have no
+                        // name, so the banner only said "Turn right"): keep them when they cover the whole walk.
+                        if (mode == TravelMode.WALK && complete && g[i].maneuvers.any { it.road != null || " onto " in it.instruction }) continue
                         val steps = StepMerge.adopt(candidates, g[i].polyline)
                             ?: if (complete) StepMerge.adoptPiecewise(candidates, g[i].maneuvers, g[i].polyline) else null
                         if (steps != null) {

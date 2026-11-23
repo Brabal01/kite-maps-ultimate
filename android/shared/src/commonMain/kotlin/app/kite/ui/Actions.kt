@@ -23,7 +23,18 @@ import app.kite.core.plain
 import app.kite.core.urlEnc
 
 fun telUrl(phone: String?): String? = phone?.let { "tel:" + it.filter { c -> c in "+0123456789" } }
-fun webUrl(site: String?): String? = site?.let { if (it.startsWith("http")) it else "https://$it" }
+fun webUrl(site: String?): String? = site?.let { if (it.startsWith("http")) it else "https://$it" }?.let(::withoutTracking)
+
+/** Drops the tracking bits Google adds to a place's website (utm_source=google and the like). */
+fun withoutTracking(url: String): String {
+    val q = url.indexOf('?').takeIf { it >= 0 } ?: return url
+    val hash = url.indexOf('#', q).takeIf { it >= 0 } ?: url.length
+    val kept = url.substring(q + 1, hash).split("&").filter { p ->
+        val k = p.substringBefore("=").lowercase()
+        p.isNotEmpty() && !k.startsWith("utm_") && k !in setOf("gclid", "fbclid", "y_source", "msclkid")
+    }
+    return url.substring(0, q) + (if (kept.isEmpty()) "" else "?" + kept.joinToString("&")) + url.substring(hash)
+}
 
 /** Other map apps a place can be handed to, by their web links. */
 enum class OtherApp(val label: String) {

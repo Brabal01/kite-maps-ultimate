@@ -38,6 +38,9 @@ expect fun haptic(long: Boolean = false)
 /** The screen stays on while driving. */
 expect fun keepScreenOn(on: Boolean)
 
+/** The phone's own parts (the iPhone keyboard, the clock at the top) in Kite's light or dark look. */
+expect fun matchSystemLook(dark: Boolean)
+
 /** Things Kite hands to the rest of the phone: links, sharing, the clipboard, Settings. */
 expect object Phone {
     /** Opens a link in whatever app handles it (browser, dialer, another maps app). */

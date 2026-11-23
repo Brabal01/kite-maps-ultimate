@@ -841,7 +841,7 @@ class KiteMap(private val model: AppModel) {
             if (p.id == target?.id) return@mapIndexedNotNull null
             val rating = p.rating?.let { fmt("%.1f", it) }
             point(p.location, mapOf("id" to p.id, "icon" to MapIcons.iconName(p), "label" to listOfNotNull(p.name, rating).joinToString("\n"), "rank" to i,
-                "op" to if (target != null) 0.45 else 1.0))
+                "op" to if (target != null) 0.28 else 1.0))
         })
         val sel = mutableListOf<Feature>()
         if (target != null) {

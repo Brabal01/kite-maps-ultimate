@@ -4,7 +4,10 @@ package app.kite.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -34,6 +37,8 @@ fun DiagnosticsSettings(model: AppModel) {
     var running by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Ready") }
     var report by remember { mutableStateOf<String?>(null) }
+    // Each check with a tick or a cross once it's done (null while it runs).
+    var checks by remember { mutableStateOf<List<Pair<String, Boolean?>>>(emptyList()) }
 
     SettingsGroup(footer = "Checks that Waze and OpenStreetMap answer, and puts that with your Kite version, phone model and settings into a small file " +
         "to send with a bug report. Nothing is sent until you share it. The map picture can show where you are, so leave it off unless it helps.") {
@@ -42,13 +47,32 @@ fun DiagnosticsSettings(model: AppModel) {
         Text(if (running) "Testing…" else "Run tests", fontSize = KType.body, color = if (running) secondaryText else Vela.accentText(dark),
             modifier = Modifier.fillMaxWidth().tap {
                 if (running) return@tap
-                running = true; report = null; status = "Testing…"
+                running = true; report = null; checks = emptyList(); status = "Testing… this can take a minute."
                 scope.launch {
-                    report = runDiagnostics(model, includeMap) { status = it }
-                    status = if (report != null) "Ready to share." else "Couldn't make the file."
+                    report = runDiagnostics(model, includeMap) { name, ok ->
+                        checks = checks.filter { it.first != name } + (name to ok)
+                    }
+                    val failed = checks.count { it.second == false }
+                    status = when {
+                        report == null -> "Couldn't make the file."
+                        failed == 0 -> "All checks passed. Ready to share."
+                        else -> "$failed of ${checks.size} checks failed. Share this with your bug report."
+                    }
                     running = false
                 }
             }.padding(horizontal = 14.dp, vertical = 14.dp))
+        for ((name, ok) in checks) {
+            HorizontalDivider()
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                when (ok) {
+                    null -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    true -> Icon(Icons.Filled.CheckCircle, "Passed", tint = Vela.open, modifier = Modifier.size(20.dp))
+                    false -> Icon(Icons.Filled.Cancel, "Failed", tint = Vela.closed, modifier = Modifier.size(20.dp))
+                }
+                Text(name, fontSize = KType.body, color = primaryText, modifier = Modifier.weight(1f))
+            }
+        }
         HorizontalDivider()
         Text(status, fontSize = KType.footnote, color = secondaryText, modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp))
         report?.let { file ->
@@ -62,7 +86,7 @@ fun DiagnosticsSettings(model: AppModel) {
     }
 }
 
-private suspend fun runDiagnostics(model: AppModel, includeMap: Boolean, progress: (String) -> Unit): String? {
+private suspend fun runDiagnostics(model: AppModel, includeMap: Boolean, progress: (String, Boolean?) -> Unit): String? {
     val s = AppSettings
     val map = if (includeMap) model.mapPicture() else null
     val lines = mutableListOf(
@@ -83,10 +107,11 @@ private suspend fun runDiagnostics(model: AppModel, includeMap: Boolean, progres
         "Service tests (fixed box in central London):",
     )
     suspend fun <T> timed(name: String, work: suspend () -> T?, describe: (T) -> String) {
-        progress("Testing $name…")
+        progress(name, null)
         val t0 = elapsedRealtime()
         val result = runCatching { work() }.getOrNull()
         val ms = elapsedRealtime() - t0
+        progress(name, result != null)
         lines += "$name: " + (result?.let(describe) ?: "FAILED") + ", $ms ms"
     }
     timed("Waze live map", { Waze.alerts(51.49, -0.15, 51.53, -0.08) }) { "${it.size} reports" }

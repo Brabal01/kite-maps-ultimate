@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.automirrored.filled.DirectionsBike
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -79,20 +80,23 @@ fun PlaceHeader(model: AppModel, place: Place) {
 fun PlaceBody(model: AppModel, place: Place) {
     val ctx = Phone
     var tab by remember(place.id) { mutableIntStateOf(0) }
-    var driveSeconds by remember(place.id) { mutableStateOf<Double?>(null) }
-    LaunchedEffect(place.id) {
+    // The time on the card is for the way you last travelled (drive, bike or walk), not always driving.
+    val mode = model.lastMode ?: model.settings.defaultMode
+    var driveSeconds by remember(place.id, mode) { mutableStateOf<Double?>(null) }
+    LaunchedEffect(place.id, mode) {
         val from = model.userLatLng ?: return@LaunchedEffect
         val d = from.distanceTo(place.location)
-        if (d <= 300 || d >= 300_000) return@LaunchedEffect
+        val far = when (mode) { TravelMode.DRIVE -> 300_000.0; TravelMode.BIKE -> 80_000.0; TravelMode.WALK -> 25_000.0 }
+        if (d <= 300 || d >= far) return@LaunchedEffect
         val s = model.settings
         var r: List<Route>? = null
-        if (!s.noGoogle) r = runCatching { GoogleClient.shared.directions(from, place.location, TravelMode.DRIVE, s.avoidHighways, s.avoidTolls) }.getOrNull()
-        if (r.isNullOrEmpty()) r = runCatching { OSRM.route(from, place.location, TravelMode.DRIVE) }.getOrNull()
+        if (!s.noGoogle) r = runCatching { GoogleClient.shared.directions(from, place.location, mode, s.avoidHighways, s.avoidTolls) }.getOrNull()
+        if (r.isNullOrEmpty()) r = runCatching { OSRM.route(from, place.location, mode) }.getOrNull()
         driveSeconds = r?.minOfOrNull { it.durationSeconds }
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        PlaceActions(model, place, driveSeconds)
+        PlaceActions(model, place, driveSeconds, mode)
         PhotoStrip(place.photoUrls, 140.dp, opensViewer = true, streetView = place, model = model)
         // Google's places have reviews to read; open map data has none.
         val hasReviews = place.source == "google" && place.rating != null && !AppSettings.noGoogle
@@ -118,7 +122,7 @@ fun PlaceBody(model: AppModel, place: Place) {
 }
 
 @Composable
-private fun PlaceActions(model: AppModel, place: Place, driveSeconds: Double?) {
+private fun PlaceActions(model: AppModel, place: Place, driveSeconds: Double?, mode: TravelMode) {
     val ctx = Phone
     val dark = LocalDark.current
     var more by remember { mutableStateOf(false) }
@@ -126,8 +130,10 @@ private fun PlaceActions(model: AppModel, place: Place, driveSeconds: Double?) {
         driveSeconds?.let {
             Row(Modifier.height(52.dp).border(1.dp, secondaryText.copy(alpha = 0.35f), CircleShape).padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.Filled.DirectionsCar, null, tint = primaryText, modifier = Modifier.size(20.dp))
-                Text("${Fmt.duration(it)} drive", fontWeight = FontWeight.Bold, color = primaryText)
+                Icon(when (mode) { TravelMode.DRIVE -> Icons.Filled.DirectionsCar; TravelMode.BIKE -> Icons.AutoMirrored.Filled.DirectionsBike
+                    TravelMode.WALK -> Icons.AutoMirrored.Filled.DirectionsWalk }, null, tint = primaryText, modifier = Modifier.size(20.dp))
+                Text("${Fmt.duration(it)} " + when (mode) { TravelMode.DRIVE -> "drive"; TravelMode.BIKE -> "cycle"; TravelMode.WALK -> "walk" },
+                    fontWeight = FontWeight.Bold, color = primaryText)
             }
         }
         telUrl(place.phone)?.let { PillButton("Call", Icons.Filled.Phone) { ctx.open(it) } }
@@ -179,7 +185,7 @@ private fun PlaceOverview(place: Place) {
                     Icon(Icons.Outlined.Schedule, null, tint = secondaryText, modifier = Modifier.size(22.dp))
                     Column(Modifier.weight(1f)) {
                         StatusText(place)
-                        if (!hoursOpen) place.hours.firstOrNull()?.let { Text(it, fontSize = KType.subheadline, color = secondaryText) }
+                        if (!hoursOpen) place.hours.firstOrNull()?.let { Text(Fmt.clock(it), fontSize = KType.subheadline, color = secondaryText) }
                     }
                     Icon(if (hoursOpen) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null, tint = secondaryText)
                 }
@@ -187,7 +193,8 @@ private fun PlaceOverview(place: Place) {
                     val parts = h.split(":", limit = 2)
                     Row(Modifier.padding(start = 36.dp)) {
                         Text(parts.first(), fontSize = KType.subheadline, color = primaryText, modifier = Modifier.width(110.dp))
-                        Text(if (parts.size > 1) parts[1].trim() else "", fontSize = KType.subheadline, color = primaryText)
+                        // In the phone's own clock style, the same as "Closes 23:00" above.
+                        Text(if (parts.size > 1) Fmt.clock(parts[1].trim()) else "", fontSize = KType.subheadline, color = primaryText)
                     }
                 }
             }
@@ -195,7 +202,7 @@ private fun PlaceOverview(place: Place) {
         place.phone?.let { phone -> Copyable(phone, onClick = { telUrl(phone)?.let { ctx.open(it) } }) { InfoRow(Icons.Outlined.Phone, phone) } }
         place.website?.let { site ->
             Copyable(site, onClick = { webUrl(site)?.let { ctx.open(it) } }) {
-                InfoRow(Icons.Filled.Language, site.removePrefix("https://").removePrefix("http://"))
+                InfoRow(Icons.Filled.Language, siteName(site))
             }
         }
         val coords = fmt("%.6f, %.6f", place.location.lat, place.location.lng)
@@ -392,7 +399,8 @@ fun ReviewsList(place: Place) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(fmt("%.1f", rating), fontSize = 40.sp, fontWeight = FontWeight.ExtraBold, color = primaryText)
                 Column {
-                    Text(starsText(rating), fontSize = 18.sp, color = Color(0xFFF59E0B))
+                    // The same stars as the top of the card, halves and all, so 3.4 looks the same in both places.
+                    Stars(rating, 20.dp)
                     place.reviewCount?.let { Text("${LocalFormat.count(it)} reviews on Google", fontSize = KType.subheadline, color = secondaryText) }
                 }
             }
@@ -419,7 +427,14 @@ fun ReviewsList(place: Place) {
             }
         }
         if ((failed || list?.isEmpty() == true) && place.featuredReview != null) {
-            Text("“${place.featuredReview}”", fontSize = KType.subheadline, color = primaryText)
+            // Google only hands apps its top review now, so show that one as a proper review.
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+                Icon(Icons.Filled.AccountCircle, null, tint = secondaryText, modifier = Modifier.size(30.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Top review on Google", fontSize = KType.caption, fontWeight = FontWeight.SemiBold, color = secondaryText)
+                    Text("“${place.featuredReview}”", fontSize = KType.subheadline, color = primaryText)
+                }
+            }
         }
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(CircleShape).background(Vela.tonal(dark))
             .clickable { ctx.open(GoogleReviews.webUrl(place)) }, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -432,3 +447,9 @@ fun ReviewsList(place: Place) {
 }
 
 private fun starsText(rating: Double): String = (0 until 5).joinToString("") { if (rating - it >= 0.5) "★" else "☆" }
+
+/** "tesco.com" from "https://www.tesco.com/store-locator/...?utm_source=google": the site's name, no tracking. */
+fun siteName(url: String): String {
+    val host = url.trim().substringAfter("://").substringBefore("/").substringBefore("?").substringBefore("#").substringAfter("@").substringBefore(":")
+    return host.lowercase().removePrefix("www.").ifEmpty { url }
+}

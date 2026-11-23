@@ -15,6 +15,8 @@ data class TurnState(
     val road: String?,
     val arrival: String,
     val arrived: Boolean,
+    /** The next turn's kind, for the arrow on Android's bigger notification. */
+    val type: ManeuverType = ManeuverType.STRAIGHT,
 )
 
 /**
@@ -46,7 +48,8 @@ object TurnStates {
             instruction = if (n.arrived) "You've arrived" else Banner.headline(m),
             road = if (n.arrived) null else m?.road,
             arrival = Fmt.arrival(left),
-            arrived = n.arrived)
+            arrived = n.arrived,
+            type = if (n.arrived) ManeuverType.ARRIVE else m?.type ?: ManeuverType.STRAIGHT)
     }
 
     /** The iPhone's arrow for a turn (an SF Symbol name). */

@@ -114,6 +114,8 @@ class AppModel {
     var notice by mutableStateOf<String?>(null)
     /** Goes up each time the Settings tab is tapped while already on it: the page goes back to its main list. */
     var settingsHome by mutableStateOf(0)
+    /** How the last trip was made (drive, bike or walk), for the time on a place card. Not saved: the default stays as set. */
+    var lastMode by mutableStateOf<TravelMode?>(null)
     var detent by mutableStateOf(SheetDetent.HALF)
     var openNowOnly by mutableStateOf(false)
     var rating4Only by mutableStateOf(false)
@@ -272,9 +274,20 @@ class AppModel {
             }
             if (places.size == 1) select(places[0]) else {
                 detent = SheetDetent.HALF
-                frame(places.map { it.location })
+                frame(nearbyToFrame(places, vp.first, vp.second))
             }
         }
+    }
+
+    /**
+     * The results worth fitting on screen: the ones around here, not a chain's shops all over the country
+     * (both phones the same: "Tesco" shows the nearby ones, not Oxford to Brighton). Always at least the closest three.
+     */
+    private fun nearbyToFrame(places: List<Place>, center: LatLng, span: Double?): List<LatLng> {
+        val reach = maxOf((span ?: 5_000.0) * 1.5, 5_000.0)
+        val byDistance = places.sortedBy { it.location.distanceTo(center) }
+        val near = byDistance.filter { it.location.distanceTo(center) <= reach }
+        return (if (near.size >= 3) near else byDistance.take(3)).map { it.location }
     }
 
     fun typed(text: String) {
@@ -386,6 +399,8 @@ class AppModel {
     fun closePlace() {
         selected = null
         if (results.isNotEmpty()) detent = SheetDetent.HALF
+        // Back on the plain map: an empty box, so it doesn't look like a search is still on.
+        else if (directions == null) { query = ""; resultsTitle = "" }
     }
 
     /** A tap on a place the basemap draws: look it up on Google by name at that spot. */
@@ -785,6 +800,7 @@ class AppModel {
         val d = directions ?: return
         val route = d.route ?: return
         if (d.previewOnly) return
+        if (!d.transit) lastMode = d.mode
         endCruise()
         val n = Navigator(route, d.destination, d.stops, scope)
         // Roads tapped away on the plan stay avoided when the way is worked out again on the drive.
