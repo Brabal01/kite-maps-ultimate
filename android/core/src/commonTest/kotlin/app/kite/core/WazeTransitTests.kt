@@ -39,6 +39,30 @@ class TransitTests {
         assertEquals(480.0, t.walkSeconds)
     }
 
+    @Test fun transferAndStopDetails() {
+        val json = """
+          {"itineraries":[{"legs":[
+            {"mode":"TRAM","routeShortName":"1","startTime":"2026-11-24T17:00:00Z","endTime":"2026-11-24T17:10:00Z",
+             "from":{"name":"Hlavní nádraží","track":"B","scheduledTrack":"A"},
+             "to":{"name":"Tržnice","scheduledTrack":"2"},"intermediateStops":[
+               {"name":"Envelopa","arrival":"2026-11-24T17:05:00Z"},
+               {"name":"Šantovka","cancelled":true}]},
+            {"mode":"WALK","duration":120},
+            {"mode":"BUS","routeShortName":"16","startTime":"2026-11-24T17:16:00Z","endTime":"2026-11-24T17:30:00Z"}
+          ]}]}
+        """
+        val trip = Transitous.parse(json.encodeToByteArray()).single()
+        val ride = trip.legs.first()
+        assertEquals("B", ride.fromPlatform)
+        assertEquals("2", ride.toPlatform)
+        assertEquals(listOf("Envelopa"), ride.intermediateStops.map { it.name })
+        assertEquals(2, ride.stops)
+        assertEquals(360.0, trip.transferSecondsBefore(2))
+        assertNull(trip.transferSecondsBefore(1))
+        assertNull(trip.legs.last().fromPlatform)
+        assertEquals(0, trip.legs.last().stops)
+    }
+
     @Test fun stopTimes() {
         val json = """
         {"stopTimes":[
