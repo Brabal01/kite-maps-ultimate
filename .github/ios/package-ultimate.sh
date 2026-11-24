@@ -18,10 +18,10 @@ for variant in Full SideStore; do
   "$plist" -c "Set :CFBundleVersion $build_number" "$app/Info.plist"
   test "$("$plist" -c 'Print :CFBundleIdentifier' "$app/Info.plist")" = "$identifier"
   test "$("$plist" -c 'Print :MinimumOSVersion' "$app/Info.plist")" = 16.0
-  lipo -verify_arch arm64 "$app/Kite"
-  xcrun vtool -show-build "$app/Kite" | grep -E 'platform[[:space:]]+IOS$'
+  lipo "$app/Kite" -verify_arch arm64
+  xcrun vtool -show-build "$app/Kite" | grep -E 'platform[[:space:]]+IOS[[:space:]]*$'
   test -d "$app/Frameworks/KiteShared.framework"
-  lipo -verify_arch arm64 "$app/Frameworks/KiteShared.framework/KiteShared"
+  lipo "$app/Frameworks/KiteShared.framework/KiteShared" -verify_arch arm64
 
   if [[ $variant == SideStore ]]; then
     rm -rf "$app/PlugIns"
@@ -30,7 +30,7 @@ for variant in Full SideStore; do
     widget="$app/PlugIns/KiteWidget.appex"
     test "$("$plist" -c 'Print :CFBundleIdentifier' "$widget/Info.plist")" = "$identifier.NavigationWidget"
     "$plist" -c "Set :CFBundleVersion $build_number" "$widget/Info.plist"
-    lipo -verify_arch arm64 "$widget/KiteWidget"
+    lipo "$widget/KiteWidget" -verify_arch arm64
   fi
 
   while IFS= read -r -d '' bundle; do
