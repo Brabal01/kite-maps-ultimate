@@ -49,7 +49,7 @@ jobs:
       - run: |
           xcodebuild -version
           brew install xcodegen
-      - run: .github/ios/shared-app.sh release
+      - run: bash .github/ios/shared-app.sh device
       - run: xcodegen generate
       - run: |
           xcodebuild -project Kite.xcodeproj -scheme Kite -configuration Release \
@@ -63,6 +63,7 @@ jobs:
           if-no-files-found: error
 
   screenshots:
+    needs: device
     runs-on: macos-26
     timeout-minutes: 35
     strategy:
@@ -87,7 +88,7 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
       - run: brew install xcodegen
-      - run: .github/ios/shared-app.sh sim
+      - run: bash .github/ios/shared-app.sh sim
       - run: |
           xcodegen generate
           xcodebuild -project Kite.xcodeproj -scheme Kite -configuration Debug             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'             -derivedDataPath build CODE_SIGNING_ALLOWED=NO EXCLUDED_ARCHS=x86_64 build
