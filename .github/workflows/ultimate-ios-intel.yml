@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  CANDIDATE: 62230a2390ce7eaac1b2a690d7860da02fd8d8ba
+  CANDIDATE: a587ec666993064bfbf5f7deab5c739c1e416e8a
 
 jobs:
   core:
@@ -51,7 +51,15 @@ jobs:
           xcodebuild -project Kite.xcodeproj -scheme Kite -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build
-      - run: bash .github/ios/package-ultimate.sh build/Build/Products/Release-iphoneos/Kite.app dist 8
+      - name: Retain the compiled app before packaging
+        run: ditto -c -k --keepParent build/Build/Products/Release-iphoneos/Kite.app Kite-device-app.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compiled-kite-device-app
+          path: Kite-device-app.zip
+          retention-days: 3
+          if-no-files-found: error
+      - run: bash .github/ios/package-ultimate.sh build/Build/Products/Release-iphoneos/Kite.app dist 10
       - uses: actions/upload-artifact@v4
         with:
           name: kite-maps-ultimate-ipas
@@ -74,11 +82,11 @@ jobs:
         run: |
           cd dist
           sha256sum -c SHA256SUMS.txt
-          if gh release view ultimate-preview-8 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if gh release view ultimate-preview-10 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             exit 0
           fi
-          gh release create ultimate-preview-62230a2-intel \
+          gh release create ultimate-preview-a587ec6-intel \
             --repo "$GITHUB_REPOSITORY" --target "$CANDIDATE" --prerelease --latest=false \
-            --title "Kite Maps Ultimate preview 62230a2" \
+            --title "Kite Maps Ultimate preview a587ec6" \
             --notes "ARM64 iPhone packages verified on GitHub-hosted macOS. Full includes the navigation widget. SideStore omits it. Both packages require re-signing on a device. Build: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID." \
             KiteMapsUltimate-Full.ipa KiteMapsUltimate-SideStore.ipa SHA256SUMS.txt
