@@ -66,9 +66,11 @@ object LocationService {
 
     private fun handle(f: Fix, fromGps: Boolean) {
         if (simulating) return
-        if (elapsedRealtime() - f.elapsedMs > 120_000) return
+        val maxAge = if (navigating) 5_000L else 120_000L
+        if (f.ageMs !in 0L..maxAge || !f.accuracy.isFinite() || f.accuracy < 0) return
         // A network fix is only taken while GPS hasn't given anything for a while.
         val prev = last
+        if (prev != null && f.elapsedMs <= prev.elapsedMs) return
         if (!fromGps && prev != null && prev.accuracy < f.accuracy && f.elapsedMs - prev.elapsedMs < 10_000) return
         last = f
         onUpdate?.invoke(f)

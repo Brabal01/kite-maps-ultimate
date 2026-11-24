@@ -306,8 +306,8 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
             return if (gap > 0) gap else null
         }
 
-    private fun update(fix: Fix, heading: Double? = null): RouteTracker.Progress {
-        val p = tracker.update(fix.coord, max(fix.accuracy, 5.0), heading)
+    private fun update(fix: Fix, heading: Double? = null, measured: Boolean = true): RouteTracker.Progress {
+        val p = tracker.update(fix.coord, fix.accuracy, heading, measured)
         return p.copy(remainingSeconds = p.remainingSeconds * trafficScale)
     }
 
@@ -323,7 +323,7 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
         if (!demoAlerts) speedMps = max(0.0, loc.speed)
         val course = heading(loc)
         if (!estimated) noteFix(loc)
-        val p = update(loc, course)
+        val p = update(loc, course, measured = !estimated)
         progress = p
         val toPin = loc.coord.distanceTo(destination.location)
         // Near the pin only counts near the end of the route too: a route can pass right by the
@@ -338,7 +338,8 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
         val parked = stoppedNearEnd?.let {
             (loc.timeMillis - it) / 1000.0 > (if (p.remainingMeters >= 150 && !nearPin) 180 else if (offRoad) 20 else 90)
         } ?: false
-        if (p.arrived || parked || (route.mode == TravelMode.DRIVE && toPin < 40 && nearPin)) {
+        if (!estimated && loc.accuracy in 0.0..50.0 &&
+            (p.arrived || parked || (route.mode == TravelMode.DRIVE && toPin < 40 && nearPin))) {
             arrived = true
             fasterOffer = null
             fasterRoute = null
