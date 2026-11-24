@@ -16,20 +16,32 @@ class CameraTests {
         assertEquals("Flock Safety", cams[1].operatorName)
     }
 
-    @Test fun trafficLights() {
-        val json = """{"elements":[{"type":"node","id":1,"lat":0.0050,"lon":0.0001,"tags":{"highway":"traffic_signals"}},{"type":"node","id":2,"lat":0.0052,"lon":0,"tags":{"highway":"traffic_signals"}},{"type":"node","id":3,"lat":0.0095,"lon":0,"tags":{"highway":"traffic_signals"}},{"type":"node","id":4,"lat":0.003,"lon":0.002,"tags":{"highway":"traffic_signals"}},{"type":"node","id":5,"lat":0.004,"lon":0,"tags":{"highway":"speed_camera"}}]}"""
-        assertEquals(listOf(5L), Overpass.parse(b(json))!!.map { it.id })
-        val lights = Overpass.parseSignalNodes(b(json)).map { it.at }
-        assertEquals(4, lights.size)
-        val on = Overpass.signalsOnRoute(lights, listOf(ll(0.0, 0.0), ll(0.01, 0.0)))
-        // The first light of the junction, put on the route itself; the side road's 220 m off is left out.
-        assertEquals(2, on.size)
-        assertEquals(0.0050, on[0].lat, 1e-6); assertEquals(0.0, on[0].lng, 1e-9)
-        assertEquals(0.0095, on[1].lat, 1e-6)
-        // The oncoming side's light just past the junction (45 m on) is the same junction.
-        val pair = Overpass.signalsOnRoute(listOf(ll(0.0020, 0.00005), ll(0.0024, -0.00005)), listOf(ll(0.0, 0.0), ll(0.01, 0.0)))
-        assertEquals(1, pair.size)
-        assertEquals(0.0020, pair[0].lat, 1e-6)
+    @Test fun trafficLightsMatchOnlyTheirApproach() {
+        val json = """
+        {"elements":[
+          {"type":"node","id":1,"lat":49.5950,"lon":17.2500,"tags":{"highway":"traffic_signals","traffic_signals:direction":"forward"}},
+          {"type":"node","id":2,"lat":49.5953,"lon":17.2500,"tags":{"highway":"traffic_signals","traffic_signals:direction":"backward"}},
+          {"type":"node","id":3,"lat":49.5956,"lon":17.2500,"tags":{"highway":"traffic_signals","traffic_signals:direction":"forward"}},
+          {"type":"node","id":4,"lat":49.5953,"lon":17.25004,"tags":{"highway":"traffic_signals","traffic_signals:direction":"forward"}},
+          {"type":"node","id":5,"lat":49.59502,"lon":17.2500,"tags":{"highway":"traffic_signals"}},
+          {"type":"way","id":10,"nodes":[6,1,5,2,3,7],"tags":{"highway":"primary"},"geometry":[
+            {"lat":49.5940,"lon":17.2500},{"lat":49.5950,"lon":17.2500},{"lat":49.59502,"lon":17.2500},
+            {"lat":49.5953,"lon":17.2500},{"lat":49.5956,"lon":17.2500},{"lat":49.5970,"lon":17.2500}]},
+          {"type":"way","id":11,"nodes":[8,4,2],"tags":{"highway":"residential"},"geometry":[
+            {"lat":49.5953,"lon":17.2506},{"lat":49.5953,"lon":17.25004},{"lat":49.5953,"lon":17.2500}]}
+        ]}
+        """
+        val lights = Overpass.parseSignalNodes(b(json))
+        assertEquals(5, lights.size)
+        val route = listOf(ll(49.5940, 17.2500), ll(49.5970, 17.2500))
+        val northbound = Overpass.signalsOnRoute(lights, route)
+        assertEquals(2, northbound.size)
+        assertEquals(49.5950, northbound[0].lat, 1e-6)
+        assertEquals(49.5956, northbound[1].lat, 1e-6)
+        val southbound = Overpass.signalsOnRoute(lights, route.reversed())
+        assertEquals(2, southbound.size)
+        assertEquals(49.5953, southbound[0].lat, 1e-6)
+        assertEquals(49.59502, southbound[1].lat, 1e-6)
     }
 
     @Test fun query() {

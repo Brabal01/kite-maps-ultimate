@@ -88,6 +88,38 @@ class RoundaboutTests {
         assertEquals(1, s.ruleLane)
     }
 
+    @Test fun correctedExitKeepsTextAndIconInSync() {
+        val c = LatLng(49.5939, 17.2500)
+        fun at(d: Double, r: Double) = around(c, d, r)
+        val ring = (0..12).map { at(it * 30.0, 30.0) }
+        val ways = mutableListOf(Roundabouts.Way(100, (1L..12L).toList() + 1L, ring,
+            mapOf("junction" to "roundabout", "highway" to "primary")))
+        fun arm(id: Long, bearing: Int, road: String, oneway: String = "no") {
+            ways += Roundabouts.Way(id, listOf(bearing / 30L + 1L, id + 100),
+                listOf(at(bearing.toDouble(), 30.0), at(bearing.toDouble(), 150.0)),
+                mapOf("highway" to road, "oneway" to oneway))
+        }
+        arm(200, 180, "primary")
+        arm(201, 150, "service")
+        arm(202, 120, "primary", "-1")
+        arm(203, 90, "primary")
+        arm(204, 0, "primary")
+        val line = listOf(at(180.0, 200.0), at(180.0, 30.0)) + (165 downTo 0 step 15).map { at(it.toDouble(), 30.0) } + at(0.0, 160.0)
+        val cum = Geo.cumulative(line)
+        val entry = Maneuver(ManeuverType.ROUNDABOUT, "Take the 4th exit", line[1], cum[1], 90.0, exit = 4)
+        val leave = Maneuver(ManeuverType.ROUNDABOUT, "Exit the roundabout", line[line.lastIndex - 1],
+            cum[line.lastIndex - 1], 100.0, exit = 4, leavesRoundabout = true)
+        val result = Roundabouts.applyWays(route(line, listOf(entry, leave)), ways, clockwise = false)!!
+        assertEquals(2, result.maneuvers.first().exit)
+        assertEquals(2, result.maneuvers.last().exit)
+        assertEquals(1, result.maneuvers.first().roundabout?.taken)
+        assertTrue(result.maneuvers.first().instruction.contains("2nd exit"))
+
+        // Without a closed ring, there is insufficient evidence to replace the provider's count.
+        val incomplete = ways.toMutableList().apply { this[0] = this[0].copy(nodes = this[0].nodes.dropLast(1), points = ring.dropLast(1)) }
+        assertEquals(4, (Roundabouts.applyWays(route(line, listOf(entry, leave)), incomplete, false)?.maneuvers?.first() ?: entry).exit)
+    }
+
     @Test fun dualCarriagewayMerges() {
         val merged = Roundabouts.merge(listOf(
             Roundabouts.Arm(80.0, true, false, "A27"), Roundabouts.Arm(100.0, false, true, "A27"), Roundabouts.Arm(200.0, true, true, null)))
