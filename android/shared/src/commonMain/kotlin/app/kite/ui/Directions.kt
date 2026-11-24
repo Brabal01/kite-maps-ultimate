@@ -703,7 +703,11 @@ fun TripRow(trip: TransitTrip, picked: Boolean) {
 fun TransitSteps(trip: TransitTrip) {
     fun times(t: Long?, text: String) = t?.let { "${clock(it)}  $text" } ?: text
     Column {
-        trip.legs.forEach { leg ->
+        trip.legs.forEachIndexed { index, leg ->
+            trip.transferSecondsBefore(index)?.let { seconds ->
+                Text("Transfer window · ${Fmt.duration(seconds)}", fontSize = KType.caption, color = secondaryText,
+                    modifier = Modifier.padding(start = 40.dp, top = 10.dp))
+            }
             Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Icon(vehicleIcon(leg.vehicle), null, modifier = Modifier.size(26.dp),
                     tint = if (leg.isWalk) secondaryText else leg.color?.let { Color(0xFF000000 or it) } ?: Vela.routeBlue)
@@ -717,8 +721,21 @@ fun TransitSteps(trip: TransitTrip) {
                             leg.headsign?.let { Text("to $it", fontSize = KType.subheadline, color = primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         }
                         Text(times(leg.depart, leg.fromName), fontSize = KType.subheadline, color = primaryText)
-                        Text("Ride ${leg.stops} stop${if (leg.stops == 1) "" else "s"} · ${Fmt.duration(leg.durationSeconds)}", fontSize = KType.caption, color = secondaryText)
+                        leg.fromPlatform?.let { Text("Platform $it", fontSize = KType.caption, color = secondaryText) }
+                        val duration = Fmt.duration(leg.durationSeconds)
+                        val stopCount = if (leg.stops == 1) "1 stop" else "${leg.stops} stops"
+                        Text(if (leg.stops > 0) "$stopCount · $duration" else duration, fontSize = KType.caption, color = secondaryText)
+                        if (leg.intermediateStops.isNotEmpty()) {
+                            var expanded by remember(trip.id, index) { mutableStateOf(false) }
+                            TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) {
+                                Text(if (expanded) "Hide intermediate stops" else "Show intermediate stops")
+                            }
+                            if (expanded) leg.intermediateStops.forEach { stop ->
+                                Text(times(stop.arrival ?: stop.departure, stop.name), fontSize = KType.caption, color = secondaryText)
+                            }
+                        }
                         Text(times(leg.arrive, "Get off at ${leg.toName}"), fontSize = KType.caption, color = secondaryText)
+                        leg.toPlatform?.let { Text("Platform $it", fontSize = KType.caption, color = secondaryText) }
                     }
                 }
             }
