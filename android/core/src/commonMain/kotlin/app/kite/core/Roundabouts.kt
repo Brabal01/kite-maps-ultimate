@@ -39,16 +39,25 @@ object Roundabouts {
                 if (i > 0 && r.maneuvers[i - 1].type == ManeuverType.ROUNDABOUT) {
                     r.maneuvers[i - 1].roundabout?.let { prev ->
                         m.roundabout = prev
-                        m.exit = m.exit ?: r.maneuvers[i - 1].exit
+                        m.exit = r.maneuvers[i - 1].exit ?: m.exit
                     }
                 }
                 continue
             }
-            val leave = leaving(ways, m.location, route.polyline, cum, m.alongMeters) ?: wayOff(r.maneuvers, i)
+            val mappedLeave = leaving(ways, m.location, route.polyline, cum, m.alongMeters)
+            val explicitLeave = wayOff(r.maneuvers, i)
+            val leave = explicitLeave ?: mappedLeave
             val out = exitAngle(route.polyline, cum, m.alongMeters, leave)
             val s = shape(ways, m.location, route.polyline, cum, m.alongMeters, clockwise, m.exit)
             val sketch = m.roundabout
-            if (s != null && (m.exit == null || s.taken + 1 == m.exit)) {
+            val recoveredExit = s?.taken?.plus(1)
+            val corroborated = s != null && leave != null &&
+                verifiesExit(ways, m.location, route.polyline, cum, m.alongMeters, leave)
+            if (corroborated && recoveredExit != null && m.exit != recoveredExit) {
+                m.exit = recoveredExit
+                m.instruction = OSRM.instruction("roundabout", null, m.road, recoveredExit, route.mode)
+            }
+            if (s != null && (m.exit == null || recoveredExit == m.exit)) {
                 m.roundabout = out?.let { aim(s, it) } ?: s
                 changed = true
             } else if (out != null && sketch != null && sketch.taken in sketch.exits.indices && angleGap(sketch.exits[sketch.taken], out) > 1) {
@@ -65,6 +74,38 @@ object Roundabouts {
         }
         return if (changed) r else null
     }
+
+    /**
+     * Accept a revised count only for a closed ring with a unique drivable exit that follows the
+     * route. Parallel exits and incomplete OSM responses retain the routing provider's count.
+     */
+    private fun verifiesExit(ways: List<Way>, entry: LatLng, line: List<LatLng>, cum: DoubleArray, along: Double, leave: Double): Boolean {
+        val (ring, ids) = ringAt(ways, entry) ?: return false
+        if (leave <= along + 8 || leave + 24 >= cum.last()) return false
+        val degree = mutableMapOf<Long, Int>()
+        for (way in ring) for ((a, b) in way.nodes.zipWithNext()) {
+            degree[a] = (degree[a] ?: 0) + 1
+            degree[b] = (degree[b] ?: 0) + 1
+        }
+        if (degree.size < 3 || degree.values.any { it != 2 }) return false
+        val after = Geo.point(line, leave + 12, cum)
+        val farther = Geo.point(line, leave + 24, cum)
+        if (ring.any { distance(farther, it) <= 8 }) return false
+        val exits = ways.filter { w ->
+            !w.isRing && w.tags["highway"] != null && allowedForDriving(w) &&
+                w.nodes.indices.any { i ->
+                    val oneWay = onewayDirection(w.tags)
+                    w.nodes[i] in ids && listOf(-1, 1).any { dir ->
+                        (oneWay == 0 || oneWay == dir) && w.nodes.getOrNull(i + dir)?.let { it !in ids } == true
+                    }
+                } && distance(after, w) <= 6 && distance(farther, w) <= 6
+        }
+        if (exits.size != 1 || exits.single().tags["highway"] == "service") return false
+        return true
+    }
+
+    private fun allowedForDriving(w: Way): Boolean =
+        (w.tags["motor_vehicle"] ?: w.tags["vehicle"] ?: w.tags["access"]) !in setOf("no", "private")
 
     /** Makes every roundabout's picture point the way the route really leaves it. */
     /**
@@ -387,9 +428,7 @@ object Roundabouts {
         if (radius <= 3 || radius >= 250) return null
         var arms = mutableListOf<Arm>()
         for (w in ways) {
-            if (w.isRing) continue
-            val access = w.tags["access"] ?: w.tags["motor_vehicle"]
-            if (access != null && access in setOf("no", "private")) continue
+            if (w.isRing || w.tags["highway"] == "service" || !allowedForDriving(w)) continue
             val oneway = onewayDirection(w.tags)
             for ((i, n) in w.nodes.withIndex()) {
                 if (n !in nodes) continue

@@ -74,7 +74,12 @@ object Overpass {
     /** A mapped road with a posted limit (OSM `maxspeed`), in km/h, and its shape. */
     data class LimitWay(val id: Long = 0, val kmh: Double?, val line: List<LatLng>)
 
-    data class SignalNode(val id: Long, val at: LatLng)
+    data class SignalNode(
+        val id: Long,
+        val at: LatLng,
+        // Null for directionless legacy cache entries. Empty means surveyed, with no usable approach.
+        val approachBearings: List<Double>? = null,
+    )
 
     data class AlongRoute(val cameras: List<RoadCamera>, val ways: List<LimitWay>, val zones: List<AverageSpeedZone>, val signals: List<LatLng>)
 
@@ -101,7 +106,7 @@ object Overpass {
         val cams = LinkedHashMap<Long, RoadCamera>()
         val ways = mutableListOf<LimitWay>()
         val zones = mutableListOf<AverageSpeedZone>()
-        val signals = mutableListOf<LatLng>()
+        val signals = LinkedHashMap<Long, SignalNode>()
         var answered = false
         for (piece in pieces(line, 40_000.0)) {
             val data = alongQuery(piece, speed, plate, limits) ?: continue
@@ -112,13 +117,13 @@ object Overpass {
             for (c in found) cams[c.id] = c
             ways += w
             zones += averageZones(data, line)
-            signals += lights.map { it.at }
+            for (light in lights) signals[light.id] = light
             RoadCache.shared.add(w, found, lights)
             // This stretch's answer is the whole truth about its cameras: one the map has dropped goes.
             RoadCache.shared.forgetCameras(piece, found.map { it.id }.toSet(), speed, plate)
         }
         if (!answered) return null
-        return AlongRoute(cams.values.toList(), ways, CameraAlerts.merge(zones, emptyList()), signalsOnRoute(signals, line))
+        return AlongRoute(cams.values.toList(), ways, CameraAlerts.merge(zones, emptyList()), signalsOnRoute(signals.values, line))
     }
 
     /** [line] cut into runs of about [meters], each sharing its first point with the last run's end. */
@@ -153,8 +158,10 @@ object Overpass {
         if (plate) parts.add("node[\"surveillance:type\"=\"ALPR\"](around:150,$c);")
         if (limits) parts.add("way[\"highway\"][\"maxspeed\"](around:12,$c);")
         if (speed) parts.add("relation[\"enforcement\"=\"average_speed\"](around:200,$c);")
-        parts.add("node[\"highway\"=\"traffic_signals\"](around:50,$c);")
-        val q = "[out:json][timeout:40];(" + parts.joinToString("") + ");out body geom 8000;"
+        // Load only the ways containing a signal node. Direction on OSM is relative to that way.
+        val q = "[out:json][timeout:40];node[\"highway\"=\"traffic_signals\"](around:25,$c)->.lights;" +
+            "(.lights;way(bn.lights)[\"highway\"][\"highway\"!~\"^(footway|cycleway|path|steps|pedestrian|bridleway|construction|proposed)$\"];" +
+            parts.joinToString("") + ");out body geom 8000;"
         return firstAnswer(q) { parse(it) != null }
     }
 
@@ -215,27 +222,58 @@ object Overpass {
 
     fun parseSignalNodes(data: ByteArray): List<SignalNode> {
         val elements = Json.obj(data)?.get("elements").asMaps() ?: return emptyList()
-        return elements.mapNotNull { e ->
-            if (e.tags()["highway"] != "traffic_signals") return@mapNotNull null
-            val lat = e["lat"].num() ?: return@mapNotNull null
-            val lon = e["lon"].num() ?: return@mapNotNull null
-            SignalNode(e["id"].long() ?: 0, LatLng(lat, lon))
+        val nodes = elements.filter { it["type"] == "node" && it.tags()["highway"] == "traffic_signals" }
+        val nodeIds = nodes.mapNotNull { it["id"].long() }.toHashSet()
+        val approaches = mutableMapOf<Long, MutableList<Pair<Int, Double>>>()
+        for (road in Roundabouts.parse(data)) {
+            val oneWay = Roundabouts.onewayDirection(road.tags)
+            for ((i, id) in road.nodes.withIndex()) {
+                if (id !in nodeIds) continue
+                for (dir in listOf(1, -1)) {
+                    if (oneWay != 0 && oneWay != dir) continue
+                    val neighbor = road.points.getOrNull(i - dir) ?: continue
+                    val at = road.points[i]
+                    if (neighbor.distanceTo(at) < 1.0) continue
+                    approaches.getOrPut(id) { mutableListOf() }.add(dir to Geo.bearing(neighbor, at))
+                }
+            }
+        }
+        return nodes.mapNotNull { node ->
+            val id = node["id"].long() ?: return@mapNotNull null
+            val lat = node["lat"].num() ?: return@mapNotNull null
+            val lon = node["lon"].num() ?: return@mapNotNull null
+            val tags = node.tags()
+            val direction = tags["traffic_signals:direction"] ?: tags["direction"]
+            val bearings = when (direction) {
+                "forward" -> approaches[id].orEmpty().filter { it.first == 1 }.map { it.second }
+                "backward" -> approaches[id].orEmpty().filter { it.first == -1 }.map { it.second }
+                else -> RoadCamera.bearings(direction) ?: approaches[id]?.map { it.second }
+            }
+            SignalNode(id, LatLng(lat, lon), bearings?.distinct())
         }
     }
 
-    /**
-     * The traffic lights for your own way through each junction, one per junction. A junction's
-     * lights are mapped once per road into it (yours, the side roads', the oncoming side's), and all
-     * of them lie near the route. Within 60 m along the route they're one junction, and the first one
-     * you reach is the one at your stop line. It's drawn on the route itself, on your road, rather
-     * than where it was mapped, which could be across the junction or up a side road.
-     */
-    fun signalsOnRoute(signals: List<LatLng>, line: List<LatLng>): List<LatLng> {
+    /** Match the approach to the route and merge only overlapping mapped stop lines. */
+    fun signalsOnRoute(signals: Collection<SignalNode>, line: List<LatLng>): List<LatLng> {
         if (line.size < 2) return emptyList()
         val cum = Geo.cumulative(line)
-        val on = signals.map { Geo.project(it, line, cum) }.filter { it.offset < 20 }.map { it.along }.sorted()
+        val on = signals.mapNotNull { signal ->
+            val projection = Geo.project(signal.at, line, cum)
+            val bearings = signal.approachBearings
+            if (bearings == null) {
+                if (projection.offset > 4.0) return@mapNotNull null
+            } else {
+                if (projection.offset > 7.0 || projection.along < 5.0) return@mapNotNull null
+                val before = Geo.point(line, max(0.0, projection.along - 18.0), cum)
+                val at = Geo.point(line, projection.along - 2.0, cum)
+                if (before.distanceTo(at) < 2.0) return@mapNotNull null
+                val heading = Geo.bearing(before, at)
+                if (bearings.none { Geo.angleGap(it, heading) <= 35.0 }) return@mapNotNull null
+            }
+            projection.along
+        }.sorted()
         val out = mutableListOf<Double>()
-        for (at in on) if (out.lastOrNull()?.let { at - it >= 60 } != false) out.add(at)
+        for (at in on) if (out.lastOrNull()?.let { at - it >= 14.0 } != false) out.add(at)
         return out.map { Geo.point(line, it, cum) }
     }
 
@@ -245,6 +283,7 @@ object Overpass {
             if (e["type"] != "way") return@mapNotNull null
             val geom = e["geometry"].asMaps() ?: return@mapNotNull null
             val tags = e.tags()
+            if ("maxspeed" !in tags) return@mapNotNull null
             val line = geom.mapNotNull { g ->
                 val lat = g["lat"].num()
                 val lon = g["lon"].num()

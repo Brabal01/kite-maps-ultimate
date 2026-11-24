@@ -12,7 +12,7 @@ class RoadCache(private val file: String? = defaultFile) {
     private class Store {
         val ways = LinkedHashMap<Long, Overpass.LimitWay>()
         val cameras = LinkedHashMap<Long, RoadCamera>()
-        val signals = LinkedHashMap<Long, LatLng>()
+        val signals = LinkedHashMap<Long, Overpass.SignalNode>()
     }
 
     private val lock = KLock()
@@ -51,7 +51,9 @@ class RoadCache(private val file: String? = defaultFile) {
                 }
                 for (g in root?.get("signals").asMaps() ?: emptyList()) {
                     val id = g["id"].long() ?: continue
-                    s.signals[id] = LatLng(g["lat"].num()!!, g["lng"].num()!!)
+                    val lat = g["lat"].num() ?: continue
+                    val lng = g["lng"].num() ?: continue
+                    s.signals[id] = Overpass.SignalNode(id, LatLng(lat, lng), g["approaches"].asList()?.mapNotNull { it.num() })
                 }
             }
         } catch (e: Exception) {
@@ -68,7 +70,7 @@ class RoadCache(private val file: String? = defaultFile) {
             val s = loaded()
             for (w in ways) if (w.id != 0L) s.ways[w.id] = w
             for (c in cameras) if (c.id != 0L) s.cameras[c.id] = c.copy(quiet = false)
-            for (g in signals) if (g.id != 0L) s.signals[g.id] = g.at
+            for (g in signals) if (g.id != 0L) s.signals[g.id] = g
             if (s.ways.size > maxWays) {
                 // The map keeps the order roads were first remembered in: the oldest half goes.
                 for (id in s.ways.keys.take(s.ways.size - maxWays / 2)) s.ways.remove(id)
@@ -125,7 +127,9 @@ class RoadCache(private val file: String? = defaultFile) {
                         "lat" to it.location.lat, "lng" to it.location.lng, "operator" to it.operatorName,
                         "kmh" to it.maxspeedKmh, "average" to it.average, "directions" to it.directions)
                 },
-                "signals" to s.signals.map { (id, p) -> mapOf("id" to id, "lat" to p.lat, "lng" to p.lng) },
+                "signals" to s.signals.values.map { g ->
+                    mapOf("id" to g.id, "lat" to g.at.lat, "lng" to g.at.lng, "approaches" to g.approachBearings)
+                },
             ))
         }
         val f = file ?: return
@@ -152,6 +156,6 @@ class RoadCache(private val file: String? = defaultFile) {
         for (p in samples) for (dy in listOf(-cell, 0.0, cell)) for (dx in listOf(-cell, 0.0, cell)) cells.add(key(p.lat + dy, p.lng + dx))
         fun near(p: LatLng) = key(p.lat, p.lng) in cells
         return Known(WazeCameras.merge(cams0.filter { near(it.location) }, waze), ways0.filter { w -> w.line.any { near(it) } },
-            Overpass.signalsOnRoute(sig0.filter { near(it) }, line))
+            Overpass.signalsOnRoute(sig0.filter { near(it.at) }, line))
     }
 }
