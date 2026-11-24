@@ -86,6 +86,30 @@ class RoutingTests {
         assertTrue(drive.contains("!6m57!1m5!18b1!30b1!31m1!1b1!34e1!2m5!2b1!5m1"))
     }
 
+    @Test fun straightIntersectionKeepsTheProviderLaneGuidance() {
+        val json = """
+        {"routes":[{"geometry":"??_|B?","distance":222.0,"duration":25.0,"legs":[{"steps":[
+          {"name":"Main Road","distance":222.0,"maneuver":{"type":"depart","location":[0,0]},"intersections":[
+            {"location":[0,0]},
+            {"location":[0,0.0006],"bearings":[0,90,180],"in":2,"out":0,
+             "lanes":[{"indications":["straight"],"valid":true},{"indications":["right"],"valid":false}]},
+            {"location":[0,0.0013],"bearings":[90,180],"in":1,"out":0,
+             "lanes":[{"indications":["straight"],"valid":true},{"indications":["right"],"valid":false}]},
+            {"location":[0,0.0016],"bearings":[0,90,180],"in":2,"out":0,"lanes":[{"indications":["none"],"valid":false}]}
+          ]},
+          {"distance":0,"maneuver":{"type":"arrive","location":[0,0.002]}}
+        ]}]}]}
+        """
+        val route = OSRM.parse(json.encodeToByteArray(), TravelMode.DRIVE).single()
+        assertEquals(listOf(ManeuverType.DEPART, ManeuverType.STRAIGHT, ManeuverType.ARRIVE), route.maneuvers.map { it.type })
+        val junction = route.maneuvers[1]
+        assertEquals(66.7, junction.alongMeters, 1.0)
+        assertEquals(listOf(true, false), junction.lanes.map { it.valid })
+        assertEquals(listOf("straight"), junction.lanes.first().indications)
+        assertEquals(junction.alongMeters, route.maneuvers.first().distanceMeters)
+        assertFalse(OSRM.parse(json.encodeToByteArray(), TravelMode.WALK).single().maneuvers.any { it.type == ManeuverType.STRAIGHT })
+    }
+
     @Test fun tracker() {
         val line = listOf(ll(0.0, 0.0), ll(0.005, 0.0), ll(0.01, 0.0))
         val total = Geo.length(line)
