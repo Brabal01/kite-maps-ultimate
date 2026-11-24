@@ -1,0 +1,309 @@
+=== icons
+=== welcome
+=== wazeintro
+=== browse
+=== search
+=== place
+=== directions
+=== nav
+--------- beginning of main
+11-24 16:53:55.787  5738  5738 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 16:53:59.321  5738  5738 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 16:54:03.154  5738  5738 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 16:54:06.314  5738  5738 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 16:54:09.888  5738  5738 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 16:54:13.043  5738  5738 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+=== camalert
+--------- beginning of main
+11-24 16:55:40.794  6059  6059 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 16:55:45.700  6059  6059 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 16
+11-24 16:55:49.276  6059  6059 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 16
+11-24 16:55:52.309  6059  6059 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 16
+11-24 16:55:55.355  6059  6059 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 16
+11-24 16:55:58.482  6059  6059 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 16
+=== trafficalert
+--------- beginning of main
+11-24 16:57:26.298  6380  6380 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 16:57:30.528  6380  6380 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 16:57:34.426  6380  6380 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 16:57:37.448  6380  6380 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 16:57:40.657  6380  6380 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 16:57:44.316  6380  6380 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+=== allalerts
+--------- beginning of main
+11-24 16:59:12.240  6700  6700 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 16:59:16.628  6700  6700 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 16
+11-24 16:59:19.950  6700  6700 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 16
+11-24 16:59:22.962  6700  6700 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 16
+11-24 16:59:25.971  6700  6700 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 16
+11-24 16:59:28.978  6700  6700 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 16
+=== roundabout
+--------- beginning of main
+11-24 17:00:54.102  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 0
+11-24 17:00:57.537  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 0
+11-24 17:01:00.906  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:04.423  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:08.428  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:11.428  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:14.442  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:17.454  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:20.492  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:24.067  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:27.076  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:30.085  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:33.101  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:36.146  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:39.486  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:43.459  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:47.455  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:50.482  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:54.207  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:01:57.221  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:02:00.300  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:02:03.460  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:02:06.606  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:02:10.459  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+11-24 17:02:14.467  7127  7127 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 16
+=== uk
+--------- beginning of main
+11-24 17:02:41.133  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 0
+11-24 17:02:45.298  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 0
+11-24 17:02:48.399  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:02:51.656  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:02:55.476  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:02:58.482  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:01.506  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:04.584  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:08.492  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:11.492  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:14.492  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:17.494  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:21.391  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:24.408  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:27.427  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:30.609  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:34.518  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:38.510  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:42.492  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:45.501  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:48.506  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:51.564  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:55.517  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:03:58.537  7660  7660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+=== layers
+=== settings
+=== saved
+=== pickhome
+=== wazemap
+--------- beginning of main
+11-24 17:05:55.393  8601  8601 I KiteTrace: waze after 28 s: no answer yet; page: not tried
+=== transit
+--------- beginning of main
+11-24 17:06:28.358  8978  8978 I KiteTrace: waze browse: live map 200, drivers' reports 63
+=== stops
+--------- beginning of main
+11-24 17:07:16.481  9366  9366 I KiteTrace: waze browse: live map 200, drivers' reports 63
+=== addstop
+=== endtrip
+--------- beginning of main
+11-24 17:08:44.970 10103 10103 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 17:08:49.115 10103 10103 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 17:08:53.350 10103 10103 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 17:08:56.427 10103 10103 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 17:08:59.928 10103 10103 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 17:09:02.019 10103 10103 I KiteTrace: waze browse: live map failed, drivers' reports 64 (Waze: nothing; page: fetch HTTP 403 · pass no, page asked 1× (403) key 6Lf4Wd livemap)
+11-24 17:09:03.774 10103 10103 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+=== wazesettings
+=== diagnostics
+=== puckflat
+=== puckpitch
+=== rail
+--------- beginning of main
+11-24 17:11:26.269 11610 11610 I KiteTrace: transit lines: failed at zoom 12 (HTTP 422, 27 bytes in 2332 ms: {"error":"too many routes"})
+11-24 17:11:50.550 11610 11610 I KiteTrace: waze browse: live map failed, drivers' reports 64 (Waze: nothing; page: fetch HTTP 403 · pass no, page asked 1× (403) key 6Lf4Wd api)
+11-24 17:11:51.101 11610 11610 I KiteTrace: transit lines: failed at zoom 12 (HTTP 422, 27 bytes in 537 ms: {"error":"too many routes"})
+=== cameras
+=== wazedemo
+=== wazetap
+=== longname
+=== longdir
+=== searchfocus
+=== locationoff
+=== transituk
+=== wazelink
+=== googlelink
+=== mine
+=== board
+=== streetview
+--------- beginning of main
+11-24 17:18:36.279 15619 15619 I KiteTrace: street view: pano Ym80fPMYZCabrQCY1Zu_UQ thumbnail 200 88846 bytes image/jpeg; tile 200 60915 bytes
+=== listscroll
+=== wazeroute
+--------- beginning of main
+11-24 17:20:16.982 16244 16244 I KiteTrace: waze browse: live map failed, drivers' reports 62 (Waze: nothing; page: fetch HTTP 403 · pass no, ?)
+=== livecams
+--------- beginning of main
+11-24 17:21:00.364 16600 16600 I KiteTrace: waze browse: live map failed, drivers' reports 62 (Waze: nothing; page: fetch HTTP 403 · pass no, page asked 1× (403) key 6Lf4Wd api)
+=== livecamcard
+--------- beginning of main
+11-24 17:22:05.690 16918 16918 I KiteTrace: waze browse: live map failed, drivers' reports 56 (Waze: nothing; page: fetch HTTP 403 · pass no, ?)
+=== livecamroute
+--------- beginning of main
+11-24 17:23:05.206 17223 17223 I KiteTrace: waze browse: live map failed, drivers' reports 56 (Waze: nothing; page: fetch HTTP 403 · pass no, page asked 1× (403) key 6Lf4Wd livemap)
+=== livecamroutecard
+--------- beginning of main
+11-24 17:24:15.272 17643 17643 I KiteTrace: waze browse: live map failed, drivers' reports 56 (Waze: nothing; page: fetch HTTP 403 · pass no, page asked 1× (403) key 6Lf4Wd api)
+=== resume
+=== charges
+--------- beginning of main
+11-24 17:25:37.775 18344 18344 I KiteTrace: waze browse: live map failed, drivers' reports 56 (Waze: nothing; page: fetch HTTP 403 · pass no, page asked 1× (403) key 6Lf4Wd api)
+=== faster
+--------- beginning of main
+11-24 17:26:15.113 18660 18660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 17:26:20.056 18660 18660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 17:26:23.748 18660 18660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 17:26:26.710 18660 18660 I KiteTrace: waze browse: live map failed, drivers' reports 56 (Waze: nothing; page: fetch HTTP 403 · pass no, ?)
+11-24 17:26:27.268 18660 18660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 17:26:30.348 18660 18660 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+=== nextlimit
+--------- beginning of main
+11-24 17:28:05.238 19089 19089 I KiteTrace: waze browse: live map failed, drivers' reports 56 (Waze: nothing; page: fetch HTTP 403 · pass no, page asked 1× (403) key 6Lf4Wd api)
+11-24 17:28:16.612 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 17:28:20.473 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 0
+11-24 17:28:24.408 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:28:27.419 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:28:30.440 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:28:33.453 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:28:36.475 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:28:39.480 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:28:42.486 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:28:45.505 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:28:48.513 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:28:51.669 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:28:55.374 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:28:58.382 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:29:01.445 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:29:04.526 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:29:07.979 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+11-24 17:29:12.182 19089 19089 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 1 in 64 offRoute false speed 23
+=== flat
+--------- beginning of main
+11-24 17:29:43.518 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 0
+11-24 17:29:48.062 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 0
+11-24 17:29:51.733 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:29:55.101 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:29:58.845 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:01.858 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:04.879 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:07.989 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:08.001 19591 19591 I KiteTrace: waze browse: live map failed, drivers' reports 56 (Waze: nothing; page: no answer)
+11-24 17:30:11.034 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:14.180 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:17.309 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:20.391 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:23.910 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:27.121 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:30.965 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:34.794 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:38.028 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:41.964 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:45.057 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:48.991 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:52.141 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:55.634 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:30:58.890 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:31:01.996 19591 19591 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+=== northup
+--------- beginning of main
+11-24 17:31:19.392 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 0
+11-24 17:31:24.070 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 0
+11-24 17:31:27.304 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:31:30.553 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:31:33.748 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:31:36.962 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:31:40.058 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:31:44.553 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:31:47.795 20101 20101 I KiteTrace: waze browse: live map failed, drivers' reports 56 (Waze: nothing; page: fetch HTTP 403 · pass no, ?)
+11-24 17:31:47.801 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:31:51.277 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:31:54.325 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:31:57.753 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:00.832 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:04.059 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:07.980 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:11.346 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:15.104 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:18.121 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:21.382 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:24.572 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:27.629 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:30.638 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:34.251 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:37.414 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:41.295 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:32:45.128 20101 20101 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+=== closer
+--------- beginning of main
+11-24 17:33:12.221 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 0
+11-24 17:33:16.361 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 0
+11-24 17:33:19.718 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:33:23.634 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:33:26.819 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:33:29.841 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:33:32.862 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:33:34.023 20496 20496 I KiteTrace: waze browse: live map failed, drivers' reports 62 (Waze: nothing; page: fetch HTTP 403 · pass no, ?)
+11-24 17:33:36.464 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:33:39.605 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:33:43.009 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:33:46.024 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:33:49.054 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:33:52.060 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:33:55.077 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:33:58.122 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:34:01.905 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:34:05.303 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:34:08.445 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:34:11.890 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:34:15.630 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:34:18.648 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:34:22.706 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:34:25.824 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:34:29.238 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:34:33.340 20496 20496 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+=== wider
+--------- beginning of main
+11-24 17:34:56.579 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 0
+11-24 17:35:00.831 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 0
+11-24 17:35:04.158 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:08.328 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:11.738 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:14.845 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:17.076 20940 20940 I KiteTrace: waze browse: live map failed, drivers' reports 63 (Waze: nothing; page: fetch HTTP 403 · pass no, page asked 1× (403) key 6Lf4Wd api)
+11-24 17:35:17.920 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:20.941 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:24.519 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:28.516 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:32.645 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:36.108 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:40.134 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:44.606 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:48.036 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:51.398 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:55.394 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:35:58.734 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:36:01.789 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:36:05.064 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:36:08.372 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:36:11.685 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:36:15.187 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:36:18.276 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+11-24 17:36:21.812 20940 20940 I KiteTrace: at 51.45430,-0.97310 along 0 off 25 next 2 in 169 offRoute false speed 25
+=== browse3d
+=== browse2d
+=== mapsettings
+=== routechoice
+--------- beginning of main
+11-24 17:38:20.647 22190 22190 I KiteTrace: waze browse: live map failed, drivers' reports 22 (Waze: nothing; page: fetch HTTP 403 · pass no, page asked 1× (403) key 6Lf4Wd api)
+=== routepick
+--------- beginning of main
+11-24 17:39:10.210 22554 22554 I KiteTrace: waze browse: live map failed, drivers' reports 63 (Waze: nothing; page: fetch HTTP 403 · pass no, page asked 1× (403) key 6Lf4Wd api)
