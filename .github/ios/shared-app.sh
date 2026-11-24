@@ -3,6 +3,7 @@
 #   Frameworks/KiteShared.xcframework        the app itself
 #   Frameworks/res/compose-resources         its fonts, pictures and the map's texts
 # Usage: .github/ios/shared-app.sh release   (iPhone and simulator, optimised: for Kite.ipa)
+#        .github/ios/shared-app.sh device  (iPhone only, optimised: Ultimate releases)
 #        .github/ios/shared-app.sh sim       (simulator only, quicker: for screenshots)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -15,6 +16,12 @@ if [ "${1:-release}" = "sim" ]; then
     -framework shared/build/bin/iosSimulatorArm64/debugFramework/KiteShared.framework \
     -output "$ROOT/Frameworks/KiteShared.xcframework"
   PLATFORM=iphonesimulator
+elif [ "${1:-release}" = "device" ]; then
+  ./gradlew --no-daemon -PnoAndroid :shared:linkReleaseFrameworkIosArm64
+  xcodebuild -create-xcframework \
+    -framework shared/build/bin/iosArm64/releaseFramework/KiteShared.framework \
+    -output "$ROOT/Frameworks/KiteShared.xcframework"
+  PLATFORM=iphoneos
 else
   ./gradlew --no-daemon -PnoAndroid :shared:assembleKiteSharedReleaseXCFramework
   cp -R shared/build/XCFrameworks/release/KiteShared.xcframework "$ROOT/Frameworks/"
