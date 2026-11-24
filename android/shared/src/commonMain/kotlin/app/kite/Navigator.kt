@@ -412,9 +412,13 @@ class Navigator(route0: Route, val destination: Place, stops0: List<Place>, priv
             if (r.maneuvers.none { it.type == ManeuverType.ROUNDABOUT }) return@launch
             val drawn = Roundabouts.apply(r.deep()) ?: return@launch
             if (route.id != r.id || route.maneuvers.size != drawn.maneuvers.size) return@launch
-            val steps = route.maneuvers.mapIndexed { i, m -> m.copy(roundabout = drawn.maneuvers[i].roundabout) }.toMutableList()
-            // Only the pictures change, not the steps: the tracker keeps its place on the route,
-            // like the iPhone's (a new one could snap to the wrong part of a route that loops back).
+            val steps = route.maneuvers.mapIndexed { i, m ->
+                val updated = drawn.maneuvers[i]
+                if (m.type == ManeuverType.ROUNDABOUT && m.alongMeters == updated.alongMeters) {
+                    m.copy(roundabout = updated.roundabout, exit = updated.exit, instruction = updated.instruction)
+                } else m
+            }.toMutableList()
+            // Step locations are unchanged, so the tracker can keep its place on a looping route.
             route = route.copy(maneuvers = steps)
             // The road matcher's lane counts, where OpenStreetMap's layout came without them.
             Roundabouts.withEntryLanes(route.maneuvers, entryLanes)?.let { route = route.copy(maneuvers = it) }
