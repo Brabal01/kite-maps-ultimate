@@ -7,6 +7,8 @@ import kotlin.math.PI
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
+data class TransitStop(val name: String, val arrival: Long?, val departure: Long?, val platform: String?)
+
 /** One part of a transit trip: a walk, or a ride on one line between two stops. Times are epoch millis. */
 data class TransitLeg(
     val isWalk: Boolean,
@@ -24,6 +26,10 @@ data class TransitLeg(
     var stops: Int = 0,
     var delayMinutes: Int? = null,
     var path: List<LatLng> = emptyList(),
+    var fromPlatform: String? = null,
+    var toPlatform: String? = null,
+    var intermediateStops: List<TransitStop> = emptyList(),
+    val staysOnVehicle: Boolean = false,
 ) {
     val vehicle: Vehicle get() = Vehicle.of(mode)
 
@@ -55,6 +61,16 @@ data class TransitTrip(
     val rides: List<TransitLeg> get() = legs.filter { !it.isWalk }
     val walkSeconds: Double get() = legs.filter { it.isWalk }.sumOf { it.durationSeconds }
     val path: List<LatLng> get() = legs.flatMap { it.path }
+
+    /** Time between alighting and the next boarding, including any walking between stops. */
+    fun transferSecondsBefore(index: Int): Double? {
+        val next = legs.getOrNull(index) ?: return null
+        if (next.isWalk || next.staysOnVehicle) return null
+        val previous = legs.subList(0, index).lastOrNull { !it.isWalk } ?: return null
+        val arrives = previous.arrive ?: return null
+        val departs = next.depart ?: return null
+        return (departs - arrives).takeIf { it >= 0 }?.div(1000.0)
+    }
 }
 
 /** Public transit directions from Transitous (transitous.org), keyless, with live delays where agencies send them. */
@@ -196,7 +212,7 @@ object Transitous {
         val dur = l["duration"].num() ?: if (start != null && end != null) (end - start) / 1000.0 else 0.0
         val out = TransitLeg(TransitLeg.Vehicle.of(mode) == TransitLeg.Vehicle.WALK, mode, fromName = from["name"] as? String ?: "",
             toName = to["name"] as? String ?: "", depart = start, arrive = end, durationSeconds = dur,
-            distanceMeters = l["distance"].num() ?: 0.0, path = path(l))
+            distanceMeters = l["distance"].num() ?: 0.0, path = path(l), staysOnVehicle = l["interlineWithPreviousLeg"] == true)
         if (out.path.size < 2) {
             val a = point(from)
             val b = point(to)
@@ -208,10 +224,22 @@ object Transitous {
         out.color = hex(l["routeColor"])
         out.textColor = hex(l["routeTextColor"])
         out.headsign = (l["headsign"] as? String)?.ifEmpty { null }
-        out.stops = (l["intermediateStops"].asList()?.size ?: 0) + 1
+        val stops = l["intermediateStops"].asMaps()?.filter { it["cancelled"] != true }
+        out.stops = stops?.let { it.size + 1 } ?: 0
+        out.fromPlatform = platform(from)
+        out.toPlatform = platform(to)
+        out.intermediateStops = stops.orEmpty().mapNotNull { stop ->
+            val name = stop["name"].text()?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            TransitStop(name, date(stop["arrival"]), date(stop["departure"]), platform(stop))
+        }
         if (l["realTime"] == true && start != null) date(l["scheduledStartTime"])?.let { out.delayMinutes = ((start - it) / 60_000.0).roundToInt() }
         return out
     }
+
+    private fun platform(place: Map<String, Any?>): String? =
+        sequenceOf(place["track"], place["scheduledTrack"])
+            .mapNotNull { (it as? String)?.trim()?.takeIf { label -> label.isNotEmpty() } }
+            .firstOrNull()
 
     private fun path(l: Map<String, Any?>): List<LatLng> {
         val g = l["legGeometry"].asMap() ?: return emptyList()
