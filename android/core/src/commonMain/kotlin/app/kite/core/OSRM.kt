@@ -183,6 +183,17 @@ object OSRM {
                     if (type == "merge" && modifier != null) mergeSides[maneuvers.size] = modifier
                     if ((type == "new name" || type == "continue") && (modifier ?: "straight") == "straight") nameOnly.add(maneuvers.size)
                     maneuvers.add(man)
+                    if (mode == TravelMode.DRIVE && !roundaboutStep && mt in laneContinuationTypes) {
+                        val end = min(along + dist, cum.last())
+                        val junctions = straightLaneJunctions(step, line, cum, man.alongMeters, end, stepRoad)
+                        if (junctions.isNotEmpty()) {
+                            man.distanceMeters = junctions.first().alongMeters - man.alongMeters
+                            for ((j, junction) in junctions.withIndex()) {
+                                junction.distanceMeters = (junctions.getOrNull(j + 1)?.alongMeters ?: end) - junction.alongMeters
+                            }
+                            maneuvers.addAll(junctions)
+                        }
+                    }
                     along += dist
                 }
             }
@@ -258,10 +269,43 @@ object OSRM {
         return LatLng(o.lat + cy / 110_540, o.lng + cx / k)
     }
 
+    private val laneContinuationTypes = setOf(ManeuverType.DEPART, ManeuverType.STRAIGHT, ManeuverType.TURN_LEFT, ManeuverType.TURN_RIGHT)
+
+    /** OSRM can include lane guidance for intersections without a separate turn maneuver. */
+    private fun straightLaneJunctions(
+        step: Map<String, Any?>, line: List<LatLng>, cumulative: DoubleArray, start: Double, end: Double, road: String?,
+    ): List<Maneuver> {
+        val intersections = step["intersections"].asMaps()?.drop(1).orEmpty()
+        if (end - start <= 24 || intersections.none { it["lanes"] != null }) return emptyList()
+        val segment = Geo.slice(line, start, end, cumulative)
+        val segmentCumulative = Geo.cumulative(segment)
+        val out = mutableListOf<Maneuver>()
+        for (junction in intersections) {
+            val lanes = intersectionLanes(junction)
+            val recommended = lanes.filter { it.valid }
+            if (recommended.isEmpty() || recommended.any { "straight" !in it.indications }) continue
+            val bearings = junction["bearings"].asList() ?: continue
+            val incoming = junction["in"].int()?.let { bearings.getOrNull(it).num() } ?: continue
+            val outgoing = junction["out"].int()?.let { bearings.getOrNull(it).num() } ?: continue
+            if (Geo.angleGap(incoming + 180.0, outgoing) > 30) continue
+            val location = loc(junction["location"]) ?: continue
+            val projection = Geo.project(location, segment, segmentCumulative)
+            val at = start + projection.along
+            if (projection.offset > 8.0 || at <= (out.lastOrNull()?.alongMeters ?: start) + 12 || at >= end - 12) continue
+            out.add(Maneuver(ManeuverType.STRAIGHT, instruction("continue", "straight", road, null, TravelMode.DRIVE),
+                location, at, 0.0, road, lanes = lanes))
+        }
+        return out
+    }
+
     /** The turn lanes at a step's maneuver point (its first intersection), left to right. */
     fun lanes(step: Map<String, Any?>): List<Lane> {
         val first = step["intersections"].asMaps()?.firstOrNull() ?: return emptyList()
-        val raw = first["lanes"].asMaps() ?: return emptyList()
+        return intersectionLanes(first)
+    }
+
+    private fun intersectionLanes(intersection: Map<String, Any?>): List<Lane> {
+        val raw = intersection["lanes"].asMaps() ?: return emptyList()
         if (raw.size <= 1) return emptyList()
         val lanes = raw.map { l ->
             Lane(l["indications"].asList()?.mapNotNull { it as? String } ?: listOf("none"), l["valid"] as? Boolean ?: false)
