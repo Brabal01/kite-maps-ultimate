@@ -5,7 +5,64 @@ on:
     branches: [ultimate-navigation]
   workflow_dispatch:
     inputs:
-      screenshots:
+      publish:
+        description: Publish verified artifacts as a preview release
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ultimate-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon -PcoreOnly :core:jvmTest
+        working-directory: android
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ultimate-core-test-results
+          path: android/core/build/test-results/jvmTest
+
+  device:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: |
+          xcodebuild -version
+          brew install xcodegen
+      - run: .github/ios/shared-app.sh release
+      - run: xcodegen generate
+      - run: |
+          xcodebuild -project Kite.xcodeproj -scheme Kite -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build
+      - run: bash .github/ios/package-ultimate.sh build/Build/Products/Release-iphoneos/Kite.app dist "$GITHUB_RUN_NUMBER"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kite-maps-ultimate-ipas
+          path: dist
+          if-no-files-found: error
+
+  screenshots:
     runs-on: macos-26
     timeout-minutes: 35
     strategy:
@@ -65,63 +122,6 @@ on:
         with:
           name: screenshots-${{ matrix.variant }}
           path: screenshots
-
-  publish:
-        description: Publish verified artifacts as a preview release
-        type: boolean
-        default: false
-
-permissions:
-  contents: read
-
-concurrency:
-  group: ultimate-ios-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  core:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew --no-daemon -PcoreOnly :core:jvmTest
-        working-directory: android
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ultimate-core-test-results
-          path: android/core/build/test-results/jvmTest
-
-  device:
-    runs-on: macos-26
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
-      - run: |
-          xcodebuild -version
-          brew install xcodegen
-      - run: .github/ios/shared-app.sh release
-      - run: xcodegen generate
-      - run: |
-          xcodebuild -project Kite.xcodeproj -scheme Kite -configuration Release \
-            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build
-      - run: bash .github/ios/package-ultimate.sh build/Build/Products/Release-iphoneos/Kite.app dist "$GITHUB_RUN_NUMBER"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: kite-maps-ultimate-ipas
-          path: dist
-          if-no-files-found: error
 
   publish:
     if: github.repository == 'Brabal01/kite-maps-ultimate' && (github.event_name == 'push' || inputs.publish)
