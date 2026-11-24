@@ -15,7 +15,7 @@ import kotlinx.datetime.format.DateTimeComponents
  * scenic webcams: Kite then shows only the road cameras, which need no key. Same as the iPhone's.
  */
 object WindyKey {
-    const val VALUE = "oCX0gC54CF52fMI1VoXtP9BBNxKW94mn"
+    const val VALUE = ""
     val present: Boolean get() = VALUE.isNotEmpty()
 }
 
