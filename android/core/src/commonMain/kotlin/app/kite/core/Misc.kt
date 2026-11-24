@@ -272,7 +272,7 @@ class RouteTracker(val route: Route) {
     private data class Near(val seg: Int, val t: Double, val dist: Double)
 
     /** [heading] is the way the car is moving, only when it's moving fast enough for the course to mean something. */
-    fun update(fix: LatLng, accuracy: Double = 10.0, heading: Double? = null): Progress {
+    fun update(fix: LatLng, accuracy: Double = 10.0, heading: Double? = null, measured: Boolean = true): Progress {
         val line = route.polyline
         var best = nearest(fix, max(0, segment - 3), min(line.size - 2, segment + 40))
         if (best.dist > 60) {
@@ -285,12 +285,21 @@ class RouteTracker(val route: Route) {
         val b0 = line[best.seg + 1]
         val snapped = LatLng(a0.lat + (b0.lat - a0.lat) * best.t, a0.lng + (b0.lng - a0.lng) * best.t)
         val limit = max(40.0, min(accuracy, 60.0) + 25)
-        offCount = if (best.dist > limit * 2) offCount + 2 else if (best.dist > limit) offCount + 1 else 0
+        val reliable = measured && accuracy in 0.0..50.0
+        if (reliable) {
+            offCount = when {
+                best.dist > limit * 2 -> (offCount + 2).coerceAtMost(3)
+                best.dist > limit -> (offCount + 1).coerceAtMost(3)
+                else -> 0
+            }
+        } else {
+            offCount = 0
+        }
         val routeBearing = Geo.bearing(a0, b0)
         val a = Geo.point(line, max(0.0, along - 10), cum)
         val b = Geo.point(line, min(total, along + 20), cum)
         val roadBearing = if (a.distanceTo(b) > 5) Geo.bearing(a, b) else routeBearing
-        wrongWayCount = if (heading != null && best.dist <= limit) {
+        wrongWayCount = if (reliable && heading != null && best.dist <= limit) {
             if (Geo.diff(heading, roadBearing) > 120) wrongWayCount + 1 else 0
         } else 0
         val next = route.maneuvers.indexOfFirst { !it.silent && it.alongMeters > along + 8 }.takeIf { it >= 0 }
@@ -298,7 +307,7 @@ class RouteTracker(val route: Route) {
         val remaining = max(0.0, total - along)
         return Progress(snapped, along, best.dist, routeBearing, next, max(0.0, toNext), remaining,
             if (total > 0) route.durationSeconds * remaining / total else 0.0,
-            offCount >= 3 || wrongWayCount >= 4, remaining < 25 && best.dist < limit)
+            offCount >= 3 || wrongWayCount >= 4, reliable && remaining < 25 && best.dist < limit)
     }
 
     private fun nearest(p: LatLng, from: Int, to: Int): Near {
