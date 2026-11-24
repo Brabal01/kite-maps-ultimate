@@ -104,6 +104,20 @@ class RoutingTests {
         assertTrue(t.update(ll(0.00999, 0.0)).arrived)
     }
 
+    @Test fun routeDepartureRequiresFreshMeasuredEvidence() {
+        val line = listOf(ll(49.5939, 17.2500), ll(49.6039, 17.2500))
+        val tracker = RouteTracker(route(line, emptyList(), Geo.length(line)))
+        val outside = ll(49.5989, 17.2530)
+        assertFalse(tracker.update(outside).offRoute)
+        repeat(4) { assertFalse(tracker.update(outside, measured = false).offRoute) }
+        repeat(4) { assertFalse(tracker.update(outside, accuracy = 90.0).offRoute) }
+        assertFalse(tracker.update(outside).offRoute)
+        assertTrue(tracker.update(outside).offRoute)
+        assertFalse(tracker.update(line.last(), measured = false).arrived)
+        assertFalse(tracker.update(line.last(), accuracy = 90.0).arrived)
+        assertTrue(tracker.update(line.last()).arrived)
+    }
+
     @Test fun wrongWayIsOffRoute() {
         val line = listOf(ll(0.0, 0.0), ll(0.005, 0.0), ll(0.01, 0.0))
         val total = Geo.length(line)
