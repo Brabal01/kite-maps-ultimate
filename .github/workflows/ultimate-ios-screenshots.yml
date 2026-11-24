@@ -1,0 +1,65 @@
+name: Ultimate iPhone simulator screenshots
+
+on:
+  push:
+    branches: [ultimate-gpx-validation]
+    paths: ['.github/workflows/ultimate-ios-screenshots.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  screenshot:
+    runs-on: xcode-27
+    timeout-minutes: 32
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      BUNDLE_ID: cz.brabal01.kitemapsultimate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 62230a2390ce7eaac1b2a690d7860da02fd8d8ba
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: brew install xcodegen
+      - run: bash .github/ios/shared-app.sh sim
+      - run: |
+          xcodegen generate
+          xcodebuild -project Kite.xcodeproj -scheme Kite -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO EXCLUDED_ARCHS=x86_64 build
+      - name: Capture browse, route, guidance and public transit views
+        run: |
+          sim=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          groups = json.load(sys.stdin)["devices"]
+          phones = [d for key, devices in groups.items() if "iOS-" in key
+                    for d in devices if d["name"].startswith("iPhone")]
+          print(next((p["udid"] for p in phones if p["name"] == "iPhone 14"), phones[0]["udid"]))
+          ')
+          app=build/Build/Products/Debug-iphonesimulator/Kite.app
+          xcrun simctl boot "$sim"
+          xcrun simctl bootstatus "$sim" -b
+          xcrun simctl install "$sim" "$app"
+          xcrun simctl privacy "$sim" grant location "$BUNDLE_ID"
+          xcrun simctl ui "$sim" appearance light
+          xcrun simctl location "$sim" set 38.5449,-121.7405
+          mkdir -p screenshots
+          for view in browse directions nav transit; do
+            xcrun simctl launch --terminate-running-process --stderr="$PWD/screenshots/$view.log" "$sim" "$BUNDLE_ID" -demo "$view"
+            case "$view" in
+              browse) sleep 16 ;;
+              *) sleep 50 ;;
+            esac
+            xcrun simctl spawn "$sim" launchctl list | grep -F "$BUNDLE_ID"
+            xcrun simctl io "$sim" screenshot "screenshots/$view.png"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-ultimate
+          path: screenshots
