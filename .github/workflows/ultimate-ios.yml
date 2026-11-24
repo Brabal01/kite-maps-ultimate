@@ -55,6 +55,14 @@ jobs:
           xcodebuild -project Kite.xcodeproj -scheme Kite -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build
+      - name: Retain the compiled app before packaging
+        run: ditto -c -k --keepParent build/Build/Products/Release-iphoneos/Kite.app Kite-device-app.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compiled-kite-device-app
+          path: Kite-device-app.zip
+          retention-days: 3
+          if-no-files-found: error
       - run: bash .github/ios/package-ultimate.sh build/Build/Products/Release-iphoneos/Kite.app dist "$GITHUB_RUN_NUMBER"
       - uses: actions/upload-artifact@v4
         with:
