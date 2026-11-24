@@ -1,0 +1,146 @@
+name: Kite Maps Ultimate iOS
+
+on:
+  push:
+    branches: [ultimate-navigation]
+  workflow_dispatch:
+    inputs:
+      screenshots:
+    runs-on: macos-26
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: upstream
+            ref: 779daee0cf7685ffdaea733cd60b38a4c978b672
+            bundle: app.vela.ios
+          - variant: ultimate
+            ref: ${{ github.sha }}
+            bundle: cz.brabal01.kitemapsultimate
+    env:
+      BUNDLE_ID: ${{ matrix.bundle }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: brew install xcodegen
+      - run: .github/ios/shared-app.sh sim
+      - run: |
+          xcodegen generate
+          xcodebuild -project Kite.xcodeproj -scheme Kite -configuration Debug             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'             -derivedDataPath build CODE_SIGNING_ALLOWED=NO EXCLUDED_ARCHS=x86_64 build
+      - name: Capture comparable iPhone simulator screens
+        run: |
+          sim=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          groups = json.load(sys.stdin)["devices"]
+          phones = [d for key, devices in groups.items() if "iOS-" in key
+                    for d in devices if d["name"].startswith("iPhone")]
+          print(next((p["udid"] for p in phones if p["name"] == "iPhone 14"), phones[0]["udid"]))
+          ')
+          app=build/Build/Products/Debug-iphonesimulator/Kite.app
+          xcrun simctl boot "$sim"
+          xcrun simctl bootstatus "$sim" -b
+          xcrun simctl install "$sim" "$app"
+          xcrun simctl privacy "$sim" grant location "$BUNDLE_ID"
+          xcrun simctl ui "$sim" appearance light
+          xcrun simctl location "$sim" set 38.5449,-121.7405
+          mkdir -p screenshots
+          for view in browse directions nav transit; do
+            xcrun simctl launch --terminate-running-process --stderr="$PWD/screenshots/$view.log" "$sim" "$BUNDLE_ID" -demo "$view"
+            case "$view" in
+              browse) sleep 16 ;;
+              *) sleep 50 ;;
+            esac
+            xcrun simctl spawn "$sim" launchctl list | grep -F "$BUNDLE_ID"
+            xcrun simctl io "$sim" screenshot "screenshots/$view.png"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-${{ matrix.variant }}
+          path: screenshots
+
+  publish:
+        description: Publish verified artifacts as a preview release
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ultimate-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon -PcoreOnly :core:jvmTest
+        working-directory: android
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ultimate-core-test-results
+          path: android/core/build/test-results/jvmTest
+
+  device:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: |
+          xcodebuild -version
+          brew install xcodegen
+      - run: .github/ios/shared-app.sh release
+      - run: xcodegen generate
+      - run: |
+          xcodebuild -project Kite.xcodeproj -scheme Kite -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build
+      - run: bash .github/ios/package-ultimate.sh build/Build/Products/Release-iphoneos/Kite.app dist "$GITHUB_RUN_NUMBER"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kite-maps-ultimate-ipas
+          path: dist
+          if-no-files-found: error
+
+  publish:
+    if: github.repository == 'Brabal01/kite-maps-ultimate' && (github.event_name == 'push' || inputs.publish)
+    needs: [core, device]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: kite-maps-ultimate-ipas
+          path: dist
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum -c SHA256SUMS.txt
+          gh release create "ultimate-preview-$GITHUB_RUN_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "Kite Maps Ultimate preview $GITHUB_RUN_NUMBER" \
+            --notes "ARM64 iOS builds for re-signing. Full includes the navigation widget. SideStore omits the extension. Device installation requires signing. Verified in $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID." \
+            KiteMapsUltimate-Full.ipa KiteMapsUltimate-SideStore.ipa SHA256SUMS.txt
