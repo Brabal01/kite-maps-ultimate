@@ -1,0 +1,84 @@
+name: Kite Maps Ultimate iOS on Intel macOS
+
+on:
+  push:
+    branches: [ultimate-gpx-validation]
+    paths: ['.github/workflows/ultimate-ios-intel.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE: 62230a2390ce7eaac1b2a690d7860da02fd8d8ba
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon -PcoreOnly :core:jvmTest
+        working-directory: android
+
+  device:
+    runs-on: macos-26-intel
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: |
+          xcodebuild -version
+          brew install xcodegen
+      - run: bash .github/ios/shared-app.sh device
+      - run: xcodegen generate
+      - run: |
+          xcodebuild -project Kite.xcodeproj -scheme Kite -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build
+      - run: bash .github/ios/package-ultimate.sh build/Build/Products/Release-iphoneos/Kite.app dist 8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kite-maps-ultimate-ipas
+          path: dist
+          if-no-files-found: error
+
+  publish:
+    if: github.repository == 'Brabal01/kite-maps-ultimate'
+    needs: [core, device]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: kite-maps-ultimate-ipas
+          path: dist
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum -c SHA256SUMS.txt
+          if gh release view ultimate-preview-8 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            exit 0
+          fi
+          gh release create ultimate-preview-62230a2-intel \
+            --repo "$GITHUB_REPOSITORY" --target "$CANDIDATE" --prerelease --latest=false \
+            --title "Kite Maps Ultimate preview 62230a2" \
+            --notes "ARM64 iPhone packages verified on GitHub-hosted macOS. Full includes the navigation widget. SideStore omits it. Both packages require re-signing on a device. Build: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID." \
+            KiteMapsUltimate-Full.ipa KiteMapsUltimate-SideStore.ipa SHA256SUMS.txt
